@@ -1,0 +1,40 @@
+# ignore temporary files
+.*.swp
+\#*#
+*.pyc
+*.o
+*.hi
+*.dump
+*.log
+*.rej
+*.orig
+*.patch
+*.diff
+.tags*
+
+# ignore executables
+/src/mica/test
+/src/libhrd/main
+/src/herd-hybrid/main
+/src/herd-UD/main
+src/Armonia/main
+
+# ignore debug files
+/debug/*.txt
+# ignore traces
+/traces/*.txt
+# ignore ide files
+/.idea/
+/cmake-build-debug/
+/src/cmake-build-debug/
+/src/.idea/
+/src/cache/cmake-build-debug/
+/src/cache/.idea/
+/src/Armonia/armonia-ec
+/src/Armonia/armonia-sc
+/src/Armonia/throughput.txt
+/src/herd-UD/throughput.txt
+/bin/traces
+/results/*.txt
+/results/scattered-results/*
+/results/aggregated-system-results/*.csv
