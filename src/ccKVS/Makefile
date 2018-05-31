@@ -7,7 +7,7 @@ PROF    := -g -fno-omit-frame-pointer
 
 all: ${APPS}
 
-ccKVS-sc: ../libhrd/hrd_conn.o ../libhrd/hrd_util.o ../mica/mica.o ../mica/city.o main.o client-sc.o worker.o cache.o util.o stats.o 
+ccKVS-sc: ../libhrd/hrd_conn.o ../libhrd/hrd_util.o ../mica/mica.o ../mica/city.o main.o client-sc.o cache.o util.o stats.o 
 	${LD} -o $@ $^ ${LDFLAGS}
 
 #ccKVS-ec: ../libhrd/hrd_conn.o ../libhrd/hrd_util.o ../mica/mica.o ../mica/city.o main.o client-ec.o worker.o cache.o util.o stats.o 

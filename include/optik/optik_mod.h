@@ -42,6 +42,7 @@
 #include <time.h>
 #include <stdint.h>
 #include <atomic_ops.h>
+#include <config.h>
 
 #include "utils.h"
 
@@ -171,12 +172,32 @@ typedef volatile struct
 } cache_meta;
 
 typedef cache_meta optik_lock_t;
+///typedef cache_meta spacetime_object_meta;
 
-static inline int
-optik_is_locked(cache_meta ol)
+typedef volatile struct
 {
-    return (ol.lock == OPTIK_LOCKED);
-}
+    uint8_t lock;
+    uint8_t state;
+    uint8_t write_acks[GROUP_MEMBERSHIP_ARRAY_SIZE];
+    uint8_t replay_acks;
+    uint8_t write_buffer_index; //TODO change to a pointer for a buffer >= 256
+    uint8_t last_writer_id;
+    uint8_t tie_breaker_id;
+    uint32_t version;  /// for lock-free reads & as part of timestamp:{version|tie_breaker_id}
+    uint32_t last_writer_version;  /// for lock-free reads & as part of timestamp:{version|tie_breaker_id}
+} spacetime_object_meta;
+
+typedef volatile struct
+{
+    uint8_t lock;
+    uint32_t version;  /// for lock-free reads & as part of timestamp:{version|tie_breaker_id}
+}spacetime_lock;
+
+//static inline int
+//optik_is_locked(cache_meta ol)
+//{
+//    return (ol.lock == OPTIK_LOCKED);
+//}
 
 static inline uint32_t
 optik_get_version(cache_meta ol)
@@ -198,33 +219,33 @@ optik_init(cache_meta* ol)
     ol->lock = OPTIK_FREE;
 }
 
-static inline int
-optik_lock(cache_meta* ol)
-{
-    cache_meta ol_old;
-    do
-    {
-        while (1)
-        {
-            ol_old = *ol;
-            if (!optik_is_locked(ol_old))
-            {
-                break;
-            }
-            OPTIK_PAUSE();
-        }
-
-        OPTIK_STATS_TRYLOCK_CAS_INC();
-        if (CAS_U8(&ol->lock, 0, 1) == 0)
-        {
-            ol->version++;
-            //assert(ol->version % 2 == 1);
-            break;
-        }
-    }
-    while (1);
-    return 1;
-}
+//static inline int
+//optik_lock(cache_meta* ol)
+//{
+//    cache_meta ol_old;
+//    do
+//    {
+//        while (1)
+//        {
+//            ol_old = *ol;
+//            if (!optik_is_locked(ol_old))
+//            {
+//                break;
+//            }
+//            OPTIK_PAUSE();
+//        }
+//
+//        OPTIK_STATS_TRYLOCK_CAS_INC();
+//        if (CAS_U8(&ol->lock, 0, 1) == 0)
+//        {
+//            ol->version++;
+//            //assert(ol->version % 2 == 1);
+//            break;
+//        }
+//    }
+//    while (1);
+//    return 1;
+//}
 
 static inline int
 optik_is_same_version_plus_one(volatile cache_meta v1, volatile cache_meta v2)
@@ -253,25 +274,105 @@ optik_is_greater_version_session(cache_meta curr, cache_meta receiv, int machine
             ((curr.version - 1) == receiv.version && machine_id < receiv.cid);
 }
 
-static inline int
-optik_lock_backoff(cache_meta* ol)
+//static inline int
+//optik_lock_backoff(cache_meta* ol)
+//{
+//    cache_meta ol_old;
+//    do
+//    {
+//        while (1)
+//        {
+//            ol_old = *ol;
+//            if (!optik_is_locked(ol_old))
+//            {
+//                break;
+//            }
+//            cpause(128);
+//        }
+//
+//        if (CAS_U8(&ol->lock, 0, 1) == 0)
+//        {
+//            ol->version++;
+//            break;
+//        }
+//    }
+//    while (1);
+//    return 1;
+//}
+
+//static inline void
+//optik_unlock_write(cache_meta* ol, uint8_t cid, uint32_t* resp_version)
+//{
+//    //assert(ol->lock == OPTIK_LOCKED);
+//    //assert(ol->version % 2 == 1);
+//    ol->cid = cid;
+//    *resp_version = ++ol->version;
+//    COMPILER_NO_REORDER(ol->lock = OPTIK_FREE);
+//
+//}
+
+//static inline void
+//optik_unlock_decrement_version(cache_meta* ol)
+//{
+//    ol->version = --ol->version;
+//    assert(ol->version % 2 == 0);
+//    COMPILER_NO_REORDER(ol->lock = OPTIK_FREE);
+//}
+
+//static inline void
+//optik_unlock(cache_meta* ol, uint8_t cid, uint32_t version)
+//{
+//    assert(version % 2 == 0);
+//    ol->cid = cid;
+//    ol->version = version;
+//    COMPILER_NO_REORDER(ol->lock = OPTIK_FREE);
+//}
+
+////// SPACETIME Functions
+
+
+static inline void
+optik_unlock(spacetime_object_meta* ol, uint8_t cid, uint32_t version)
 {
-    cache_meta ol_old;
+    assert(version % 2 == 0);
+    ol->tie_breaker_id = cid;
+    ol->version = version;
+    COMPILER_NO_REORDER(ol->lock = OPTIK_FREE);
+}
+
+static inline int is_same_version_and_valid(volatile spacetime_object_meta* v1,
+                                            volatile spacetime_object_meta* v2){
+    return  v1->version == v2->version &&
+            v1->tie_breaker_id == v2->tie_breaker_id &&
+            v1->version % 2 == 0;
+}
+
+static inline int
+optik_is_locked(spacetime_object_meta* ol)
+{
+    return (ol->lock == OPTIK_LOCKED);
+}
+static inline int
+optik_lock(spacetime_object_meta* ol)
+{
+    spacetime_object_meta ol_old;
     do
     {
         while (1)
         {
             ol_old = *ol;
-            if (!optik_is_locked(ol_old))
+            if (!optik_is_locked(&ol_old))
             {
                 break;
             }
-            cpause(128);
+            OPTIK_PAUSE();
         }
 
+        OPTIK_STATS_TRYLOCK_CAS_INC();
         if (CAS_U8(&ol->lock, 0, 1) == 0)
         {
             ol->version++;
+            //assert(ol->version % 2 == 1);
             break;
         }
     }
@@ -280,32 +381,21 @@ optik_lock_backoff(cache_meta* ol)
 }
 
 static inline void
-optik_unlock_write(cache_meta* ol, uint8_t cid, uint32_t* resp_version)
+optik_unlock_write(spacetime_object_meta* ol, uint8_t cid, uint32_t* resp_version)
 {
     //assert(ol->lock == OPTIK_LOCKED);
     //assert(ol->version % 2 == 1);
-    ol->cid = cid;
+    ol->tie_breaker_id = cid;
     *resp_version = ++ol->version;
     COMPILER_NO_REORDER(ol->lock = OPTIK_FREE);
 
 }
 
 static inline void
-optik_unlock_decrement_version(cache_meta* ol)
+optik_unlock_decrement_version(spacetime_object_meta* ol)
 {
     ol->version = --ol->version;
     assert(ol->version % 2 == 0);
     COMPILER_NO_REORDER(ol->lock = OPTIK_FREE);
 }
-
-static inline void
-optik_unlock(cache_meta* ol, uint8_t cid, uint32_t version)
-{
-    assert(version % 2 == 0);
-    ol->cid = cid;
-    ol->version = version;
-    COMPILER_NO_REORDER(ol->lock = OPTIK_FREE);
-}
-
-
 #endif	/* _H_OPTIK_ */

@@ -29,10 +29,10 @@ extern uint64_t seed;
 ---------------------------------------------------------------------------*/
 struct stats {
 
-  double remotes_per_worker[WORKERS_PER_MACHINE];
-  double locals_per_worker[WORKERS_PER_MACHINE];
-  double batch_size_per_worker[WORKERS_PER_MACHINE];
-  double aver_reqs_polled_per_worker[WORKERS_PER_MACHINE];
+  ///double remotes_per_worker[WORKERS_PER_MACHINE];
+  ///double locals_per_worker[WORKERS_PER_MACHINE];
+  ///double batch_size_per_worker[WORKERS_PER_MACHINE];
+  ///double aver_reqs_polled_per_worker[WORKERS_PER_MACHINE];
 
 
   double batch_size_per_client[CLIENTS_PER_MACHINE];
@@ -41,7 +41,7 @@ struct stats {
   double cache_hits_per_client[CLIENTS_PER_MACHINE];
   double remotes_per_client[CLIENTS_PER_MACHINE];
   double locals_per_client[CLIENTS_PER_MACHINE];
-	double average_coalescing_per_client[CLIENTS_PER_MACHINE];
+  double average_coalescing_per_client[CLIENTS_PER_MACHINE];
 
   double updates_per_client[CLIENTS_PER_MACHINE];
   double acks_per_client[CLIENTS_PER_MACHINE];

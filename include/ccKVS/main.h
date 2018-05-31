@@ -14,35 +14,26 @@
 #define PHYSICAL_CORES_PER_SOCKET 10
 #define PHYSICAL_CORE_DISTANCE 4 // distance between two physical cores of the same socket
 #define VIRTUAL_CORES_PER_SOCKET 20
-#define WORKER_HYPERTHREADING 1
+///#define WORKER_HYPERTHREADING 1
+#define CLIENT_HYPERTHREADING 1
 #define MAX_SERVER_PORTS 1
 
 
-#define WORKERS_PER_MACHINE 1
+#define WINDOW_SIZE 128
+
 #define CLIENTS_PER_MACHINE 15
 #define MACHINE_NUM 2
 
-#define CACHE_SOCKET (WORKERS_PER_MACHINE < 8 ? 0 : 1 )// socket where the cache is bind
+#define CACHE_SOCKET 0 // socket where the cache is bind
 
 #define CLIENT_NUM (CLIENTS_PER_MACHINE * MACHINE_NUM)
-#define WORKER_NUM (WORKERS_PER_MACHINE * MACHINE_NUM)
 
-#define WORKER_NUM_UD_QPS 1
-#define REMOTE_UD_QP_ID 0 /* The id of the UD QP the clients use for remote reqs */
-#define BROADCAST_UD_QP_ID 1 /* The id of the UD QP the clients use for braodcasting */
-#define FC_UD_QP_ID 2 /* The id of the UD QP the clients use for flow control */
-#define CLIENT_UD_QPS 3 /* The number of QPs for the client TODO THIS MUST BE 3*/
+///Warning I changed 1->0 and 2->1
+//#define REMOTE_UD_QP_ID 0 /* The id of the UD QP the clients use for remote reqs */
+#define BROADCAST_UD_QP_ID 0 /* The id of the UD QP the clients use for braodcasting */
+#define FC_UD_QP_ID 1 /* The id of the UD QP the clients use for flow control */
+#define CLIENT_UD_QPS 2 /* The number of QPs for the client TODO THIS MUST BE 3*/
 
-
-#define ENABLE_WORKERS_CRCW 1
-#define ENABLE_STATIC_LOCAL_ALLOCATION 1 // in crcw statically allocate clients to workers for the local requests
-#define DISABLE_LOCALS 1
-#define ENABLE_LOCAL_WORKERS_ 0 // this seems to help
-#define ENABLE_LOCAL_WORKERS ((ENABLE_WORKERS_CRCW == 1 && DISABLE_LOCALS == 0) ? ENABLE_LOCAL_WORKERS_ : 0)
-#define LOCAL_WORKERS 1 // number of workers that are only spawned for local requests
-#define ACTIVE_WORKERS_PER_MACHINE ((ENABLE_LOCAL_WORKERS == 1) && (DISABLE_LOCALS == 0) ? (WORKERS_PER_MACHINE - LOCAL_WORKERS) : WORKERS_PER_MACHINE)
-#define ENABLE_HUGE_PAGES_FOR_WORKER_REQUEST_REGION 0 // it appears enabling this brings some inconsistencies in performance
-#define ENABLE_ISSUERS 0
 
 #define ENABLE_CACHE_STATS 0
 #define EXIT_ON_PRINT 1
@@ -70,7 +61,6 @@
 /*-------------------------------------------------
 	-----------------PROTOCOLS-----------------
 --------------------------------------------------*/
-#define EVENTUAL 1
 #define STRONG_CONSISTENCY 2
 #define STRONG_CONSISTENCY_STALLING 3
 #define ENABLE_MULTIPLE_SESSIONS 1
@@ -91,48 +81,49 @@
 --------------------------------------------------*/
 //-----CLIENT-------
 
-#define ENABLE_THREAD_PARTITIONING_C_TO_W_ 1
-#define ENABLE_THREAD_PARTITIONING_C_TO_W (ENABLE_WORKERS_CRCW == 1 ? ENABLE_THREAD_PARTITIONING_C_TO_W_ : 0)
+//#define ENABLE_THREAD_PARTITIONING_C_TO_W_ 1
+//#define ENABLE_THREAD_PARTITIONING_C_TO_W (ENABLE_WORKERS_CRCW == 1 ? ENABLE_THREAD_PARTITIONING_C_TO_W_ : 0)
 #define BALANCE_REQS_ 0 //
 #define BALANCE_REQS  (((ENABLE_WORKERS_CRCW == 1) && (ENABLE_THREAD_PARTITIONING_C_TO_W == 0)) ? BALANCE_REQS_ : 0) //
 
-#define WINDOW_SIZE 128 /* Maximum remote batch*/
-#define LOCAL_WINDOW  66 //12 // 21 for 200
-#define LOCAL_REGIONS 3 // number of local regions per client
-#define LOCAL_REGION_SIZE (LOCAL_WINDOW / LOCAL_REGIONS)
-#define WS_PER_WORKER (ENABLE_THREAD_PARTITIONING_C_TO_W == 1 ? 6 : 4) //22 /* Number of outstanding requests kept by each client of any given worker*/
-#define MAX_OUTSTANDING_REQS (WS_PER_WORKER * (WORKER_NUM - WORKERS_PER_MACHINE))
-#define ENABLE_MULTI_BATCHES 0 // allow multiple batches
-#define MAX_REMOTE_RECV_WCS (ENABLE_MULTI_BATCHES == 1 ? (MAX(MAX_OUTSTANDING_REQS, WINDOW_SIZE)) : WINDOW_SIZE)
+//#define WINDOW_SIZE 128 /* Maximum remote batch*/
+//#define LOCAL_WINDOW  66 //12 // 21 for 200
+//#define LOCAL_REGIONS 3 // number of local regions per client
+//#define LOCAL_REGION_SIZE (LOCAL_WINDOW / LOCAL_REGIONS)
+//#define WS_PER_WORKER (ENABLE_THREAD_PARTITIONING_C_TO_W == 1 ? 6 : 4) //22 /* Number of outstanding requests kept by each client of any given worker*/
+//#define MAX_OUTSTANDING_REQS (WS_PER_WORKER * (WORKER_NUM - WORKERS_PER_MACHINE))
+//#define ENABLE_MULTI_BATCHES 0 // allow multiple batches
+//#define MAX_REMOTE_RECV_WCS (ENABLE_MULTI_BATCHES == 1 ? (MAX(MAX_OUTSTANDING_REQS, WINDOW_SIZE)) : WINDOW_SIZE)
 #define MINIMUM_BATCH_ABILITY 16
 #define MIN_EMPTY_PERCENTAGE 5
-#define FINISH_BATCH_ON_MISSING_CREDIT 0 // TODO no good reason to even have this
+//#define FINISH_BATCH_ON_MISSING_CREDIT 0 // TODO no good reason to even have this
 
 
 
 
 
 //----- WORKER BUFFER
-#define WORKER_REQ_SIZE (ENABLE_COALESCING == 1 ? (UD_REQ_SIZE + EXTRA_WORKER_REQ_BYTES) : UD_REQ_SIZE)
-#define WORKER_NET_REQ_SIZE (WORKER_REQ_SIZE - GRH_SIZE)
-#define MULTIGET_AVAILABLE_SIZE WORKER_NET_REQ_SIZE
-#define MAX_COALESCE_PER_MACH ((MULTIGET_AVAILABLE_SIZE - 1) / HERD_GET_REQ_SIZE) // -1 because we overload val_len with the number of gets
-#define ENABLE_INLINE_GET_REQS (ENABLE_COALESCING == 1 ? 1 : 1) // Inline get requests even though big objects are used
+//#define WORKER_REQ_SIZE (ENABLE_COALESCING == 1 ? (UD_REQ_SIZE + EXTRA_WORKER_REQ_BYTES) : UD_REQ_SIZE)
+//#define WORKER_NET_REQ_SIZE (WORKER_REQ_SIZE - GRH_SIZE)
+//#define MULTIGET_AVAILABLE_SIZE WORKER_NET_REQ_SIZE
+//#define MAX_COALESCE_PER_MACH ((MULTIGET_AVAILABLE_SIZE - 1) / HERD_GET_REQ_SIZE) // -1 because we overload val_len with the number of gets
+//#define ENABLE_INLINE_GET_REQS (ENABLE_COALESCING == 1 ? 1 : 1) // Inline get requests even though big objects are used
 #define MAXIMUM_INLINE_SIZE 188
 //-----WORKER-------
-#define WORKER_MAX_BATCH 127
+//#define WORKER_MAX_BATCH 127
 #define ENABLE_MINIMUM_WORKER_BATCHING 0
 #define WORKER_MINIMUM_BATCH 16 // DOES NOT WORK
 
 
-#define WORKER_SEND_BUFF_SIZE ( KEY_SIZE + 1 + 1 + WRKR_COALESCING_BUF_SLOT_SIZE)
-#define CLIENT_REMOTE_BUFF_SIZE (GRH_SIZE + WORKER_SEND_BUFF_SIZE)
+//#define WORKER_SEND_BUFF_SIZE ( KEY_SIZE + 1 + 1 + WRKR_COALESCING_BUF_SLOT_SIZE)
+//#define CLIENT_REMOTE_BUFF_SIZE (GRH_SIZE + WORKER_SEND_BUFF_SIZE)
 
 
 // INLINING
-#define CLIENT_ENABLE_INLINING (((USE_BIG_OBJECTS == 1) || (MULTIGET_AVAILABLE_SIZE > MAXIMUM_INLINE_SIZE)) ?  0 : 1)
-#define WORKER_RESPONSE_MAX_SIZE (ENABLE_WORKER_COALESCING == 1 ? (MAX_COALESCE_PER_MACH * HERD_VALUE_SIZE) : HERD_VALUE_SIZE)
-#define WORKER_ENABLE_INLINING (((USE_BIG_OBJECTS == 1) || (WORKER_RESPONSE_MAX_SIZE > MAXIMUM_INLINE_SIZE)) ?  0 : 1)
+#define CLIENT_ENABLE_INLINING 1
+///#define CLIENT_ENABLE_INLINING (((USE_BIG_OBJECTS == 1) || (MULTIGET_AVAILABLE_SIZE > MAXIMUM_INLINE_SIZE)) ?  0 : 1)
+//#define WORKER_RESPONSE_MAX_SIZE (ENABLE_WORKER_COALESCING == 1 ? (MAX_COALESCE_PER_MACH * HERD_VALUE_SIZE) : HERD_VALUE_SIZE)
+//#define WORKER_ENABLE_INLINING (((USE_BIG_OBJECTS == 1) || (WORKER_RESPONSE_MAX_SIZE > MAXIMUM_INLINE_SIZE)) ?  0 : 1)
 
 // CACHE
 #define ENABLE_HOT_KEY_TRACKING 0
@@ -152,7 +143,6 @@
 
 #define DO_ONLY_LOCALS 0
 #define USE_A_SINGLE_KEY 0
-#define DISABLE_HYPERTHREADING 0 // do not shcedule two threads on the same core
 #define ENABLE_WAKE_UP 0
 #define USE_ONLY_BIG_MESSAGES 0 // deprecated
 #define ONLY_CACHE_HITS 1
@@ -182,8 +172,6 @@
 #define RANDOM_MACHINE 0 // pick a rnadom machine
 #define DISABLE_CACHE 0  // Run Baseline
 #define LOAD_BALANCE 1 // Use a uniform access pattern
-#define EMULATE_SWITCH_KV 0 // Does nothing..
-#define SWITCH_KV_NODE 0 // which machine is the cache
 
 /*-------------------------------------------------
 	-----------------CONSISTENCY-------------------------
@@ -204,15 +192,15 @@
 #define BCAST_TO_CACHE_BATCH 10 //90 //100 // helps to keep small //47 for EC
 
 //----------EC flow control-----------------
-#define EC_CREDITS 60 //experiments with 33
-#define EC_CREDIT_DIVIDER 2 /*This is actually useful in high write ratios TODO tweak this*/
-#define EC_CREDITS_IN_MESSAGE (EC_CREDITS / EC_CREDIT_DIVIDER)
-#define EC_MAX_CREDIT_WRS (EC_CREDITS / EC_CREDITS_IN_MESSAGE) * (MACHINE_NUM - 1)
-#define EC_MAX_COH_MESSAGES (EC_CREDITS * (MACHINE_NUM - 1))
-#define EC_MAX_COH_RECEIVES (EC_CREDITS * (MACHINE_NUM - 1))
-#define EC_MAX_CREDIT_RECVS (CEILING(EC_MAX_COH_MESSAGES, EC_CREDITS_IN_MESSAGE))
-#define EC_VIRTUAL_CHANNELS 1
-#define EC_UPD_VC 0
+//#define EC_CREDITS 60 //experiments with 33
+//#define EC_CREDIT_DIVIDER 2 /*This is actually useful in high write ratios TODO tweak this*/
+//#define EC_CREDITS_IN_MESSAGE (EC_CREDITS / EC_CREDIT_DIVIDER)
+//#define EC_MAX_CREDIT_WRS (EC_CREDITS / EC_CREDITS_IN_MESSAGE) * (MACHINE_NUM - 1)
+//#define EC_MAX_COH_MESSAGES (EC_CREDITS * (MACHINE_NUM - 1))
+//#define EC_MAX_COH_RECEIVES (EC_CREDITS * (MACHINE_NUM - 1))
+//#define EC_MAX_CREDIT_RECVS (CEILING(EC_MAX_COH_MESSAGES, EC_CREDITS_IN_MESSAGE))
+//#define EC_VIRTUAL_CHANNELS 1
+//#define EC_UPD_VC 0
 
 
 //----------SC flow control-----------------
@@ -233,9 +221,9 @@
 
 //---------Buffer Space-------------
 #define SC_CLT_BUF_SIZE (UD_REQ_SIZE * (MACHINE_NUM - 1) * BROADCAST_CREDITS)
-#define EC_CLT_BUF_SIZE (UD_REQ_SIZE * (MACHINE_NUM - 1) * EC_CREDITS)
+//#define EC_CLT_BUF_SIZE (UD_REQ_SIZE * (MACHINE_NUM - 1) * EC_CREDITS)
 #define SC_CLT_BUF_SLOTS ((MACHINE_NUM - 1) * BROADCAST_CREDITS)
-#define EC_CLT_BUF_SLOTS (EC_CLT_BUF_SIZE  / UD_REQ_SIZE)
+//#define EC_CLT_BUF_SLOTS (EC_CLT_BUF_SIZE  / UD_REQ_SIZE)
 
 #define OPS_BUFS_NUM (CLIENT_ENABLE_INLINING == 1 ? 2 : 3) // how many OPS buffers are in use
 //#define EXTENDED_OPS_SIZE (OPS_BUFS_NUM * CACHE_BATCH_SIZE * CACHE_OP_SIZE)
@@ -254,10 +242,10 @@
 #define MIN_SS_BATCH 127// THe minimum ss batch
 #define CREDIT_SS_BATCH MAX(MIN_SS_BATCH, (MAX_CREDIT_WRS + 1))
 #define CREDIT_SS_BATCH_ (CREDIT_SS_BATCH - 1)
-#define EC_CREDIT_SS_BATCH MAX(MIN_SS_BATCH, (EC_MAX_CREDIT_WRS + 1))
-#define EC_CREDIT_SS_BATCH_ (EC_CREDIT_SS_BATCH - 1)
-#define WORKER_SS_BATCH MAX(MIN_SS_BATCH, (WORKER_MAX_BATCH + 1))
-#define WORKER_SS_BATCH_ (WORKER_SS_BATCH - 1)
+//#define EC_CREDIT_SS_BATCH MAX(MIN_SS_BATCH, (EC_MAX_CREDIT_WRS + 1))
+//#define EC_CREDIT_SS_BATCH_ (EC_CREDIT_SS_BATCH - 1)
+//#define WORKER_SS_BATCH MAX(MIN_SS_BATCH, (WORKER_MAX_BATCH + 1))
+//#define WORKER_SS_BATCH_ (WORKER_SS_BATCH - 1)
 #define CLIENT_SS_BATCH MAX(MIN_SS_BATCH, (WINDOW_SIZE + 1))
 #define CLIENT_SS_BATCH_ (CLIENT_SS_BATCH - 1)
 // if this is smaller than MAX_BCAST_BATCH + 2 it will deadlock because the signaling messaged is polled before actually posted
@@ -270,23 +258,23 @@
 --------------------------------------------------*/
 
 //RECV
-#define WORKER_RECV_Q_DEPTH  (((MACHINE_NUM - 1) * CEILING(CLIENTS_PER_MACHINE, WORKER_NUM_UD_QPS) * WS_PER_WORKER) + 3) // + 3 for good measre
+//#define WORKER_RECV_Q_DEPTH  (((MACHINE_NUM - 1) * CEILING(CLIENTS_PER_MACHINE, WORKER_NUM_UD_QPS) * WS_PER_WORKER) + 3) // + 3 for good measre
 #define CLIENT_RECV_REM_Q_DEPTH ((ENABLE_MULTI_BATCHES == 1 ? MAX_OUTSTANDING_REQS :  2 * CLIENT_SS_BATCH) + 3)
 
-#define EC_CLIENT_RECV_BR_Q_DEPTH (EC_MAX_COH_RECEIVES + 3)
+//#define EC_CLIENT_RECV_BR_Q_DEPTH (EC_MAX_COH_RECEIVES + 3)
 #define SC_CLIENT_RECV_BR_Q_DEPTH (MAX_COH_RECEIVES + 3)
 
-#define EC_CLIENT_RECV_CR_Q_DEPTH (EC_MAX_CREDIT_RECVS + 3) // recv credits EC
+//#define EC_CLIENT_RECV_CR_Q_DEPTH (EC_MAX_CREDIT_RECVS + 3) // recv credits EC
 #define SC_CLIENT_RECV_CR_Q_DEPTH (MAX_COH_MESSAGES  + 8) // a reasonable upper bound
 
 // SEND
-#define WORKER_SEND_Q_DEPTH  WORKER_MAX_BATCH + 3 // + 3 for good measre
+//#define WORKER_SEND_Q_DEPTH  WORKER_MAX_BATCH + 3 // + 3 for good measre
 #define CLIENT_SEND_REM_Q_DEPTH  ((ENABLE_MULTI_BATCHES == 1  ? MAX_OUTSTANDING_REQS : CLIENT_SS_BATCH) + 3) // 60)
 
-#define EC_CLIENT_SEND_BR_Q_DEPTH (MAX((MACHINE_NUM - 1) * BROADCAST_SS_BATCH, EC_MAX_COH_MESSAGES + 14) + 3)
+//#define EC_CLIENT_SEND_BR_Q_DEPTH (MAX((MACHINE_NUM - 1) * BROADCAST_SS_BATCH, EC_MAX_COH_MESSAGES + 14) + 3)
 #define SC_CLIENT_SEND_BR_Q_DEPTH (MAX(MAX_COH_MESSAGES, (BROADCAST_SS_BATCH * (MACHINE_NUM - 1) + ACK_SS_BATCH)) + 13)
 
-#define EC_CLIENT_SEND_CR_Q_DEPTH  (2 * EC_CREDIT_SS_BATCH + 3) // send credits EC
+//#define EC_CLIENT_SEND_CR_Q_DEPTH  (2 * EC_CREDIT_SS_BATCH + 3) // send credits EC
 #define SC_CLIENT_SEND_CR_Q_DEPTH (2 * CREDIT_SS_BATCH + 13)
 
 // WORKERS synchronization options
@@ -320,11 +308,6 @@
 #define LOCAL_READ 6
 
 
-
-//#define WRITE_OP 1
-//#define READ_OP 3
-//#define NORMAL_KEY 1
-//#define HOT_KEY 5
 #define IS_READ(X)  ((X) == HOT_READ || (X) == LOCAL_READ || (X) == REMOTE_READ  ? 1 : 0)
 #define IS_WRITE(X)  ((X) == HOT_WRITE || (X) == LOCAL_WRITE || (X) == REMOTE_WRITE  ? 1 : 0)
 #define IS_HOT(X)  ((X) == HOT_WRITE || (X) == HOT_READ ? 1 : 0)
@@ -357,9 +340,10 @@ struct remote_qp {
 
 // a client sends to a particular ud qp to all workers, therefore to better utilize its L1 cache
 // we store worker AHs by QP instead of by worker id
-extern volatile struct remote_qp remote_wrkr_qp[WORKER_NUM_UD_QPS][WORKER_NUM];
+//extern volatile struct remote_qp remote_wrkr_qp[WORKER_NUM_UD_QPS][WORKER_NUM];
 extern volatile struct remote_qp remote_clt_qp[CLIENT_NUM][CLIENT_UD_QPS];
-extern volatile char clt_needed_ah_ready, wrkr_needed_ah_ready;
+//extern volatile char clt_needed_ah_ready, wrkr_needed_ah_ready;
+extern volatile char clt_needed_ah_ready;
 struct mica_op;
 extern volatile struct mica_op *local_req_region;
 
@@ -391,21 +375,20 @@ struct client_stats { // 2 cache lines
 	//long long unused[3]; // padding to avoid false sharing
 };
 
+//
+//struct worker_stats { // 1 cache line
+//	long long remotes_per_worker;
+//	long long locals_per_worker;
+//	long long batches_per_worker;
+//	long long empty_polls_per_worker;
+//
+//	long long unused[4]; // padding to avoid false sharing
+//};
 
-struct worker_stats { // 1 cache line
-	long long remotes_per_worker;
-	long long locals_per_worker;
-	long long batches_per_worker;
-	long long empty_polls_per_worker;
 
-	long long unused[4]; // padding to avoid false sharing
-};
-
-
-//TODO These global variables are defined in each file the main.h is included (main.c, cahce.c, util.c)
-extern volatile char local_recv_flag[WORKERS_PER_MACHINE][CLIENTS_PER_MACHINE][64]; //false sharing problem -- fixed with padding
-extern volatile struct client_stats c_stats[CLIENTS_PER_MACHINE];
-extern volatile struct worker_stats w_stats[WORKERS_PER_MACHINE];
+///extern volatile char local_recv_flag[WORKERS_PER_MACHINE][CLIENTS_PER_MACHINE][64]; //false sharing problem -- fixed with padding
+extern volatile struct client_stats w_stats[CLIENTS_PER_MACHINE];
+//extern volatile struct worker_stats w_stats[WORKERS_PER_MACHINE];
 
 struct thread_params {
 	int id;
@@ -437,10 +420,9 @@ extern uint8_t protocol;
 extern optik_lock_t kv_lock;
 extern struct latency_counters latency_count;
 
-void *run_worker(void *arg);
+//void *run_worker(void *arg);
 void *run_client(void *arg);
 void *print_stats(void*);
-
 
 
 #endif

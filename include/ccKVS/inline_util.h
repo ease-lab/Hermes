@@ -113,33 +113,33 @@ static inline uint8_t keys_and_meta_are_equal(struct cache_key* key1, struct cac
 // A condition to be used to trigger periodic (but rare) measurements
 static inline bool trigger_measurement(uint16_t local_client_id)
 {
-	return c_stats[local_client_id].cache_hits_per_client % K_32 > 0 &&
-				c_stats[local_client_id].cache_hits_per_client % K_32 <= CACHE_BATCH_SIZE &&
+	return w_stats[local_client_id].cache_hits_per_client % K_32 > 0 &&
+				w_stats[local_client_id].cache_hits_per_client % K_32 <= CACHE_BATCH_SIZE &&
 				local_client_id == 0 && machine_id == MACHINE_NUM -1;
 }
-
-// Poll for the local reqs completion to measure a local req's latency
-static inline void poll_local_req_for_latency_measurement(struct latency_flags* latency_info, struct timespec* start,
-																													struct local_latency* local_measure)
-{
-
-	if ((MEASURE_LATENCY == 1) && ((latency_info->measured_req_flag) == LOCAL_REQ) && ((local_measure->local_latency_start_polling) == 1))
-		if (*(local_measure->flag_to_poll) == 0) {
-			struct timespec end;
-			clock_gettime(CLOCK_MONOTONIC, &end);
-			int useconds = ((end.tv_sec - start->tv_sec) * 1000000) +
-										 ((end.tv_nsec - start->tv_nsec) / 1000);
-			if (ENABLE_ASSERTIONS) assert(useconds > 0);
-//			yellow_printf("Latency of a local req, region %d, flag ptr %llu: %d us\n",
-//										local_measure->measured_local_region, local_measure->flag_to_poll, useconds);
-			bookkeep_latency(useconds, LOCAL_REQ);
-			latency_info->measured_req_flag = NO_REQ;
-			local_measure->measured_local_region = -1;
-			local_measure->local_latency_start_polling = 0;
-			local_measure->flag_to_poll = NULL;
-
-		}
-}
+//
+//// Poll for the local reqs completion to measure a local req's latency
+//static inline void poll_local_req_for_latency_measurement(struct latency_flags* latency_info, struct timespec* start,
+//																													struct local_latency* local_measure)
+//{
+//
+//	if ((MEASURE_LATENCY == 1) && ((latency_info->measured_req_flag) == LOCAL_REQ) && ((local_measure->local_latency_start_polling) == 1))
+//		if (*(local_measure->flag_to_poll) == 0) {
+//			struct timespec end;
+//			clock_gettime(CLOCK_MONOTONIC, &end);
+//			int useconds = ((end.tv_sec - start->tv_sec) * 1000000) +
+//										 ((end.tv_nsec - start->tv_nsec) / 1000);
+//			if (ENABLE_ASSERTIONS) assert(useconds > 0);
+////			yellow_printf("Latency of a local req, region %d, flag ptr %llu: %d us\n",
+////										local_measure->measured_local_region, local_measure->flag_to_poll, useconds);
+//			bookkeep_latency(useconds, LOCAL_REQ);
+//			latency_info->measured_req_flag = NO_REQ;
+//			local_measure->measured_local_region = -1;
+//			local_measure->local_latency_start_polling = 0;
+//			local_measure->flag_to_poll = NULL;
+//
+//		}
+//}
 
 static inline void report_remote_latency(struct latency_flags* latency_info, uint16_t prev_rem_req_i,
 																				 struct ibv_wc* wc, struct timespec* start)
@@ -198,9 +198,9 @@ static inline void increment_credits_based_on_protocol(int credits_found, struct
 			else credits[ACK_VC][credit_wc[j].imm_data] += CREDITS_IN_MESSAGE;
 		}
 	}
-	else if (protocol == EVENTUAL) {
-		for (j = 0; j < credits_found; j++) credits[EC_UPD_VC][credit_wc[j].imm_data] += EC_CREDITS_IN_MESSAGE;
-	}
+	///else if (protocol == EVENTUAL) {
+	///	for (j = 0; j < credits_found; j++) credits[EC_UPD_VC][credit_wc[j].imm_data] += EC_CREDITS_IN_MESSAGE;
+	///}
 }
 
 // Poll for credits and increment the credits according to the protocol
@@ -246,59 +246,6 @@ static inline void post_recvs_and_send(uint16_t recv_counter, uint16_t message_s
 	}
 }
 
-// Bookkeeping of requests that hit in the cache for EC
-static inline void cache_hit_bookkeeping_EC(struct extended_cache_op* ops, struct extended_cache_op* next_ops, struct mica_resp* resp,
-														struct mica_resp* next_resp, struct key_home* key_homes, struct key_home* next_key_homes,
-														uint16_t* op_i, uint16_t* next_op_i, uint16_t local_client_id, struct latency_flags* latency_info,
-														uint16_t* hottest_keys_pointers)
-{
-	while (resp[(*op_i)].type != CACHE_MISS && resp[(*op_i)].type != UNSERVED_CACHE_MISS &&
-		 (*op_i) < CACHE_BATCH_SIZE) {
-		// error Check TODO wrap it in a define
-		if (ENABLE_ASSERTIONS == 1) {
-			if (resp[(*op_i)].type != CACHE_GET_SUCCESS && resp[(*op_i)].type != CACHE_PUT_SUCCESS &&
-				ops[(*op_i)].opcode != CACHE_OP_UPD && ops[(*op_i)].opcode != CACHE_OP_BRC) {
-				if (local_client_id == 0) {
-					printf("CLIENT %d Unexpected operation %d, response: %d at pointer %d \n", local_client_id, ops[(*op_i)].opcode, resp[(*op_i)].type, (*op_i));
-					exit(0);
-				}
-			}
-		}
-		if (resp[(*op_i)].type == CACHE_GET_SUCCESS || ops[(*op_i)].opcode == CACHE_OP_UPD) {// Empty the Reads and the broadcasts that have been sent
-			if ((ENABLE_HOT_KEY_TRACKING == 1) && (resp[(*op_i)].type == CACHE_GET_SUCCESS)) {
-				c_stats[local_client_id].cache_hits_per_client += (ops[(*op_i)].val_len + 1);
-			}
-			else c_stats[local_client_id].cache_hits_per_client++;
-			resp[(*op_i)].type = EMPTY;
-		}
-		else copy_op_to_next_op(ops, next_ops,resp, next_resp, key_homes, next_key_homes, (*op_i), next_op_i, latency_info, NULL);
-		(*op_i)++;
-	}
-}
-
-// After creating the remote batch, iterate through the rest of the ops for bookkeeping
-static inline void run_through_rest_of_ops_EC(struct extended_cache_op* ops, struct extended_cache_op* next_ops, struct mica_resp* resp,
-														struct mica_resp* next_resp, struct key_home* key_homes, struct key_home* next_key_homes,
-														uint16_t* op_i, uint16_t* next_op_i, uint16_t local_client_id, struct latency_flags* latency_info,
-														uint16_t* hottest_keys_pointers)
-{
-	while ((*op_i) < CACHE_BATCH_SIZE) {
-			if (resp[(*op_i)].type == CACHE_MISS) resp[(*op_i)].type = UNSERVED_CACHE_MISS;
-
-			if (resp[(*op_i)].type == CACHE_GET_SUCCESS  || ops[(*op_i)].opcode == CACHE_OP_UPD) {
-				if ((ENABLE_HOT_KEY_TRACKING == 1) && (resp[(*op_i)].type == CACHE_GET_SUCCESS)) {
-					c_stats[local_client_id].cache_hits_per_client += (ops[(*op_i)].val_len + 1);
-				}
-				else c_stats[local_client_id].cache_hits_per_client++;
-				resp[(*op_i)].type = EMPTY;
-			}
-			else {
-				if (ENABLE_ASSERTIONS == 1) assert(resp[(*op_i)].type != CACHE_GET_SUCCESS && resp[(*op_i)].type != EMPTY);
-				copy_op_to_next_op(ops, next_ops,resp, next_resp, key_homes, next_key_homes, (*op_i), next_op_i, latency_info, NULL);
-			}
-			(*op_i)++;
-		}
-}
 
 // Bookkeeping of requests that hit in the cache for SC
 static inline void cache_hit_bookkeeping_SC(struct extended_cache_op* ops, struct extended_cache_op* next_ops, struct mica_resp* resp,
@@ -323,15 +270,15 @@ static inline void cache_hit_bookkeeping_SC(struct extended_cache_op* ops, struc
 		if (resp[(*op_i)].type == CACHE_GET_SUCCESS || ops[(*op_i)].opcode == CACHE_OP_INV ||
 			resp[(*op_i)].type == CACHE_PUT_FAIL ) {// Empty the Reads and the broadcasts that have been sent
       if ((ENABLE_HOT_KEY_TRACKING == 1) && (resp[(*op_i)].type == CACHE_GET_SUCCESS)) {
-        c_stats[local_client_id].cache_hits_per_client += (ops[(*op_i)].val_len + 1);
+        w_stats[local_client_id].cache_hits_per_client += (ops[(*op_i)].val_len + 1);
         if ((ops[(*op_i)].value[0]) < HOTTEST_KEYS_TO_TRACK) {
           if (hottest_keys_pointers[ops[(*op_i)].value[0]] == ((*op_i) + 1)) {
             hottest_keys_pointers[ops[(*op_i)].value[0]] = 0;
           }
         }
       }
-      else c_stats[local_client_id].cache_hits_per_client++;
-      resp[(*op_i)].type = EMPTY;
+      else w_stats[local_client_id].cache_hits_per_client++;
+      resp[(*op_i)].type = ST_EMPTY;
 		}
 		else {
 			copy_op_to_next_op(ops, next_ops, resp, next_resp, key_homes, next_key_homes, (*op_i), next_op_i, latency_info, hottest_keys_pointers);
@@ -354,15 +301,15 @@ static inline void run_through_rest_of_ops_SC(struct extended_cache_op* ops, str
 		if (resp[(*op_i)].type == CACHE_GET_SUCCESS || ops[(*op_i)].opcode == CACHE_OP_INV ||
 			resp[(*op_i)].type == CACHE_PUT_FAIL) {
       if ((ENABLE_HOT_KEY_TRACKING == 1) && (resp[(*op_i)].type == CACHE_GET_SUCCESS)) {
-        c_stats[local_client_id].cache_hits_per_client += (ops[(*op_i)].val_len + 1);
+        w_stats[local_client_id].cache_hits_per_client += (ops[(*op_i)].val_len + 1);
         if ((ops[(*op_i)].value[0]) < HOTTEST_KEYS_TO_TRACK) {
           if (hottest_keys_pointers[ops[(*op_i)].value[0]] == ((*op_i) + 1)) {
             hottest_keys_pointers[ops[(*op_i)].value[0]] = 0;
           }
         }
       }
-      else c_stats[local_client_id].cache_hits_per_client++;
-      resp[(*op_i)].type = EMPTY;
+      else w_stats[local_client_id].cache_hits_per_client++;
+      resp[(*op_i)].type = ST_EMPTY;
 		}
 		else copy_op_to_next_op(ops, next_ops, resp, next_resp, key_homes, next_key_homes, (*op_i), next_op_i, latency_info, hottest_keys_pointers);
 		(*op_i)++;
@@ -443,8 +390,9 @@ static inline void post_credit_recvs_and_batch_bcasts_to_NIC(uint16_t br_i, stru
 	struct ibv_recv_wr *bad_recv_wr;
 	uint32_t max_credit_recvs;
 	if (protocol == STRONG_CONSISTENCY) max_credit_recvs = MAX_CREDIT_RECVS;
-	else if (protocol == EVENTUAL) max_credit_recvs = EC_MAX_CREDIT_RECVS;
+	///else if (protocol == EVENTUAL) max_credit_recvs = EC_MAX_CREDIT_RECVS;
 	else if (ENABLE_ASSERTIONS) assert(false);
+
 	if (*credit_recv_counter > 0) { // Must post receives for credits
 		if (ENABLE_ASSERTIONS == 1) assert ((*credit_recv_counter) * (MACHINE_NUM - 1) <= max_credit_recvs);
 		for (j = 0; j < (MACHINE_NUM - 1) * (*credit_recv_counter); j++) {
@@ -460,153 +408,153 @@ static inline void post_credit_recvs_and_batch_bcasts_to_NIC(uint16_t br_i, stru
 		ret = ibv_post_send(cb->dgram_qp[BROADCAST_UD_QP_ID], &coh_send_wr[0], &bad_send_wr);
 		CPE(ret, "Broadcast ibv_post_send error", ret);
 		if (CLIENT_ENABLE_INLINING == 1) coh_send_wr[0].send_flags = IBV_SEND_INLINE;
-		else if (!CLIENT_ENABLE_INLINING && protocol == EVENTUAL) coh_send_wr[0].send_flags = 0;
+		else if (!CLIENT_ENABLE_INLINING && protocol != STRONG_CONSISTENCY) coh_send_wr[0].send_flags = 0;
 	}
 }
 
 /* ---------------------------------------------------------------------------
 ------------------------------ CLIENT MAIN LOOP -----------------------------
 ---------------------------------------------------------------------------*/
-
-// Client uses this to post receive requests for the remote answers
-static inline void refill_recvs(uint16_t rem_req_i, struct ibv_recv_wr* rem_recv_wr, struct hrd_ctrl_blk* cb)
-{
-	if (rem_req_i > 0) {
-		if (ENABLE_ASSERTIONS == 1) assert(rem_req_i <= WINDOW_SIZE);
-		int i;
-		struct ibv_recv_wr *bad_recv_wr;
-		for(i = 0; i < rem_req_i; i++)
-			rem_recv_wr[i].next = (i == rem_req_i - 1) ?
-								  NULL : &rem_recv_wr[i + 1];
-		 int ret = ibv_post_recv(cb->dgram_qp[REMOTE_UD_QP_ID], &rem_recv_wr[0], &bad_recv_wr);
-		CPE(ret, " Refill Remote: ibv_post_recv error", ret);
-	}
-}
-
-// Checks if an op can be coalaseced with previous ops and returns true if it can
-static inline bool vector_read(struct extended_cache_op* ops, struct coalesce_inf* coalesce_struct, uint16_t* op_i_ptr,
-            uint16_t wr_i, uint8_t rm_id, int size_of_op, struct ibv_sge* rem_send_sgl, struct mica_resp* resp,
-            int local_client_id, uint8_t per_worker_outstanding, struct ibv_send_wr* rem_send_wr)
-{
-  /* a multiget is as such:
-  	 key 16B Opcode 1B(Multiget) Val_len overloaded to say how many requests in the multiget,
-  	 value contains only Keys and Opcode of the coalesced gets
-		 Sending the opcode for every key may look stupid but it makes life much easier on the worker size,
-		 where mica gets probed with an array of pointers to requests*/
-  uint16_t op_i = *op_i_ptr;
-  if (ENABLE_COALESCING == 1 && ops[op_i].opcode == CACHE_OP_GET) {
-    if (coalesce_struct[rm_id].slots == 0 && per_worker_outstanding < WS_PER_WORKER) {
-      coalesce_struct[rm_id].wr_i = wr_i;
-      coalesce_struct[rm_id].op_i = op_i;
-      coalesce_struct[rm_id].slots++;
-			rem_send_sgl[wr_i].length = HERD_GET_REQ_SIZE;
-			return false;
-      // yellow_printf("Client %d Coalescing for rm %d at op_i %d and wr_ i %d tag %d \n", local_client_id, rm_id, op_i, wr_i, ops[op_i].key.tag);
-    }
-    else if (coalesce_struct[rm_id].slots > 0 && ops[op_i].opcode == CACHE_OP_GET) {
-      coalesce_struct[rm_id].slots++;
-			uint16_t cl_slots = coalesce_struct[rm_id].slots; // make the code a bit more readable
-			uint16_t cl_wr_i = coalesce_struct[rm_id].wr_i;
-			uint16_t cl_op_i = coalesce_struct[rm_id].op_i;
-			if (cl_slots == 2) {
-				ops[cl_op_i].opcode = MICA_OP_MULTI_GET;
-				rem_send_sgl[cl_wr_i].length++; // we add the val_len field
-			}
-      if (ENABLE_ASSERTIONS == 1) assert(cl_slots <= MAX_COALESCE_PER_MACH);
-      rem_send_sgl[cl_wr_i].length += HERD_GET_REQ_SIZE;
-			/* this can only help with big objects where inlining is disabled and is used only for get reqs
-			 * when inlining is enabled, it is also mandatory as NIC reads from the buffers asynchronously */
-			if ((CLIENT_ENABLE_INLINING == 0) && rem_send_sgl[cl_wr_i].length > MAXIMUM_INLINE_SIZE) {
-				if ((rem_send_wr[cl_wr_i].send_flags & IBV_SEND_INLINE) != 0) // inline is used and must be removed
-					rem_send_wr[cl_wr_i].send_flags ^= IBV_SEND_INLINE;
-			}
-			//  printf("Increasing the length of wr_i %d to %d, op_i :%d, cl_op_i %d \n", cl_wr_i, rem_send_sgl[cl_wr_i].length, op_i, cl_op_i );
-      if (ENABLE_ASSERTIONS == 1) {
-        if (rem_send_sgl[cl_wr_i].length > MULTIGET_AVAILABLE_SIZE) {
-					printf("local_client_id %d, length %d, cl_slots %d,\n", local_client_id, rem_send_sgl[cl_wr_i].length, cl_slots);
-					assert(false);
-				}
-				assert(ops[op_i].opcode == CACHE_OP_GET);
-        assert(cl_slots > 1);
-				struct remote_meta *tmp = (struct remote_meta *)&(ops[op_i].key.meta);
-				assert(tmp->clt_gid == local_client_id + CLIENTS_PER_MACHINE * machine_id);
-        //yellow_printf("offset %d, max value %d\n",HERD_GET_REQ_SIZE * (cl_slots - 2), MICA_MAX_VALUE - HERD_GET_REQ_SIZE);
-        //assert((HERD_GET_REQ_SIZE * (cl_slots - 2)) <= MICA_MAX_VALUE - HERD_GET_REQ_SIZE);
-      }
-      memcpy(ops[cl_op_i].value + (HERD_GET_REQ_SIZE * (cl_slots - 2)), ops + op_i, HERD_GET_REQ_SIZE);
-      ops[cl_op_i].val_len = cl_slots;
-			// yellow_printf("Client %d Adding for rm %d at op_i %d and wr_ i %d on slot %d, offset %llu, key with tag %d\n",
-				// local_client_id, rm_id, op_i, wr_i, coalesce_struct[rm_id].slots, ops[cl_op_i].value + (HERD_GET_REQ_SIZE * (cl_slots - 2)),
-				// ops[op_i].key.tag);
-      if (coalesce_struct[rm_id].slots == MAX_COALESCE_PER_MACH) coalesce_struct[rm_id].slots = 0;
-      resp[op_i].type = EMPTY;
-      (*op_i_ptr)++;
-      return true;
-			// green_printf("OP_i %d Opcode %d, referring wr %d, wr size %d \n", coalesce_struct[rm_id].op_i, ops[coalesce_struct[rm_id].op_i].opcode,
-			// 						coalesce_struct[rm_id].wr_i, rem_send_sgl[coalesce_struct[rm_id].wr_i].length);
-    }
-  }
-	return false;
-}
-
-// Client logic to issue the local requests
-static inline void issue_locals(uint16_t wn, uint16_t* ws, uint16_t local_client_id, uint32_t size_of_op, uint16_t worker_id,
-								uint8_t* per_worker_outstanding, long long* remote_for_each_worker, struct extended_cache_op* ops,
-								struct extended_cache_op* next_ops, struct mica_resp* resp, struct mica_resp* next_resp,
-								struct key_home* key_homes, struct key_home* next_key_homes, uint16_t op_i, uint16_t* next_op_i,
-                uint16_t local_worker_id, struct latency_flags* latency_info, struct timespec* start,
-								struct local_latency* local_measure)
-{
-	if (ENABLE_LOCAL_WORKERS) {
-		wn = local_worker_id;
-		int rm_id = worker_id / WORKERS_PER_MACHINE;
-		worker_id = rm_id * WORKERS_PER_MACHINE + wn;
-	}
-	else if (ENABLE_WORKERS_CRCW && ENABLE_STATIC_LOCAL_ALLOCATION) {
-		wn = local_client_id % WORKERS_PER_MACHINE;
-		int rm_id = worker_id / WORKERS_PER_MACHINE;
-		worker_id = rm_id * WORKERS_PER_MACHINE + wn;
-	}
-	if (DISABLE_LOCALS == 1 && ENABLE_ASSERTIONS == 1) assert (false);
-	int offset = OFFSET(wn, local_client_id, ws[wn]);
-	uint8_t loc_region = (offset % LOCAL_WINDOW) / LOCAL_REGION_SIZE;
-
-	if (local_recv_flag[wn][local_client_id][loc_region] == 0) {
-		if ((MEASURE_LATENCY == 1) && ((latency_info->measured_req_flag) == LOCAL_REQ) &&
-				(op_i == (latency_info->last_measured_op_i))) {
-			local_measure->measured_local_region = loc_region;
-//			yellow_printf("Issuing a local req: op_i: %d, local_region %d \n",
-//										latency_info->last_measured_op_i, local_measure->measured_local_region);
-		}
-		memcpy((struct mica_op*) local_req_region + offset, ops + op_i, size_of_op);
-//		printf("op opcode %d local opcode %d, size_of op %d \n", ops[op_i].opcode, local_req_region[offset].opcode, size_of_op);
-		if (ENABLE_ASSERTIONS) assert(local_req_region[offset].opcode == MICA_OP_GET ||
-																			local_req_region[offset].opcode == MICA_OP_PUT);
-		if (ws[wn] % LOCAL_REGION_SIZE == LOCAL_REGION_SIZE - 1) {
-			local_recv_flag[wn][local_client_id][loc_region] = 1;
-			if ((MEASURE_LATENCY == 1) && ((latency_info->measured_req_flag) == LOCAL_REQ) &&
-					((local_measure->measured_local_region) == (loc_region))) {
-				local_measure->local_latency_start_polling = 1;
-				local_measure->flag_to_poll = (char*)(&local_recv_flag[wn][local_client_id][loc_region]);
-//				yellow_printf("Enable polling for local req on region %d, flag ptr %llu \n ",
-//											local_measure->measured_local_region, local_measure->flag_to_poll);
-			}
-			// yellow_printf("Lock: client  %d,  region %d for worker %d\n", local_client_id, loc_region, wn);
-		}
-		// yellow_printf("Client %d I issue a local req to worker %d with opcode %d at offset %d, region %d\n",
-				// clt_gid, wn, ops[op_i].opcode, offset, loc_region);
-
-		if (ws[wn] == 0)  per_worker_outstanding[worker_id] = 1;
-		else per_worker_outstanding[worker_id]++;
-		remote_for_each_worker[worker_id]++;
-		c_stats[local_client_id].locals_per_client++;
-		HRD_MOD_ADD(ws[wn], LOCAL_WINDOW);
-		resp[op_i].type = EMPTY;
-	}
-	else {
-		copy_op_to_next_op(ops, next_ops, resp, next_resp, key_homes, next_key_homes, op_i, next_op_i, latency_info, NULL);
-	}
-}
+//
+//// Client uses this to post receive requests for the remote answers
+//static inline void refill_recvs(uint16_t rem_req_i, struct ibv_recv_wr* rem_recv_wr, struct hrd_ctrl_blk* cb)
+//{
+//	if (rem_req_i > 0) {
+//		if (ENABLE_ASSERTIONS == 1) assert(rem_req_i <= WINDOW_SIZE);
+//		int i;
+//		struct ibv_recv_wr *bad_recv_wr;
+//		for(i = 0; i < rem_req_i; i++)
+//			rem_recv_wr[i].next = (i == rem_req_i - 1) ?
+//								  NULL : &rem_recv_wr[i + 1];
+//		 int ret = ibv_post_recv(cb->dgram_qp[REMOTE_UD_QP_ID], &rem_recv_wr[0], &bad_recv_wr);
+//		CPE(ret, " Refill Remote: ibv_post_recv error", ret);
+//	}
+//}
+//
+//// Checks if an op can be coalaseced with previous ops and returns true if it can
+//static inline bool vector_read(struct extended_cache_op* ops, struct coalesce_inf* coalesce_struct, uint16_t* op_i_ptr,
+//            uint16_t wr_i, uint8_t rm_id, int size_of_op, struct ibv_sge* rem_send_sgl, struct mica_resp* resp,
+//            int local_client_id, uint8_t per_worker_outstanding, struct ibv_send_wr* rem_send_wr)
+//{
+//  /* a multiget is as such:
+//  	 key 16B Opcode 1B(Multiget) Val_len overloaded to say how many requests in the multiget,
+//  	 value contains only Keys and Opcode of the coalesced gets
+//		 Sending the opcode for every key may look stupid but it makes life much easier on the worker size,
+//		 where mica gets probed with an array of pointers to requests*/
+//  uint16_t op_i = *op_i_ptr;
+//  if (ENABLE_COALESCING == 1 && ops[op_i].opcode == CACHE_OP_GET) {
+//    if (coalesce_struct[rm_id].slots == 0 && per_worker_outstanding < WS_PER_WORKER) {
+//      coalesce_struct[rm_id].wr_i = wr_i;
+//      coalesce_struct[rm_id].op_i = op_i;
+//      coalesce_struct[rm_id].slots++;
+//			rem_send_sgl[wr_i].length = HERD_GET_REQ_SIZE;
+//			return false;
+//      // yellow_printf("Client %d Coalescing for rm %d at op_i %d and wr_ i %d tag %d \n", local_client_id, rm_id, op_i, wr_i, ops[op_i].key.tag);
+//    }
+//    else if (coalesce_struct[rm_id].slots > 0 && ops[op_i].opcode == CACHE_OP_GET) {
+//      coalesce_struct[rm_id].slots++;
+//			uint16_t cl_slots = coalesce_struct[rm_id].slots; // make the code a bit more readable
+//			uint16_t cl_wr_i = coalesce_struct[rm_id].wr_i;
+//			uint16_t cl_op_i = coalesce_struct[rm_id].op_i;
+//			if (cl_slots == 2) {
+//				ops[cl_op_i].opcode = MICA_OP_MULTI_GET;
+//				rem_send_sgl[cl_wr_i].length++; // we add the val_len field
+//			}
+//      if (ENABLE_ASSERTIONS == 1) assert(cl_slots <= MAX_COALESCE_PER_MACH);
+//      rem_send_sgl[cl_wr_i].length += HERD_GET_REQ_SIZE;
+//			/* this can only help with big objects where inlining is disabled and is used only for get reqs
+//			 * when inlining is enabled, it is also mandatory as NIC reads from the buffers asynchronously */
+//			if ((CLIENT_ENABLE_INLINING == 0) && rem_send_sgl[cl_wr_i].length > MAXIMUM_INLINE_SIZE) {
+//				if ((rem_send_wr[cl_wr_i].send_flags & IBV_SEND_INLINE) != 0) // inline is used and must be removed
+//					rem_send_wr[cl_wr_i].send_flags ^= IBV_SEND_INLINE;
+//			}
+//			//  printf("Increasing the length of wr_i %d to %d, op_i :%d, cl_op_i %d \n", cl_wr_i, rem_send_sgl[cl_wr_i].length, op_i, cl_op_i );
+//      if (ENABLE_ASSERTIONS == 1) {
+//        if (rem_send_sgl[cl_wr_i].length > MULTIGET_AVAILABLE_SIZE) {
+//					printf("local_client_id %d, length %d, cl_slots %d,\n", local_client_id, rem_send_sgl[cl_wr_i].length, cl_slots);
+//					assert(false);
+//				}
+//				assert(ops[op_i].opcode == CACHE_OP_GET);
+//        assert(cl_slots > 1);
+//				struct remote_meta *tmp = (struct remote_meta *)&(ops[op_i].key.meta);
+//				assert(tmp->clt_gid == local_client_id + CLIENTS_PER_MACHINE * machine_id);
+//        //yellow_printf("offset %d, max value %d\n",HERD_GET_REQ_SIZE * (cl_slots - 2), MICA_MAX_VALUE - HERD_GET_REQ_SIZE);
+//        //assert((HERD_GET_REQ_SIZE * (cl_slots - 2)) <= MICA_MAX_VALUE - HERD_GET_REQ_SIZE);
+//      }
+//      memcpy(ops[cl_op_i].value + (HERD_GET_REQ_SIZE * (cl_slots - 2)), ops + op_i, HERD_GET_REQ_SIZE);
+//      ops[cl_op_i].val_len = cl_slots;
+//			// yellow_printf("Client %d Adding for rm %d at op_i %d and wr_ i %d on slot %d, offset %llu, key with tag %d\n",
+//				// local_client_id, rm_id, op_i, wr_i, coalesce_struct[rm_id].slots, ops[cl_op_i].value + (HERD_GET_REQ_SIZE * (cl_slots - 2)),
+//				// ops[op_i].key.tag);
+//      if (coalesce_struct[rm_id].slots == MAX_COALESCE_PER_MACH) coalesce_struct[rm_id].slots = 0;
+//      resp[op_i].type = ST_EMPTY;
+//      (*op_i_ptr)++;
+//      return true;
+//			// green_printf("OP_i %d Opcode %d, referring wr %d, wr size %d \n", coalesce_struct[rm_id].op_i, ops[coalesce_struct[rm_id].op_i].opcode,
+//			// 						coalesce_struct[rm_id].wr_i, rem_send_sgl[coalesce_struct[rm_id].wr_i].length);
+//    }
+//  }
+//	return false;
+//}
+//
+//// Client logic to issue the local requests
+//static inline void issue_locals(uint16_t wn, uint16_t* ws, uint16_t local_client_id, uint32_t size_of_op, uint16_t worker_id,
+//								uint8_t* per_worker_outstanding, long long* remote_for_each_worker, struct extended_cache_op* ops,
+//								struct extended_cache_op* next_ops, struct mica_resp* resp, struct mica_resp* next_resp,
+//								struct key_home* key_homes, struct key_home* next_key_homes, uint16_t op_i, uint16_t* next_op_i,
+//                uint16_t local_worker_id, struct latency_flags* latency_info, struct timespec* start,
+//								struct local_latency* local_measure)
+//{
+//	if (ENABLE_LOCAL_WORKERS) {
+//		wn = local_worker_id;
+//		int rm_id = worker_id / WORKERS_PER_MACHINE;
+//		worker_id = rm_id * WORKERS_PER_MACHINE + wn;
+//	}
+//	else if (ENABLE_WORKERS_CRCW && ENABLE_STATIC_LOCAL_ALLOCATION) {
+//		wn = local_client_id % WORKERS_PER_MACHINE;
+//		int rm_id = worker_id / WORKERS_PER_MACHINE;
+//		worker_id = rm_id * WORKERS_PER_MACHINE + wn;
+//	}
+//	if (DISABLE_LOCALS == 1 && ENABLE_ASSERTIONS == 1) assert (false);
+//	int offset = OFFSET(wn, local_client_id, ws[wn]);
+//	uint8_t loc_region = (offset % LOCAL_WINDOW) / LOCAL_REGION_SIZE;
+//
+//	if (local_recv_flag[wn][local_client_id][loc_region] == 0) {
+//		if ((MEASURE_LATENCY == 1) && ((latency_info->measured_req_flag) == LOCAL_REQ) &&
+//				(op_i == (latency_info->last_measured_op_i))) {
+//			local_measure->measured_local_region = loc_region;
+////			yellow_printf("Issuing a local req: op_i: %d, local_region %d \n",
+////										latency_info->last_measured_op_i, local_measure->measured_local_region);
+//		}
+//		memcpy((struct mica_op*) local_req_region + offset, ops + op_i, size_of_op);
+////		printf("op opcode %d local opcode %d, size_of op %d \n", ops[op_i].opcode, local_req_region[offset].opcode, size_of_op);
+//		if (ENABLE_ASSERTIONS) assert(local_req_region[offset].opcode == MICA_OP_GET ||
+//																			local_req_region[offset].opcode == MICA_OP_PUT);
+//		if (ws[wn] % LOCAL_REGION_SIZE == LOCAL_REGION_SIZE - 1) {
+//			local_recv_flag[wn][local_client_id][loc_region] = 1;
+//			if ((MEASURE_LATENCY == 1) && ((latency_info->measured_req_flag) == LOCAL_REQ) &&
+//					((local_measure->measured_local_region) == (loc_region))) {
+//				local_measure->local_latency_start_polling = 1;
+//				local_measure->flag_to_poll = (char*)(&local_recv_flag[wn][local_client_id][loc_region]);
+////				yellow_printf("Enable polling for local req on region %d, flag ptr %llu \n ",
+////											local_measure->measured_local_region, local_measure->flag_to_poll);
+//			}
+//			// yellow_printf("Lock: client  %d,  region %d for worker %d\n", local_client_id, loc_region, wn);
+//		}
+//		// yellow_printf("Client %d I issue a local req to worker %d with opcode %d at offset %d, region %d\n",
+//				// clt_gid, wn, ops[op_i].opcode, offset, loc_region);
+//
+//		if (ws[wn] == 0)  per_worker_outstanding[worker_id] = 1;
+//		else per_worker_outstanding[worker_id]++;
+//		remote_for_each_worker[worker_id]++;
+//		w_stats[local_client_id].locals_per_worker++;
+//		HRD_MOD_ADD(ws[wn], LOCAL_WINDOW);
+//		resp[op_i].type = ST_EMPTY;
+//	}
+//	else {
+//		copy_op_to_next_op(ops, next_ops, resp, next_resp, key_homes, next_key_homes, op_i, next_op_i, latency_info, NULL);
+//	}
+//}
 
 // Post Receives for coherence and then Send out the credits
 static inline void send_credits(uint16_t credit_wr_i, struct ibv_sge* coh_recv_sgl, struct hrd_ctrl_blk* cb,
@@ -636,445 +584,445 @@ static inline void send_credits(uint16_t credit_wr_i, struct ibv_sge* coh_recv_s
 	ret = ibv_post_send(cb->dgram_qp[FC_UD_QP_ID], &credit_send_wr[0], &bad_send_wr);
 	CPE(ret, "ibv_post_send error in credits", ret);
 }
-
-/* Poll the remote recv q to find enough credits to for the smaler batch allowed
-			---------------UNTESTED-------------------------- */
-static inline void find_responses_to_enable_multi_batching(double empty_req_percentage, struct hrd_ctrl_blk* cb,
-																struct ibv_wc* wc, uint8_t* per_worker_outstanding, uint32_t* outstanding_rem_reqs,
-																uint16_t local_client_id)
-{
-	uint16_t j;
-	uint32_t min_batch_ability;
-	int responses_found = 0;
-	// BACK-OFF Mechanism to make sure the buffer will get a chance to empty
-	if (empty_req_percentage < MIN_EMPTY_PERCENTAGE)
-		min_batch_ability = MAX_OUTSTANDING_REQS - 1;
-	else min_batch_ability = MINIMUM_BATCH_ABILITY;
-
-	/* Poll for whatever responses are ready until there are enough credits,
-	 	such that the minimum-size can be created */
-	do {
-		responses_found = ibv_poll_cq(cb->dgram_recv_cq[REMOTE_UD_QP_ID], MAX_OUTSTANDING_REQS, wc);
-		if(responses_found != 0) {
-			if(wc[responses_found -1].status != 0) {
-				fprintf(stderr, "Polling remote recv req: Bad wc status %d\n", wc[responses_found -1].status);
-				exit(0);
-			}
-			for (j = 0; j < responses_found; j++) {
-				if (ENABLE_ASSERTIONS == 1) assert(wc[j].imm_data < WORKER_NUM);
-				per_worker_outstanding[wc[j].imm_data]--;
-				if (ENABLE_ASSERTIONS == 1) assert(per_worker_outstanding[wc[j].imm_data] <= WS_PER_WORKER);
-			}
-		}
-		(*outstanding_rem_reqs) -= responses_found;
-		if (ENABLE_ASSERTIONS == 1) assert((*outstanding_rem_reqs) <= MAX_OUTSTANDING_REQS);
-		c_stats[local_client_id].stalled_time_per_client++;
-	} while (MAX_OUTSTANDING_REQS - (*outstanding_rem_reqs) < min_batch_ability);
-}
-
-/* Handle the lack of credits for a remote request by either breaking,
- going to the next req, or picking another receipient */ // TODO test the balance reqs
-static inline enum control_flow_directive handle_lack_of_credits_for_remotes(struct extended_cache_op* ops, struct extended_cache_op* next_ops, struct mica_resp* resp,
-														struct mica_resp* next_resp, struct key_home* key_homes, struct key_home* next_key_homes,
-														uint16_t* op_i, uint16_t* next_op_i, uint16_t local_client_id, struct ibv_send_wr* rem_send_wr,
-														uint16_t* wn, uint16_t* worker_id, uint16_t rm_id, uint8_t* per_worker_outstanding, uint16_t wr_i,
-														uint32_t outstanding_rem_reqs, struct latency_flags* latency_info)
-{
-	uint16_t i;
-	per_worker_outstanding[(*worker_id)]--;
-	if ((outstanding_rem_reqs + wr_i) >= MAX_OUTSTANDING_REQS) { //   the client has no credits at all
-		rem_send_wr[wr_i - 1].next = NULL;
-		copy_op_to_next_op(ops, next_ops, resp, next_resp, key_homes, next_key_homes, (*op_i), next_op_i, latency_info, NULL);
-		(*op_i)++;
-		return break_;
-	}
-	else {
-		if (BALANCE_REQS == 1) { // option 1: send to an alternative worker TODO test this!
-//			printf(" %d %d\n", outstanding_rem_reqs + wr_i + 1, MAX_OUTSTANDING_REQS);
-//			if (ENABLE_ASSERTIONS == 1) assert(outstanding_rem_reqs + wr_i > MAX_OUTSTANDING_REQS);
-			for (i = 0; i < WORKERS_PER_MACHINE; i++) {
-				if (per_worker_outstanding[rm_id * WORKERS_PER_MACHINE + i] < WS_PER_WORKER) {
-//					printf("previous worker %d, new worker %d \n", (*wn), i);
-					(*wn) = i;
-					break;
-				}
-			}
-			(*worker_id) = rm_id * WORKERS_PER_MACHINE + (*wn);
-			per_worker_outstanding[(*worker_id)]++;
-//			printf("new worker id %d\n", (*worker_id));
-			return no_cf_change;
-		}
-		else if (FINISH_BATCH_ON_MISSING_CREDIT == 1) { //option 2: finish the batch
-			rem_send_wr[wr_i - 1].next = NULL; /* Make sure to end the batch on the last WR*/
-			copy_op_to_next_op(ops, next_ops,resp, next_resp, key_homes, next_key_homes, (*op_i), next_op_i, latency_info, NULL);
-			(*op_i)++;
-			return break_;
-		}
-		else { // option 3: skip this request
-			copy_op_to_next_op(ops, next_ops, resp, next_resp, key_homes, next_key_homes, (*op_i), next_op_i, latency_info, NULL);
-			(*op_i)++;
-			return continue_;
-		}
-	}
-}
+//
+///* Poll the remote recv q to find enough credits to for the smaler batch allowed
+//			---------------UNTESTED-------------------------- */
+//static inline void find_responses_to_enable_multi_batching(double empty_req_percentage, struct hrd_ctrl_blk* cb,
+//																struct ibv_wc* wc, uint8_t* per_worker_outstanding, uint32_t* outstanding_rem_reqs,
+//																uint16_t local_client_id)
+//{
+//	uint16_t j;
+//	uint32_t min_batch_ability;
+//	int responses_found = 0;
+//	// BACK-OFF Mechanism to make sure the buffer will get a chance to empty
+//	if (empty_req_percentage < MIN_EMPTY_PERCENTAGE)
+//		min_batch_ability = MAX_OUTSTANDING_REQS - 1;
+//	else min_batch_ability = MINIMUM_BATCH_ABILITY;
+//
+//	/* Poll for whatever responses are ready until there are enough credits,
+//	 	such that the minimum-size can be created */
+//	do {
+//		responses_found = ibv_poll_cq(cb->dgram_recv_cq[REMOTE_UD_QP_ID], MAX_OUTSTANDING_REQS, wc);
+//		if(responses_found != 0) {
+//			if(wc[responses_found -1].status != 0) {
+//				fprintf(stderr, "Polling remote recv req: Bad wc status %d\n", wc[responses_found -1].status);
+//				exit(0);
+//			}
+//			for (j = 0; j < responses_found; j++) {
+//				if (ENABLE_ASSERTIONS == 1) assert(wc[j].imm_data < WORKER_NUM);
+//				per_worker_outstanding[wc[j].imm_data]--;
+//				if (ENABLE_ASSERTIONS == 1) assert(per_worker_outstanding[wc[j].imm_data] <= WS_PER_WORKER);
+//			}
+//		}
+//		(*outstanding_rem_reqs) -= responses_found;
+//		if (ENABLE_ASSERTIONS == 1) assert((*outstanding_rem_reqs) <= MAX_OUTSTANDING_REQS);
+//		w_stats[local_client_id].stalled_time_per_worker++;
+//	} while (MAX_OUTSTANDING_REQS - (*outstanding_rem_reqs) < min_batch_ability);
+//}
+//
+///* Handle the lack of credits for a remote request by either breaking,
+// going to the next req, or picking another receipient */ // TODO test the balance reqs
+//static inline enum control_flow_directive handle_lack_of_credits_for_remotes(struct extended_cache_op* ops, struct extended_cache_op* next_ops, struct mica_resp* resp,
+//														struct mica_resp* next_resp, struct key_home* key_homes, struct key_home* next_key_homes,
+//														uint16_t* op_i, uint16_t* next_op_i, uint16_t local_client_id, struct ibv_send_wr* rem_send_wr,
+//														uint16_t* wn, uint16_t* worker_id, uint16_t rm_id, uint8_t* per_worker_outstanding, uint16_t wr_i,
+//														uint32_t outstanding_rem_reqs, struct latency_flags* latency_info)
+//{
+//	uint16_t i;
+//	per_worker_outstanding[(*worker_id)]--;
+//	if ((outstanding_rem_reqs + wr_i) >= MAX_OUTSTANDING_REQS) { //   the client has no credits at all
+//		rem_send_wr[wr_i - 1].next = NULL;
+//		copy_op_to_next_op(ops, next_ops, resp, next_resp, key_homes, next_key_homes, (*op_i), next_op_i, latency_info, NULL);
+//		(*op_i)++;
+//		return break_;
+//	}
+//	else {
+//		if (BALANCE_REQS == 1) { // option 1: send to an alternative worker TODO test this!
+////			printf(" %d %d\n", outstanding_rem_reqs + wr_i + 1, MAX_OUTSTANDING_REQS);
+////			if (ENABLE_ASSERTIONS == 1) assert(outstanding_rem_reqs + wr_i > MAX_OUTSTANDING_REQS);
+//			for (i = 0; i < WORKERS_PER_MACHINE; i++) {
+//				if (per_worker_outstanding[rm_id * WORKERS_PER_MACHINE + i] < WS_PER_WORKER) {
+////					printf("previous worker %d, new worker %d \n", (*wn), i);
+//					(*wn) = i;
+//					break;
+//				}
+//			}
+//			(*worker_id) = rm_id * WORKERS_PER_MACHINE + (*wn);
+//			per_worker_outstanding[(*worker_id)]++;
+////			printf("new worker id %d\n", (*worker_id));
+//			return no_cf_change;
+//		}
+//		else if (FINISH_BATCH_ON_MISSING_CREDIT == 1) { //option 2: finish the batch
+//			rem_send_wr[wr_i - 1].next = NULL; /* Make sure to end the batch on the last WR*/
+//			copy_op_to_next_op(ops, next_ops,resp, next_resp, key_homes, next_key_homes, (*op_i), next_op_i, latency_info, NULL);
+//			(*op_i)++;
+//			return break_;
+//		}
+//		else { // option 3: skip this request
+//			copy_op_to_next_op(ops, next_ops, resp, next_resp, key_homes, next_key_homes, (*op_i), next_op_i, latency_info, NULL);
+//			(*op_i)++;
+//			return continue_;
+//		}
+//	}
+//}
+//
+////
+//static inline void forge_remote_wr(uint16_t wr_i, uint16_t op_i, uint16_t wn, uint16_t rm_id, uint16_t local_client_id, uint16_t size_of_op,
+//												struct hrd_ctrl_blk* cb, struct ibv_send_wr* rem_send_wr, struct ibv_sge* rem_send_sgl, struct extended_cache_op* ops,
+//												struct ibv_wc* wc, long long remote_tot_tx, uint16_t worker_id, uint16_t worker_qp_i)
+//{
+//	rem_send_wr[wr_i].wr.ud.ah = remote_wrkr_qp[worker_qp_i][worker_id].ah;
+//	rem_send_wr[wr_i].wr.ud.remote_qpn = remote_wrkr_qp[worker_qp_i][worker_id].qpn;
+//	rem_send_sgl[wr_i].length = size_of_op;
+//	rem_send_sgl[wr_i].addr = (uint64_t) (uintptr_t) (ops + op_i);
+////  yellow_printf("Client %d: Remote op %d with key bkt %u , machine %d , worker %d, ud_qp %d, opcode %d  \n", local_client_id, op_i, ops[op_i].key.bkt,
+////	 				rm_id, wn, worker_qp_i,ops[op_i].opcode);
+//
+//	if (wr_i > 0) rem_send_wr[wr_i - 1].next = &rem_send_wr[wr_i];
+//	if (CLIENT_ENABLE_INLINING == 0)
+//		rem_send_wr[wr_i].send_flags = ops[op_i].opcode == CACHE_OP_PUT ? 0 :
+//			(ENABLE_INLINE_GET_REQS == 1 ? IBV_SEND_INLINE : 0);
+//	else rem_send_wr[wr_i].send_flags = IBV_SEND_INLINE; // this is necessary to delete the SIGNALED flag
+//
+//	if (((remote_tot_tx + wr_i ) % CLIENT_SS_BATCH) == 0) {
+////		yellow_printf(" message %d, signaled \n", remote_tot_tx + wr_i);
+//		rem_send_wr[wr_i].send_flags |= IBV_SEND_SIGNALED;
+//	}
+//
+//	if (((remote_tot_tx + wr_i ) % CLIENT_SS_BATCH) == CLIENT_SS_BATCH - 1) {
+////		yellow_printf(" message %d, polling \n", remote_tot_tx + wr_i);
+//		hrd_poll_cq(cb->dgram_send_cq[REMOTE_UD_QP_ID], 1, wc);
+//	}
+//}
+//
+//// Handle all cold requests: issue the locals erquests and create the remote work requests
+//// move to the next op buffer all requests that can not be serviced this cycle
+//static inline uint16_t handle_cold_requests(struct extended_cache_op* ops, struct extended_cache_op* next_ops, struct mica_resp* resp,
+//														struct mica_resp* next_resp, struct key_home* key_homes, struct key_home* next_key_homes,
+//														uint16_t* rem_req_i, uint16_t* next_op_i, struct hrd_ctrl_blk* cb, struct ibv_send_wr* rem_send_wr,
+//														struct ibv_sge* rem_send_sgl, struct ibv_wc* wc, long long remote_tot_tx, uint16_t worker_qp_i,
+//														uint8_t* per_worker_outstanding, uint32_t* outstanding_rem_reqs, long long* remote_for_each_worker,
+//														uint16_t* ws, int clt_gid, uint16_t local_client_id, uint16_t* stalled_ops_i, uint16_t local_worker_id,
+//                            int protocol, struct latency_flags* latency_info, struct timespec* start, struct local_latency* local_measure,
+//														uint16_t* hottest_keys_pointers)
+//{
+//	uint16_t op_i = 0, i, j, wr_i = 0, rm_id, wn, worker_id;
+//	uint32_t size_of_op;
+//	struct coalesce_inf coalesce_struct[MACHINE_NUM] = {0};
+//	while ((*rem_req_i) < WINDOW_SIZE && op_i < CACHE_BATCH_SIZE) {
+//		if (DISABLE_CACHE != 1) {
+//			if (protocol == STRONG_CONSISTENCY)
+//				cache_hit_bookkeeping_SC(ops, next_ops, resp, next_resp, key_homes, next_key_homes,
+//												&op_i, next_op_i, stalled_ops_i, local_client_id, latency_info,
+//												hottest_keys_pointers);
+//			else if (protocol == EVENTUAL)
+//				cache_hit_bookkeeping_EC(ops, next_ops, resp, next_resp, key_homes, next_key_homes,
+//													&op_i, next_op_i, local_client_id, latency_info,
+//																 hottest_keys_pointers);
+//		}
+//		//Check to see whether the batch of reqs is over
+//		if (op_i >= CACHE_BATCH_SIZE) {
+//			if (wr_i > 0) rem_send_wr[wr_i - 1].next = NULL;
+//			break;
+//		}
+//
+//		//Error checking
+//		if (ENABLE_ASSERTIONS == 1) {
+//			if (ops[op_i].opcode != CACHE_OP_GET && ops[op_i].opcode != CACHE_OP_PUT)
+//				printf("Wrong Opcode %d, pointer %d\n", ops[op_i].opcode, op_i);
+//			if (ops[op_i].opcode == CACHE_OP_PUT) assert(ops[op_i].val_len == (HERD_VALUE_SIZE >> SHIFT_BITS));
+//		}
+//
+//		resp[op_i].type = UNSERVED_CACHE_MISS;
+//		rm_id = key_homes[op_i].machine;	/* Choose a remote machine */
+//		if (ENABLE_ASSERTIONS == 1) assert(DISABLE_LOCALS == 0 || rm_id != machine_id);
+//		if (ENABLE_THREAD_PARTITIONING_C_TO_W == 1) wn = (local_client_id + machine_id) % ACTIVE_WORKERS_PER_MACHINE;//
+//		else wn = key_homes[op_i].worker % ACTIVE_WORKERS_PER_MACHINE;	/* Choose a worker */
+//		worker_id = rm_id * WORKERS_PER_MACHINE + wn;
+//		size_of_op = ops[op_i].opcode == CACHE_OP_PUT ? HERD_PUT_REQ_SIZE : HERD_GET_REQ_SIZE;
+//
+//
+//		/*------------------------------ LOCAL REQUESTS--------------------------------*/
+//		if (rm_id == machine_id) {
+//			issue_locals(wn, ws, local_client_id, size_of_op, worker_id, per_worker_outstanding,
+//									 remote_for_each_worker, ops, next_ops, resp, next_resp, key_homes, next_key_homes,
+//									 op_i, next_op_i, local_worker_id, latency_info,
+//									 start, local_measure);
+//			op_i++;
+//			continue;
+//		}
+//		// overload part of the key to write the clt_gid
+//		struct remote_meta* tmp =  (struct remote_meta*) &ops[op_i].key.meta;
+//		tmp->clt_gid = clt_gid;
+//
+//
+//		//---------------------------------DO COALESCING-----------------------------------------
+//		if (ENABLE_COALESCING) {
+//			if (vector_read(ops, coalesce_struct, &op_i, wr_i, rm_id, size_of_op, rem_send_sgl, resp, local_client_id, per_worker_outstanding[worker_id], rem_send_wr)) {
+//				(*rem_req_i)++;
+//				continue;
+//			}
+//		}
+//
+//		per_worker_outstanding[worker_id]++;
+//		if (per_worker_outstanding[worker_id] > WS_PER_WORKER ) {
+////			printf("outstanding %d for worker %d \n", per_worker_outstanding[worker_id], worker_id);
+//			enum control_flow_directive cf = handle_lack_of_credits_for_remotes(ops, next_ops, resp,
+//														next_resp, key_homes, next_key_homes, &op_i, next_op_i, local_client_id, rem_send_wr,
+//														&wn, &worker_id, rm_id, per_worker_outstanding, wr_i, *outstanding_rem_reqs, latency_info);
+//			if (cf == continue_) continue;
+//			else if (cf == break_) break;
+//		}
+//
+//		remote_for_each_worker[worker_id]++;
+//		/* Forge the RDMA work request */
+//		forge_remote_wr(wr_i, op_i, wn, rm_id, local_client_id, size_of_op, cb, rem_send_wr, rem_send_sgl, ops,
+//											wc, remote_tot_tx, worker_id, worker_qp_i);
+//
+//		wr_i++;
+//		(*rem_req_i)++;
+//		resp[op_i].type = ST_EMPTY;
+//		op_i++;
+//	} // end while() for remotes
+//
+//	// Run through the rest of the ops to remove the cache hits here
+//	if (protocol == STRONG_CONSISTENCY)
+//		run_through_rest_of_ops_SC(ops, next_ops, resp, next_resp, key_homes, next_key_homes,
+//															 &op_i, next_op_i, stalled_ops_i, local_client_id, latency_info,
+//															 hottest_keys_pointers);
+//	else if (protocol == EVENTUAL)
+//		run_through_rest_of_ops_EC(ops, next_ops, resp, next_resp, key_homes, next_key_homes,
+//															 &op_i, next_op_i, local_client_id, latency_info,
+//															 hottest_keys_pointers);
+//	poll_local_req_for_latency_measurement(latency_info, start, local_measure);
+//
+//	return wr_i;
+//}
 
 //
-static inline void forge_remote_wr(uint16_t wr_i, uint16_t op_i, uint16_t wn, uint16_t rm_id, uint16_t local_client_id, uint16_t size_of_op,
-												struct hrd_ctrl_blk* cb, struct ibv_send_wr* rem_send_wr, struct ibv_sge* rem_send_sgl, struct extended_cache_op* ops,
-												struct ibv_wc* wc, long long remote_tot_tx, uint16_t worker_id, uint16_t worker_qp_i)
-{
-	rem_send_wr[wr_i].wr.ud.ah = remote_wrkr_qp[worker_qp_i][worker_id].ah;
-	rem_send_wr[wr_i].wr.ud.remote_qpn = remote_wrkr_qp[worker_qp_i][worker_id].qpn;
-	rem_send_sgl[wr_i].length = size_of_op;
-	rem_send_sgl[wr_i].addr = (uint64_t) (uintptr_t) (ops + op_i);
-//  yellow_printf("Client %d: Remote op %d with key bkt %u , machine %d , worker %d, ud_qp %d, opcode %d  \n", local_client_id, op_i, ops[op_i].key.bkt,
-//	 				rm_id, wn, worker_qp_i,ops[op_i].opcode);
+///* Poll for receive compeltions for answers to remote requests and then
+//	 send the new batch of remote requests to the NIC */
+//static inline void poll_and_send_remotes(uint16_t previous_wr_i, uint16_t local_client_id, uint32_t* outstanding_rem_reqs,
+//												struct hrd_ctrl_blk* cb, struct ibv_wc* wc, uint16_t prev_rem_req_i, uint16_t wr_i,
+//												struct ibv_send_wr* rem_send_wr, uint16_t rem_req_i, long long* remote_tot_tx,
+//												struct ibv_sge* rem_send_sgl, struct latency_flags* latency_info, struct timespec* start)
+//{
+//	int ret;
+//	struct ibv_send_wr* bad_send_wr;
+//	uint16_t i,j;
+//	//Poll for remote request receive completions
+//	if (ENABLE_MULTI_BATCHES == 0) {
+//		if(previous_wr_i > 0) {
+////			if (local_client_id == 0) printf("polling remote recv compeltions %d \n", prev_rem_req_i);
+//			w_stats[local_client_id].stalled_time_per_worker +=
+//					hrd_poll_cq(cb->dgram_recv_cq[REMOTE_UD_QP_ID], prev_rem_req_i, wc);
+//			// if (local_client_id == 0) printf("polled %d\n", prev_rem_req_i );
+//			*outstanding_rem_reqs -= previous_wr_i;
+//			if (ENABLE_ASSERTIONS) assert(prev_rem_req_i <= MAX_REMOTE_RECV_WCS);
+//		  if ((MEASURE_LATENCY == 1) && ((latency_info->measured_req_flag) == REMOTE_REQ)) {
+//				report_remote_latency(latency_info, prev_rem_req_i, wc, start);
+//			 }
+//		}
+//	}
+//
+//	// Send remote requests
+//	if (wr_i > 0) {
+//		if (ENABLE_ASSERTIONS) {
+//			if (rem_req_i > 0) assert(wr_i > 0);
+//			assert(rem_req_i <= wr_i * MAX_COALESCE_PER_MACH);
+//			assert(wr_i <= WORKERS_PER_MACHINE * WS_PER_WORKER * (MACHINE_NUM- 1));
+//			assert(wr_i <= WINDOW_SIZE);
+//		}
+//		if (DEBUG_COALESCING && ENABLE_COALESCING)
+//			debug_coalescing(rem_send_sgl, local_client_id, rem_req_i, wr_i);
+////		yellow_printf("Sending %d messages \n", wr_i);
+//		rem_send_wr[wr_i - 1].next = NULL;
+//		ret = ibv_post_send(cb->dgram_qp[REMOTE_UD_QP_ID], &rem_send_wr[0], &bad_send_wr);
+//		if (ENABLE_ASSERTIONS && ret != 0)
+//			 printf("Batch size: %d, already outstanding %d  \n", wr_i, *outstanding_rem_reqs);
+//		CPE(ret, "Sending Remotes: ibv_post_send error", ret);
+//		// if (MEASURE_LATENCY == 1) rem_send_wr[last_measured_wr_i].imm_data = clt_gid;
+//		w_stats[local_client_id].remote_messages_per_worker += wr_i;
+////		if (ENABLE_WORKER_COALESCING == 0)
+////			c_stats[local_client_id].remotes_per_client += wr_i;
+//			*outstanding_rem_reqs += wr_i;
+//		if (ENABLE_ASSERTIONS == 1) {
+//			if (*outstanding_rem_reqs > MAX_OUTSTANDING_REQS) {
+//				yellow_printf("Clt %d, wr_i: %d, outstanding_rem_reqs %d \n",
+//				local_client_id, wr_i,	*outstanding_rem_reqs);
+//				assert(0);
+//			}
+//		}
+//		(*remote_tot_tx) += wr_i; // used for Selective Signaling -- DONT CHANGE!
+//		w_stats[local_client_id].batches_per_worker++;
+//
+//	}
+//	else if (ENABLE_STAT_COUNTING == 1) w_stats[local_client_id].wasted_loops++;
+//}
 
-	if (wr_i > 0) rem_send_wr[wr_i - 1].next = &rem_send_wr[wr_i];
-	if (CLIENT_ENABLE_INLINING == 0)
-		rem_send_wr[wr_i].send_flags = ops[op_i].opcode == CACHE_OP_PUT ? 0 :
-			(ENABLE_INLINE_GET_REQS == 1 ? IBV_SEND_INLINE : 0);
-	else rem_send_wr[wr_i].send_flags = IBV_SEND_INLINE; // this is necessary to delete the SIGNALED flag
-
-	if (((remote_tot_tx + wr_i ) % CLIENT_SS_BATCH) == 0) {
-//		yellow_printf(" message %d, signaled \n", remote_tot_tx + wr_i);
-		rem_send_wr[wr_i].send_flags |= IBV_SEND_SIGNALED;
-	}
-
-	if (((remote_tot_tx + wr_i ) % CLIENT_SS_BATCH) == CLIENT_SS_BATCH - 1) {
-//		yellow_printf(" message %d, polling \n", remote_tot_tx + wr_i);
-		hrd_poll_cq(cb->dgram_send_cq[REMOTE_UD_QP_ID], 1, wc);
-	}
-}
-
-// Handle all cold requests: issue the locals erquests and create the remote work requests
-// move to the next op buffer all requests that can not be serviced this cycle
-static inline uint16_t handle_cold_requests(struct extended_cache_op* ops, struct extended_cache_op* next_ops, struct mica_resp* resp,
-														struct mica_resp* next_resp, struct key_home* key_homes, struct key_home* next_key_homes,
-														uint16_t* rem_req_i, uint16_t* next_op_i, struct hrd_ctrl_blk* cb, struct ibv_send_wr* rem_send_wr,
-														struct ibv_sge* rem_send_sgl, struct ibv_wc* wc, long long remote_tot_tx, uint16_t worker_qp_i,
-														uint8_t* per_worker_outstanding, uint32_t* outstanding_rem_reqs, long long* remote_for_each_worker,
-														uint16_t* ws, int clt_gid, uint16_t local_client_id, uint16_t* stalled_ops_i, uint16_t local_worker_id,
-                            int protocol, struct latency_flags* latency_info, struct timespec* start, struct local_latency* local_measure,
-														uint16_t* hottest_keys_pointers)
-{
-	uint16_t op_i = 0, i, j, wr_i = 0, rm_id, wn, worker_id;
-	uint32_t size_of_op;
-	struct coalesce_inf coalesce_struct[MACHINE_NUM] = {0};
-	while ((*rem_req_i) < WINDOW_SIZE && op_i < CACHE_BATCH_SIZE) {
-		if (DISABLE_CACHE != 1) {
-			if (protocol == STRONG_CONSISTENCY)
-				cache_hit_bookkeeping_SC(ops, next_ops, resp, next_resp, key_homes, next_key_homes,
-												&op_i, next_op_i, stalled_ops_i, local_client_id, latency_info,
-												hottest_keys_pointers);
-			else if (protocol == EVENTUAL)
-				cache_hit_bookkeeping_EC(ops, next_ops, resp, next_resp, key_homes, next_key_homes,
-													&op_i, next_op_i, local_client_id, latency_info,
-																 hottest_keys_pointers);
-		}
-		//Check to see whether the batch of reqs is over
-		if (op_i >= CACHE_BATCH_SIZE) {
-			if (wr_i > 0) rem_send_wr[wr_i - 1].next = NULL;
-			break;
-		}
-
-		//Error checking
-		if (ENABLE_ASSERTIONS == 1) {
-			if (ops[op_i].opcode != CACHE_OP_GET && ops[op_i].opcode != CACHE_OP_PUT)
-				printf("Wrong Opcode %d, pointer %d\n", ops[op_i].opcode, op_i);
-			if (ops[op_i].opcode == CACHE_OP_PUT) assert(ops[op_i].val_len == (HERD_VALUE_SIZE >> SHIFT_BITS));
-		}
-
-		resp[op_i].type = UNSERVED_CACHE_MISS;
-		rm_id = key_homes[op_i].machine;	/* Choose a remote machine */
-		if (ENABLE_ASSERTIONS == 1) assert(DISABLE_LOCALS == 0 || rm_id != machine_id);
-		if (ENABLE_THREAD_PARTITIONING_C_TO_W == 1) wn = (local_client_id + machine_id) % ACTIVE_WORKERS_PER_MACHINE;//
-		else wn = key_homes[op_i].worker % ACTIVE_WORKERS_PER_MACHINE;	/* Choose a worker */
-		worker_id = rm_id * WORKERS_PER_MACHINE + wn;
-		size_of_op = ops[op_i].opcode == CACHE_OP_PUT ? HERD_PUT_REQ_SIZE : HERD_GET_REQ_SIZE;
-
-
-		/*------------------------------ LOCAL REQUESTS--------------------------------*/
-		if (rm_id == machine_id) {
-			issue_locals(wn, ws, local_client_id, size_of_op, worker_id, per_worker_outstanding,
-									 remote_for_each_worker, ops, next_ops, resp, next_resp, key_homes, next_key_homes,
-									 op_i, next_op_i, local_worker_id, latency_info,
-									 start, local_measure);
-			op_i++;
-			continue;
-		}
-		// overload part of the key to write the clt_gid
-		struct remote_meta* tmp =  (struct remote_meta*) &ops[op_i].key.meta;
-		tmp->clt_gid = clt_gid;
-
-
-		//---------------------------------DO COALESCING-----------------------------------------
-		if (ENABLE_COALESCING) {
-			if (vector_read(ops, coalesce_struct, &op_i, wr_i, rm_id, size_of_op, rem_send_sgl, resp, local_client_id, per_worker_outstanding[worker_id], rem_send_wr)) {
-				(*rem_req_i)++;
-				continue;
-			}
-		}
-
-		per_worker_outstanding[worker_id]++;
-		if (per_worker_outstanding[worker_id] > WS_PER_WORKER ) {
-//			printf("outstanding %d for worker %d \n", per_worker_outstanding[worker_id], worker_id);
-			enum control_flow_directive cf = handle_lack_of_credits_for_remotes(ops, next_ops, resp,
-														next_resp, key_homes, next_key_homes, &op_i, next_op_i, local_client_id, rem_send_wr,
-														&wn, &worker_id, rm_id, per_worker_outstanding, wr_i, *outstanding_rem_reqs, latency_info);
-			if (cf == continue_) continue;
-			else if (cf == break_) break;
-		}
-
-		remote_for_each_worker[worker_id]++;
-		/* Forge the RDMA work request */
-		forge_remote_wr(wr_i, op_i, wn, rm_id, local_client_id, size_of_op, cb, rem_send_wr, rem_send_sgl, ops,
-											wc, remote_tot_tx, worker_id, worker_qp_i);
-
-		wr_i++;
-		(*rem_req_i)++;
-		resp[op_i].type = EMPTY;
-		op_i++;
-	} // end while() for remotes
-
-	// Run through the rest of the ops to remove the cache hits here
-	if (protocol == STRONG_CONSISTENCY)
-		run_through_rest_of_ops_SC(ops, next_ops, resp, next_resp, key_homes, next_key_homes,
-															 &op_i, next_op_i, stalled_ops_i, local_client_id, latency_info,
-															 hottest_keys_pointers);
-	else if (protocol == EVENTUAL)
-		run_through_rest_of_ops_EC(ops, next_ops, resp, next_resp, key_homes, next_key_homes,
-															 &op_i, next_op_i, local_client_id, latency_info,
-															 hottest_keys_pointers);
-	poll_local_req_for_latency_measurement(latency_info, start, local_measure);
-
-	return wr_i;
-}
-
-
-/* Poll for receive compeltions for answers to remote requests and then
-	 send the new batch of remote requests to the NIC */
-static inline void poll_and_send_remotes(uint16_t previous_wr_i, uint16_t local_client_id, uint32_t* outstanding_rem_reqs,
-												struct hrd_ctrl_blk* cb, struct ibv_wc* wc, uint16_t prev_rem_req_i, uint16_t wr_i,
-												struct ibv_send_wr* rem_send_wr, uint16_t rem_req_i, long long* remote_tot_tx,
-												struct ibv_sge* rem_send_sgl, struct latency_flags* latency_info, struct timespec* start)
-{
-	int ret;
-	struct ibv_send_wr* bad_send_wr;
-	uint16_t i,j;
-	//Poll for remote request receive completions
-	if (ENABLE_MULTI_BATCHES == 0) {
-		if(previous_wr_i > 0) {
-//			if (local_client_id == 0) printf("polling remote recv compeltions %d \n", prev_rem_req_i);
-			c_stats[local_client_id].stalled_time_per_client +=
-					hrd_poll_cq(cb->dgram_recv_cq[REMOTE_UD_QP_ID], prev_rem_req_i, wc);
-			// if (local_client_id == 0) printf("polled %d\n", prev_rem_req_i );
-			*outstanding_rem_reqs -= previous_wr_i;
-			if (ENABLE_ASSERTIONS) assert(prev_rem_req_i <= MAX_REMOTE_RECV_WCS);
-		  if ((MEASURE_LATENCY == 1) && ((latency_info->measured_req_flag) == REMOTE_REQ)) {
-				report_remote_latency(latency_info, prev_rem_req_i, wc, start);
-			 }
-		}
-	}
-
-	// Send remote requests
-	if (wr_i > 0) {
-		if (ENABLE_ASSERTIONS) {
-			if (rem_req_i > 0) assert(wr_i > 0);
-			assert(rem_req_i <= wr_i * MAX_COALESCE_PER_MACH);
-			assert(wr_i <= WORKERS_PER_MACHINE * WS_PER_WORKER * (MACHINE_NUM- 1));
-			assert(wr_i <= WINDOW_SIZE);
-		}
-		if (DEBUG_COALESCING && ENABLE_COALESCING)
-			debug_coalescing(rem_send_sgl, local_client_id, rem_req_i, wr_i);
-//		yellow_printf("Sending %d messages \n", wr_i);
-		rem_send_wr[wr_i - 1].next = NULL;
-		ret = ibv_post_send(cb->dgram_qp[REMOTE_UD_QP_ID], &rem_send_wr[0], &bad_send_wr);
-		if (ENABLE_ASSERTIONS && ret != 0)
-			 printf("Batch size: %d, already outstanding %d  \n", wr_i, *outstanding_rem_reqs);
-		CPE(ret, "Sending Remotes: ibv_post_send error", ret);
-		// if (MEASURE_LATENCY == 1) rem_send_wr[last_measured_wr_i].imm_data = clt_gid;
-		c_stats[local_client_id].remote_messages_per_client += wr_i;
-//		if (ENABLE_WORKER_COALESCING == 0)
-//			c_stats[local_client_id].remotes_per_client += wr_i;
-			*outstanding_rem_reqs += wr_i;
-		if (ENABLE_ASSERTIONS == 1) {
-			if (*outstanding_rem_reqs > MAX_OUTSTANDING_REQS) {
-				yellow_printf("Clt %d, wr_i: %d, outstanding_rem_reqs %d \n",
-				local_client_id, wr_i,	*outstanding_rem_reqs);
-				assert(0);
-			}
-		}
-		(*remote_tot_tx) += wr_i; // used for Selective Signaling -- DONT CHANGE!
-		c_stats[local_client_id].batches_per_client++;
-
-	}
-	else if (ENABLE_STAT_COUNTING == 1) c_stats[local_client_id].wasted_loops++;
-}
-
-
-/* ---------------------------------------------------------------------------
------------------------------- EC SPECIFIC -----------------------------
----------------------------------------------------------------------------*/
-
-// Poll coherence region for EC
-static inline void poll_coherence_EC(uint16_t* coh_i, struct ud_req* incoming_reqs, int* pull_ptr,
-			struct cache_op* update_ops, struct mica_resp* update_resp, int clt_gid, int local_client_id)
-{
-	while (*coh_i < BCAST_TO_CACHE_BATCH) {
-		// printf("CLIENT %d Opcode %d at offset %d at address %u \n", clt_gid, incoming_reqs[(*pull_ptr + 1) % EC_CLT_BUF_SLOTS].m_op.opcode,
-		// 			 (*pull_ptr + 1) % EC_CLT_BUF_SLOTS, &(incoming_reqs[(*pull_ptr + 1) % EC_CLT_BUF_SLOTS]));
-		if (incoming_reqs[((*pull_ptr) + 1) % EC_CLT_BUF_SLOTS].m_op.opcode != CACHE_OP_UPD) {
-			if (ENABLE_ASSERTIONS == 1) {
-				if (incoming_reqs[((*pull_ptr) + 1) % EC_CLT_BUF_SLOTS].m_op.opcode != 0) {
-					red_printf("Client %d: Position %d : Wrong Opcode  %d\n",clt_gid, ((*pull_ptr) + 1) % EC_CLT_BUF_SLOTS,
-						incoming_reqs[((*pull_ptr) + 1) % EC_CLT_BUF_SLOTS].m_op.opcode);
-					assert(false);
-				}
-			}
-			break;
-		}
-		HRD_MOD_ADD(*pull_ptr, EC_CLT_BUF_SLOTS);
-		memcpy(update_ops + (*coh_i), &(incoming_reqs[*pull_ptr].m_op), HERD_PUT_REQ_SIZE);
-		update_resp[*coh_i].type = EMPTY;
-		// if (machine_id == 0); yellow_printf("CLIENT %d: I RECEIVED Broadcast %d at offset %d for key with tag  %d \n",
-		// 		clt_gid, c_stats[local_client_id].received_updates_per_client,* pull_ptr, update_ops[*coh_i].key.tag);
-		incoming_reqs[*pull_ptr].m_op.opcode = 0;
-		(*coh_i)++;
-		c_stats[local_client_id].received_updates_per_client++;
-	}
-}
-
-// Create credit messages for EC
-static inline uint16_t create_credits_EC(uint16_t coh_i, struct ibv_wc* coh_wc, uint8_t* broadcasts_seen, uint16_t local_client_id,
-																		struct ibv_send_wr* credit_send_wr, long long* credit_tx, struct ibv_cq* credit_send_cq )
-{
-	uint16_t i, credit_wr_i = 0;
-	struct ibv_wc signal_send_wc;
-	for (i = 0; i < coh_i; i++) {
-		if (ENABLE_ASSERTIONS) assert(i < EC_MAX_COH_RECEIVES);
-		uint16_t rm_id = coh_wc[i].imm_data;
-		if (ENABLE_ASSERTIONS) assert(rm_id < MACHINE_NUM);
-		broadcasts_seen[rm_id]++;
-		// yellow_printf("seen update from machine %d\n", rm_id);
-		// If we have seen enough broadcasts from a given machine send credits
-		if (broadcasts_seen[rm_id] == EC_CREDITS_IN_MESSAGE) {
-			uint16_t clt_i = rm_id * CLIENTS_PER_MACHINE + local_client_id;
-			credit_send_wr[credit_wr_i].wr.ud.ah = remote_clt_qp[clt_i][FC_UD_QP_ID].ah;
-			credit_send_wr[credit_wr_i].wr.ud.remote_qpn = remote_clt_qp[clt_i][FC_UD_QP_ID].qpn;
-			if (credit_wr_i > 0) credit_send_wr[credit_wr_i - 1].next = &credit_send_wr[credit_wr_i];
-			if ((*credit_tx) % EC_CREDIT_SS_BATCH == 0) {
-				credit_send_wr[credit_wr_i].send_flags |= IBV_SEND_SIGNALED;
-			}
-			else credit_send_wr[credit_wr_i].send_flags = IBV_SEND_INLINE;
-			if((*credit_tx) % EC_CREDIT_SS_BATCH == EC_CREDIT_SS_BATCH - 1) {
-				// printf("polling credits send completion\n");
-				hrd_poll_cq(credit_send_cq, 1, &signal_send_wc);
-				// printf("polled\n");
-			}
-			broadcasts_seen[rm_id] = 0;
-			credit_wr_i++;
-			(*credit_tx)++;
-		}
-	}
-	return credit_wr_i;
-}
-
-/* Post Receives for coherence and then Send out the credits
-							---------DEPRICATED------------
-	A generic version is used  for both EC and SC */
-static inline void send_credits_EC(uint16_t credit_wr_i, struct ibv_sge* coh_recv_sgl, struct hrd_ctrl_blk* cb,
-																	int* push_ptr, struct ibv_recv_wr* coh_recv_wr, struct ibv_qp* coh_recv_qp,
-																	struct ibv_send_wr* credit_send_wr)
-{
-	// For every credit message we send back, prepare x receives for the broadcasts
-	uint16_t i, j, recv_iter = 0;
-	struct ibv_recv_wr *bad_recv_wr;
-	struct ibv_send_wr *bad_send_wr;
-	for(i = 0; i < credit_wr_i; i++) {
-		for (j = 0; j < EC_CREDITS_IN_MESSAGE; j++) {
-			recv_iter = i * EC_CREDITS_IN_MESSAGE + j;
-			coh_recv_sgl[recv_iter].addr = (uintptr_t) &cb->dgram_buf[*push_ptr * UD_REQ_SIZE];
-			HRD_MOD_ADD(*push_ptr, EC_CLT_BUF_SLOTS + 1);
-			if (*push_ptr == 0) *push_ptr = 1;
-			coh_recv_wr[recv_iter].next = (recv_iter == (credit_wr_i * EC_CREDITS_IN_MESSAGE) - 1) ?
-										  NULL : &coh_recv_wr[recv_iter + 1];
-		}
-	}
-	int ret = ibv_post_recv(coh_recv_qp, &coh_recv_wr[0], &bad_recv_wr);
-	CPE(ret, "ibv_post_recv error", ret);
-
-	credit_send_wr[credit_wr_i - 1].next = NULL;
-	// yellow_printf("I am sending %d credit message(s)\n", credit_wr_i);
-	ret = ibv_post_send(cb->dgram_qp[FC_UD_QP_ID], &credit_send_wr[0], &bad_send_wr);
-	CPE(ret, "ibv_post_send error in credits", ret);
-}
-
-// Form Broadcast work requests specifically for EC
-static inline void forge_bcast_wrs_EC(uint16_t op_i, struct extended_cache_op* ops, struct hrd_ctrl_blk *cb,
-                                      struct ibv_sge *coh_send_sgl, struct ibv_send_wr *coh_send_wr,
-                                      struct mica_op *coh_buf, uint16_t *coh_buf_i, long long *br_tx,
-                                      uint16_t local_client_id, uint16_t br_i)
-{
-  struct ibv_wc signal_send_wc;
-  c_stats[local_client_id].updates_per_client++;
-  // Do a Signaled Send every BROADCAST_SS_BATCH broadcasts (BROADCAST_SS_BATCH * (MACHINE_NUM - 1) messages)
-  if ((*br_tx) % BROADCAST_SS_BATCH == 0) {
-    coh_send_wr[0].send_flags |= IBV_SEND_SIGNALED;
-  }
-  (*br_tx)++;
-  if((*br_tx) % BROADCAST_SS_BATCH == BROADCAST_SS_BATCH - 1) {
-    // printf("polling for broadcast send completions\n" );
-    hrd_poll_cq(cb->dgram_send_cq[BROADCAST_UD_QP_ID], 1, &signal_send_wc);
-    // printf("Client %d polling br_tx = %llu\n", clt_gid, (*br_tx) );
-  }
-  ops[op_i].opcode = CACHE_OP_UPD;
-  if (CLIENT_ENABLE_INLINING == 1)	coh_send_sgl[br_i].addr = (uint64_t) (uintptr_t) (ops + op_i);
-  if (CLIENT_ENABLE_INLINING == 0) {
-    if (ENABLE_ASSERTIONS == 1) assert((*coh_buf_i)< COH_BUF_SLOTS);
-    memcpy(coh_buf + (*coh_buf_i), ops + op_i, HERD_PUT_REQ_SIZE);
-    coh_send_sgl[br_i].addr = (uint64_t) (uintptr_t) (coh_buf + (*coh_buf_i));
-    MOD_ADD_WITH_BASE((*coh_buf_i), COH_BUF_SLOTS, 0);
-  } // when not inlining ops cannot be used, as the pointer will shift in the next iteration
-  // if (machine_id == 1); green_printf("CLIENT %d : I send Broadcast, opcode: %d credits: %d, (*br_tx) %llu, tag %d \n",
-  // 		clt_gid, ops[op_i].opcode, credits[EC_UPD_VC][(machine_id + 1) % MACHINE_NUM], (*br_tx), ops[op_i].key.tag);
-  if (br_i > 0)
-    coh_send_wr[(br_i * MESSAGES_IN_BCAST) - 1].next = &coh_send_wr[br_i * MESSAGES_IN_BCAST];
-}
-
-// Perform the EC broadcasts
-static inline void perform_broadcasts_EC(struct extended_cache_op* ops, uint8_t credits[][MACHINE_NUM], struct hrd_ctrl_blk* cb, struct ibv_wc* credit_wc,
-													uint32_t* credit_debug_cnt, struct ibv_sge* coh_send_sgl, struct ibv_send_wr* coh_send_wr,
-													struct mica_op* coh_buf, uint16_t* coh_buf_i, long long* br_tx, struct ibv_recv_wr* credit_recv_wr,
-													 uint16_t local_client_id, int protocol)
-{
-	uint16_t i, j, op_i = 0, br_i = 0, credit_recv_counter = 0;
-	struct ibv_wc signal_send_wc;
-	int ret;
-	struct ibv_send_wr *bad_send_wr;
-	struct ibv_recv_wr *bad_recv_wr;
-	while (op_i < CACHE_BATCH_SIZE) { // traverse all of the ops, since we cannot know where the last hot write will be
-		//if (br_i >= MAX_BCAST_BATCH) break;
-		if (ops[op_i].opcode != CACHE_OP_BRC) {
-			op_i++;
-			continue; // We only care about hot writes
-		}
-		if (!check_broadcast_credits(credits, cb, credit_wc, credit_debug_cnt, EC_UPD_VC, protocol)) {
-			break;
-		}
-    forge_bcast_wrs_EC(op_i, ops, cb, coh_send_sgl, coh_send_wr, coh_buf, coh_buf_i, br_tx, local_client_id, br_i);
-
-    for (j = 0; j < MACHINE_NUM; j++) { credits[EC_UPD_VC][j]--; }
-		br_i++;
-		op_i++;
-		if ((*br_tx) % EC_CREDITS_IN_MESSAGE == 0) credit_recv_counter++;
-		if (br_i == MAX_BCAST_BATCH) {
-			post_credit_recvs_and_batch_bcasts_to_NIC(br_i, cb, coh_send_wr, credit_recv_wr, &credit_recv_counter, protocol);
-			br_i = 0;
-		}
-	}
-	post_credit_recvs_and_batch_bcasts_to_NIC(br_i, cb, coh_send_wr, credit_recv_wr, &credit_recv_counter, protocol);
-}
+//
+///* ---------------------------------------------------------------------------
+//------------------------------ EC SPECIFIC -----------------------------
+//---------------------------------------------------------------------------*/
+//
+//// Poll coherence region for EC
+//static inline void poll_coherence_EC(uint16_t* coh_i, struct ud_req* incoming_reqs, int* pull_ptr,
+//			struct cache_op* update_ops, struct mica_resp* update_resp, int clt_gid, int local_client_id)
+//{
+//	while (*coh_i < BCAST_TO_CACHE_BATCH) {
+//		// printf("CLIENT %d Opcode %d at offset %d at address %u \n", clt_gid, incoming_reqs[(*pull_ptr + 1) % EC_CLT_BUF_SLOTS].m_op.opcode,
+//		// 			 (*pull_ptr + 1) % EC_CLT_BUF_SLOTS, &(incoming_reqs[(*pull_ptr + 1) % EC_CLT_BUF_SLOTS]));
+//		if (incoming_reqs[((*pull_ptr) + 1) % EC_CLT_BUF_SLOTS].m_op.opcode != CACHE_OP_UPD) {
+//			if (ENABLE_ASSERTIONS == 1) {
+//				if (incoming_reqs[((*pull_ptr) + 1) % EC_CLT_BUF_SLOTS].m_op.opcode != 0) {
+//					red_printf("Client %d: Position %d : Wrong Opcode  %d\n",clt_gid, ((*pull_ptr) + 1) % EC_CLT_BUF_SLOTS,
+//						incoming_reqs[((*pull_ptr) + 1) % EC_CLT_BUF_SLOTS].m_op.opcode);
+//					assert(false);
+//				}
+//			}
+//			break;
+//		}
+//		HRD_MOD_ADD(*pull_ptr, EC_CLT_BUF_SLOTS);
+//		memcpy(update_ops + (*coh_i), &(incoming_reqs[*pull_ptr].m_op), HERD_PUT_REQ_SIZE);
+//		update_resp[*coh_i].type = ST_EMPTY;
+//		// if (machine_id == 0); yellow_printf("CLIENT %d: I RECEIVED Broadcast %d at offset %d for key with tag  %d \n",
+//		// 		clt_gid, w_stats[local_client_id].received_vals_per_worker,* pull_ptr, update_ops[*coh_i].key.tag);
+//		incoming_reqs[*pull_ptr].m_op.opcode = 0;
+//		(*coh_i)++;
+//		w_stats[local_client_id].received_vals_per_worker++;
+//	}
+//}
+//
+//// Create credit messages for EC
+//static inline uint16_t create_credits_EC(uint16_t coh_i, struct ibv_wc* coh_wc, uint8_t* broadcasts_seen, uint16_t local_client_id,
+//																		struct ibv_send_wr* credit_send_wr, long long* credit_tx, struct ibv_cq* credit_send_cq )
+//{
+//	uint16_t i, credit_wr_i = 0;
+//	struct ibv_wc signal_send_wc;
+//	for (i = 0; i < coh_i; i++) {
+//		if (ENABLE_ASSERTIONS) assert(i < EC_MAX_COH_RECEIVES);
+//		uint16_t rm_id = coh_wc[i].imm_data;
+//		if (ENABLE_ASSERTIONS) assert(rm_id < MACHINE_NUM);
+//		broadcasts_seen[rm_id]++;
+//		// yellow_printf("seen update from machine %d\n", rm_id);
+//		// If we have seen enough broadcasts from a given machine send credits
+//		if (broadcasts_seen[rm_id] == EC_CREDITS_IN_MESSAGE) {
+//			uint16_t clt_i = rm_id * CLIENTS_PER_MACHINE + local_client_id;
+//			credit_send_wr[credit_wr_i].wr.ud.ah = remote_clt_qp[clt_i][FC_UD_QP_ID].ah;
+//			credit_send_wr[credit_wr_i].wr.ud.remote_qpn = remote_clt_qp[clt_i][FC_UD_QP_ID].qpn;
+//			if (credit_wr_i > 0) credit_send_wr[credit_wr_i - 1].next = &credit_send_wr[credit_wr_i];
+//			if ((*credit_tx) % EC_CREDIT_SS_BATCH == 0) {
+//				credit_send_wr[credit_wr_i].send_flags |= IBV_SEND_SIGNALED;
+//			}
+//			else credit_send_wr[credit_wr_i].send_flags = IBV_SEND_INLINE;
+//			if((*credit_tx) % EC_CREDIT_SS_BATCH == EC_CREDIT_SS_BATCH - 1) {
+//				// printf("polling credits send completion\n");
+//				hrd_poll_cq(credit_send_cq, 1, &signal_send_wc);
+//				// printf("polled\n");
+//			}
+//			broadcasts_seen[rm_id] = 0;
+//			credit_wr_i++;
+//			(*credit_tx)++;
+//		}
+//	}
+//	return credit_wr_i;
+//}
+//
+///* Post Receives for coherence and then Send out the credits
+//							---------DEPRICATED------------
+//	A generic version is used  for both EC and SC */
+//static inline void send_credits_EC(uint16_t credit_wr_i, struct ibv_sge* coh_recv_sgl, struct hrd_ctrl_blk* cb,
+//																	int* push_ptr, struct ibv_recv_wr* coh_recv_wr, struct ibv_qp* coh_recv_qp,
+//																	struct ibv_send_wr* credit_send_wr)
+//{
+//	// For every credit message we send back, prepare x receives for the broadcasts
+//	uint16_t i, j, recv_iter = 0;
+//	struct ibv_recv_wr *bad_recv_wr;
+//	struct ibv_send_wr *bad_send_wr;
+//	for(i = 0; i < credit_wr_i; i++) {
+//		for (j = 0; j < EC_CREDITS_IN_MESSAGE; j++) {
+//			recv_iter = i * EC_CREDITS_IN_MESSAGE + j;
+//			coh_recv_sgl[recv_iter].addr = (uintptr_t) &cb->dgram_buf[*push_ptr * UD_REQ_SIZE];
+//			HRD_MOD_ADD(*push_ptr, EC_CLT_BUF_SLOTS + 1);
+//			if (*push_ptr == 0) *push_ptr = 1;
+//			coh_recv_wr[recv_iter].next = (recv_iter == (credit_wr_i * EC_CREDITS_IN_MESSAGE) - 1) ?
+//										  NULL : &coh_recv_wr[recv_iter + 1];
+//		}
+//	}
+//	int ret = ibv_post_recv(coh_recv_qp, &coh_recv_wr[0], &bad_recv_wr);
+//	CPE(ret, "ibv_post_recv error", ret);
+//
+//	credit_send_wr[credit_wr_i - 1].next = NULL;
+//	// yellow_printf("I am sending %d credit message(s)\n", credit_wr_i);
+//	ret = ibv_post_send(cb->dgram_qp[FC_UD_QP_ID], &credit_send_wr[0], &bad_send_wr);
+//	CPE(ret, "ibv_post_send error in credits", ret);
+//}
+//
+//// Form Broadcast work requests specifically for EC
+//static inline void forge_bcast_wrs_EC(uint16_t op_i, struct extended_cache_op* ops, struct hrd_ctrl_blk *cb,
+//                                      struct ibv_sge *coh_send_sgl, struct ibv_send_wr *coh_send_wr,
+//                                      struct mica_op *coh_buf, uint16_t *coh_buf_i, long long *br_tx,
+//                                      uint16_t local_client_id, uint16_t br_i)
+//{
+//  struct ibv_wc signal_send_wc;
+//  w_stats[local_client_id].vals_per_worker++;
+//  // Do a Signaled Send every BROADCAST_SS_BATCH broadcasts (BROADCAST_SS_BATCH * (MACHINE_NUM - 1) messages)
+//  if ((*br_tx) % BROADCAST_SS_BATCH == 0) {
+//    coh_send_wr[0].send_flags |= IBV_SEND_SIGNALED;
+//  }
+//  (*br_tx)++;
+//  if((*br_tx) % BROADCAST_SS_BATCH == BROADCAST_SS_BATCH - 1) {
+//    // printf("polling for broadcast send completions\n" );
+//    hrd_poll_cq(cb->dgram_send_cq[BROADCAST_UD_QP_ID], 1, &signal_send_wc);
+//    // printf("Client %d polling br_tx = %llu\n", clt_gid, (*br_tx) );
+//  }
+//  ops[op_i].opcode = CACHE_OP_UPD;
+//  if (CLIENT_ENABLE_INLINING == 1)	coh_send_sgl[br_i].addr = (uint64_t) (uintptr_t) (ops + op_i);
+//  if (CLIENT_ENABLE_INLINING == 0) {
+//    if (ENABLE_ASSERTIONS == 1) assert((*coh_buf_i)< COH_BUF_SLOTS);
+//    memcpy(coh_buf + (*coh_buf_i), ops + op_i, HERD_PUT_REQ_SIZE);
+//    coh_send_sgl[br_i].addr = (uint64_t) (uintptr_t) (coh_buf + (*coh_buf_i));
+//    MOD_ADD_WITH_BASE((*coh_buf_i), COH_BUF_SLOTS, 0);
+//  } // when not inlining ops cannot be used, as the pointer will shift in the next iteration
+//  // if (machine_id == 1); green_printf("CLIENT %d : I send Broadcast, opcode: %d credits: %d, (*br_tx) %llu, tag %d \n",
+//  // 		clt_gid, ops[op_i].opcode, credits[EC_UPD_VC][(machine_id + 1) % MACHINE_NUM], (*br_tx), ops[op_i].key.tag);
+//  if (br_i > 0)
+//    coh_send_wr[(br_i * MESSAGES_IN_BCAST) - 1].next = &coh_send_wr[br_i * MESSAGES_IN_BCAST];
+//}
+//
+//// Perform the EC broadcasts
+//static inline void perform_broadcasts_EC(struct extended_cache_op* ops, uint8_t credits[][MACHINE_NUM], struct hrd_ctrl_blk* cb, struct ibv_wc* credit_wc,
+//													uint32_t* credit_debug_cnt, struct ibv_sge* coh_send_sgl, struct ibv_send_wr* coh_send_wr,
+//													struct mica_op* coh_buf, uint16_t* coh_buf_i, long long* br_tx, struct ibv_recv_wr* credit_recv_wr,
+//													 uint16_t local_client_id, int protocol)
+//{
+//	uint16_t i, j, op_i = 0, br_i = 0, credit_recv_counter = 0;
+//	struct ibv_wc signal_send_wc;
+//	int ret;
+//	struct ibv_send_wr *bad_send_wr;
+//	struct ibv_recv_wr *bad_recv_wr;
+//	while (op_i < CACHE_BATCH_SIZE) { // traverse all of the ops, since we cannot know where the last hot write will be
+//		//if (br_i >= MAX_BCAST_BATCH) break;
+//		if (ops[op_i].opcode != CACHE_OP_BRC) {
+//			op_i++;
+//			continue; // We only care about hot writes
+//		}
+//		if (!check_broadcast_credits(credits, cb, credit_wc, credit_debug_cnt, EC_UPD_VC, protocol)) {
+//			break;
+//		}
+//    forge_bcast_wrs_EC(op_i, ops, cb, coh_send_sgl, coh_send_wr, coh_buf, coh_buf_i, br_tx, local_client_id, br_i);
+//
+//    for (j = 0; j < MACHINE_NUM; j++) { credits[EC_UPD_VC][j]--; }
+//		br_i++;
+//		op_i++;
+//		if ((*br_tx) % EC_CREDITS_IN_MESSAGE == 0) credit_recv_counter++;
+//		if (br_i == MAX_BCAST_BATCH) {
+//			post_credit_recvs_and_batch_bcasts_to_NIC(br_i, cb, coh_send_wr, credit_recv_wr, &credit_recv_counter, protocol);
+//			br_i = 0;
+//		}
+//	}
+//	post_credit_recvs_and_batch_bcasts_to_NIC(br_i, cb, coh_send_wr, credit_recv_wr, &credit_recv_counter, protocol);
+//}
 
 /* ---------------------------------------------------------------------------
 ------------------------------ SC SPECIFIC -----------------------------
@@ -1112,10 +1060,10 @@ static inline void poll_coherence_SC(uint16_t* update_ops_i, struct ud_req* inco
 				if (incoming_reqs[*pull_ptr].m_op.opcode == CACHE_OP_ACK) {
 					// printf("Actually receiving an ack \n");
 					ack_ops_i++;
-					if (ENABLE_STAT_COUNTING == 1) c_stats[local_client_id].received_acks_per_client++;
+					if (ENABLE_STAT_COUNTING == 1) w_stats[local_client_id].received_acks_per_client++;
 				}
 				else if (ENABLE_STAT_COUNTING == 1) {
-					c_stats[local_client_id].received_updates_per_client++;
+					w_stats[local_client_id].received_updates_per_client++;
 					// printf("Actually receiving an upd \n");
 				}
 			}
@@ -1128,7 +1076,7 @@ static inline void poll_coherence_SC(uint16_t* update_ops_i, struct ud_req* inco
 //                      code_to_str(incoming_reqs[*pull_ptr].m_op.opcode), 	inv_ops[*inv_ops_i].key.tag,
 //                                  inv_ops[*inv_ops_i].key.meta.version, (*inv_ops_i));
 				(*inv_ops_i)++;
-				if (ENABLE_STAT_COUNTING == 1) c_stats[local_client_id].received_invs_per_client++;
+				if (ENABLE_STAT_COUNTING == 1) w_stats[local_client_id].received_invs_per_client++;
 			}
 			if (ENABLE_ASSERTIONS == 1) assert(*pull_ptr >= 0);
 
@@ -1261,7 +1209,7 @@ static inline void forge_bcast_wrs_SC(uint16_t op_i, struct extended_cache_op* o
 		ops[op_i].key.meta.cid = (uint8_t) machine_id;
 		coh_send_sgl[br_i].addr = (uint64_t) (uintptr_t) (ops + op_i);
 		coh_send_sgl[br_i].length = HERD_GET_REQ_SIZE;
-		c_stats[local_client_id].invs_per_client++;
+		w_stats[local_client_id].invs_per_client++;
 		if (CLIENT_ENABLE_INLINING == 0) {
 			for (i = 0; i < MESSAGES_IN_BCAST; i++)
 				coh_send_wr[(br_i * MESSAGES_IN_BCAST) + i].send_flags = IBV_SEND_INLINE;// we should inline invalidations
@@ -1284,7 +1232,7 @@ static inline void forge_bcast_wrs_SC(uint16_t op_i, struct extended_cache_op* o
 		}
 		coh_send_sgl[br_i].length = HERD_PUT_REQ_SIZE;
 		(*updates_sent)++;
-		c_stats[local_client_id].updates_per_client++;
+		w_stats[local_client_id].updates_per_client++;
 //      green_printf("CLIENT %d : I BROADCAST with %s credits: %d, key: %d, cid: %d and version: %d \n", local_client_id, code_to_str(ack_bcast_ops[*ack_pop_ptr].opcode), credits[vc][(machine_id + 1) % MACHINE_NUM],
 //                   ack_bcast_ops[*ack_pop_ptr].key.tag, ack_bcast_ops[*ack_pop_ptr].key.meta.cid, 	ack_bcast_ops[*ack_pop_ptr].key.meta.version);
 		HRD_MOD_ADD(*ack_pop_ptr, BCAST_TO_CACHE_BATCH);
@@ -1328,7 +1276,7 @@ static inline void perform_broadcasts_SC(uint16_t* ack_size, struct extended_cac
 			else { op_i = CACHE_BATCH_SIZE; continue;} // if there are no inv credits go on to the upds
 		}
 		// Create the broadcast messages
-    forge_bcast_wrs_SC(op_i, ops, ack_bcast_ops, ack_pop_ptr, cb, coh_send_sgl, coh_send_wr,
+		forge_bcast_wrs_SC(op_i, ops, ack_bcast_ops, ack_pop_ptr, cb, coh_send_sgl, coh_send_wr,
                        coh_message_count, coh_buf, coh_buf_i, br_tx, local_client_id, &updates_sent, br_i,
                        credits, vc);
 		for (j = 0; j < MACHINE_NUM; j++) { credits[vc][j]--; }
@@ -1340,6 +1288,10 @@ static inline void perform_broadcasts_SC(uint16_t* ack_size, struct extended_cac
 			br_i = 0;
 		}
 	}
+
+	struct ibv_send_wr *bad_send_wr;
+	ibv_post_send(cb->dgram_qp[BROADCAST_UD_QP_ID], &coh_send_wr[0], &bad_send_wr);
+    exit(1);
 	post_credit_recvs_and_batch_bcasts_to_NIC(br_i, cb, coh_send_wr, credit_recv_wr, &credit_recv_counter, protocol);
 	(*ack_size) -= updates_sent;
 	if (ENABLE_ASSERTIONS == 1) assert(*ack_size >= 0);
@@ -1388,7 +1340,7 @@ static inline void send_acks(struct small_cache_op* inv_to_send_ops, uint8_t cre
 		(*inv_size)--;
 
 		(*sent_ack_tx)++; // Selective signaling
-		c_stats[local_client_id].acks_per_client++;
+		w_stats[local_client_id].acks_per_client++;
 		// Post a receive for a credit every CREDITS_IN_MESSAGE acks
 		if ((*sent_ack_tx) % CREDITS_IN_MESSAGE == 0) (*ack_recv_counter)++;
 	}
@@ -1488,335 +1440,335 @@ static inline void debug_stalling_SC(uint16_t stalled_ops_i, uint32_t* stalled_c
  	}
  }
 
+//
+///* ---------------------------------------------------------------------------
+//------------------------------ WORKER MAIN LOOP -----------------------------
+//---------------------------------------------------------------------------*/
+////poll and serve the local requests
+//static inline void serve_local_reqs(uint16_t wrkr_lid, struct mica_kv* kv, struct mica_op **local_op_ptr_arr,
+//																		struct mica_resp* local_responses)
+//{
+//	uint16_t clt_i, i;
+//	for (clt_i = 0; clt_i < CLIENTS_PER_MACHINE; clt_i++) {
+//		for (i = 0; i < LOCAL_REGIONS; i++) {
+//			if (local_recv_flag[wrkr_lid][clt_i][i] == 0) continue; // find a client that has filled his region
+//			uint16_t wrkr_offset = (clt_i * LOCAL_WINDOW) + (i * LOCAL_REGION_SIZE);
+//			// green_printf("Worker %d reads locals from clt %d at local region %d, offset\n", wrkr_lid, clt_i,	i, wrkr_offset );
+//			struct mica_resp *local_resp_arr = local_responses + wrkr_offset;
+//			KVS_BATCH_OP(kv, LOCAL_REGION_SIZE, &local_op_ptr_arr[wrkr_offset], local_resp_arr);
+//			if (ENABLE_ASSERTIONS == 1) assert(local_recv_flag[wrkr_lid][clt_i][i] == 1);
+//			local_recv_flag[wrkr_lid][clt_i][i] = 0;
+//			w_stats[wrkr_lid].locals_per_worker += LOCAL_REGION_SIZE;
+//		}
+//	}
+//}
+//
+//static inline void worker_remote_request_error_checking(int pull_ptr, uint32_t per_qp_buf_slots, struct mica_op* next_req_ptr,
+//                                                   uint16_t wrkr_lid, uint16_t qp_i, uint16_t wr_i, struct wrkr_ud_req* req,
+//                                                   long long nb_tx_tot, int push_ptr, int clt_i, bool multiget, uint16_t get_i)
+//{
+//  if (ENABLE_ASSERTIONS == 1) {
+//    assert(pull_ptr <= (int)per_qp_buf_slots);
+//    assert(push_ptr <= (int)per_qp_buf_slots);
+//    assert((next_req_ptr)->opcode == MICA_OP_GET ||	/* XXX */
+//           next_req_ptr->opcode == MICA_OP_PUT);
+//    if (next_req_ptr->opcode == MICA_OP_PUT) {
+//      if (next_req_ptr->val_len != (HERD_VALUE_SIZE >> SHIFT_BITS)) {
+//        yellow_printf("Wrker %d: qp_i %d, pull_ptr %d, wr_i %d, len %d, op %d, total reqs %llu\n",
+//                      wrkr_lid, qp_i,	pull_ptr, wr_i, req->m_op.val_len,
+//                      next_req_ptr->opcode, nb_tx_tot );
+//        assert(false);
+//      }
+//    }
+//  }
+//  //printf("gets %d\n", req[pull_ptr].m_op.value[0]);
+//
+////  green_printf("Worker %d  sees a req with key bkt %u , at qp %d , wr_i %d, recv_per_qp %d, opcode %d  \n", wrkr_lid, req.m_op.key.bkt,
+////                  qp_i, wr_i, per_recv_qp_wr_i, req.m_op.opcode);
+//
+//
+//  if (ENABLE_ASSERTIONS == 1) {
+//    if (!(clt_i >= 0 && clt_i < CLIENT_NUM)) {
+//      printf("mutliget %d, clt_i %d, multiget %d get_i %d\n", multiget, clt_i, multiget, get_i);
+//      assert(false);
+//    }
+//    assert(clt_i / CLIENTS_PER_MACHINE != machine_id);
+//  }
+//}
+//
+//// poll the remote request region and return a control flow directive
+//static inline enum control_flow_directive poll_remote_region(uint16_t* qp_i, int* pull_ptr, uint32_t* per_qp_buf_slots, struct wrkr_ud_req* req,
+//                    bool* multiget, uint16_t wr_i, uint16_t* received_messages, uint16_t* per_qp_received_messages,
+//                    struct mica_op** next_req_ptr, uint16_t* get_i, uint16_t* get_num, uint8_t* requests_per_message)
+//{
+//  uint32_t index = (pull_ptr[(*qp_i)] + 1) % per_qp_buf_slots[(*qp_i)];
+//  if (req[index].m_op.opcode != MICA_OP_GET && req[index].m_op.opcode != MICA_OP_PUT) {
+//    if (ENABLE_COALESCING && req[index].m_op.opcode == MICA_OP_MULTI_GET) {
+//      if ((*multiget) == false) { // if it's the first request
+//        struct mica_op *tmp = (struct mica_op *) (req[index].m_op.value + (req[index].m_op.val_len - 2) * HERD_GET_REQ_SIZE);
+//        if (tmp->opcode != MICA_OP_GET) return continue_;
+//        (*get_num)  = req[index].m_op.val_len;
+//        if (wr_i + (*get_num) > WORKER_MAX_BATCH) {
+//          // printf("breaking %d\n", wrkr_lid);
+//          return break_;
+//        }
+//        (*multiget)  = true;
+//				requests_per_message[(*received_messages)] = *get_num;
+//        (*get_i)  = 0;
+//        req[index].m_op.opcode = MICA_OP_GET;// necessary to work with the MICA API
+//        (*next_req_ptr) = (struct mica_op *) &(req[index].m_op);
+//
+//        (*received_messages)++;
+//        per_qp_received_messages[(*qp_i)]++;
+////        green_printf("I see a Multi Get of %d gets \n", (*get_num) );
+//        if (ENABLE_ASSERTIONS && (*next_req_ptr)->opcode != MICA_OP_GET) {
+//          red_printf("req opcode %d, next_rq_ptr opcode %d\n",req[index].m_op.opcode,  (*next_req_ptr)->opcode);
+//        }
+//      }
+//      else if (ENABLE_ASSERTIONS) assert(false);
+//    }
+//    else { // we need to check the rest of the buffers
+//      if (ENABLE_ASSERTIONS)
+//        if(req[index].m_op.opcode != 0) {
+//          red_printf("Wrong Opcode %d \n", req[index].m_op.opcode);
+//          assert(false);
+//        }
+//      if ((*qp_i)  == WORKER_NUM_UD_QPS -1) return break_; // all qp buffers were checked
+//      else {
+//        HRD_MOD_ADD((*qp_i) , WORKER_NUM_UD_QPS);
+//        return continue_; // move to the next buffer
+//      }
+//    }
+//  }
+//  return no_cf_change;
+//}
+//
+////do the required bookkeeping for a request
+//static inline void request_bookkeeping(bool multiget, int* pull_ptr, uint16_t qp_i, uint32_t* per_qp_buf_slots,
+//                                       struct mica_op** next_req_ptr, uint16_t* received_messages, uint16_t* per_qp_received_messages,
+//                                       struct wrkr_ud_req* req, uint16_t* get_i, uint16_t wr_i, struct ibv_send_wr* wr, long long* nb_tx_tot,
+//                                       int* clt_i, uint32_t* index, uint16_t send_qp_i, struct hrd_ctrl_blk* cb, uint16_t wrkr_lid,
+//                                       int push_ptr, uint16_t* last_measured_wr_i, uint8_t* requests_per_message)
+//{
+//  struct ibv_wc send_wc;
+//  if (!multiget) {
+//    MOD_ADD_WITH_BASE(pull_ptr[qp_i], per_qp_buf_slots[qp_i], 0);
+//    (*index) = pull_ptr[qp_i];
+//    (*next_req_ptr) = (struct mica_op *) &(req[*index].m_op);
+//    if (ENABLE_ASSERTIONS) assert((*next_req_ptr)->opcode == MICA_OP_GET || (*next_req_ptr)->opcode == MICA_OP_PUT);
+//		requests_per_message[(*received_messages)] = 1;
+//    (*received_messages)++;
+//    per_qp_received_messages[qp_i]++;
+//  }
+//  else { // if multiget
+//    (*get_i)++;
+//    if ((*get_i) > 1) { // move to the next get req
+//      // hrd_green_printf("Multiget is moving to get_i  %d, get_num %d\n", (*get_i), get_num );
+//      (*next_req_ptr) = (struct mica_op *)(req[(*index)].m_op.value + (((*get_i) - 2) * HERD_GET_REQ_SIZE));
+//    }
+//  }
+//
+//
+//	if ((ENABLE_WORKER_COALESCING == 0) || ((multiget == 0) || (*get_i == 1))) {
+//
+//		if (wr_i > 0) wr[wr_i - 1].next = &wr[wr_i];
+//		wr[wr_i].send_flags = ((nb_tx_tot[send_qp_i] % WORKER_SS_BATCH) == 0)
+//													? IBV_SEND_SIGNALED : 0;
+//		if ((nb_tx_tot[send_qp_i] % WORKER_SS_BATCH) == WORKER_SS_BATCH - 1) {
+//			hrd_poll_cq(cb->dgram_send_cq[send_qp_i], 1, &send_wc);
+//		}
+//		if (WORKER_ENABLE_INLINING == 1) wr[wr_i].send_flags |= IBV_SEND_INLINE;
+//		(*clt_i) = (*next_req_ptr)->key.rem_meta.clt_gid;
+//		wr[wr_i].wr.ud.ah = remote_clt_qp[(*clt_i)][REMOTE_UD_QP_ID].ah;
+//		wr[wr_i].wr.ud.remote_qpn = remote_clt_qp[(*clt_i)][REMOTE_UD_QP_ID].qpn;
+//
+////		green_printf("Creating a request %d for client %d\n", wr_i, *clt_i);
+//
+//		if (ENABLE_ASSERTIONS)
+//			worker_remote_request_error_checking(pull_ptr[qp_i], per_qp_buf_slots[qp_i], *next_req_ptr,
+//																					 wrkr_lid, qp_i, wr_i, &req[*index], nb_tx_tot[send_qp_i],
+//																					 push_ptr, *clt_i, multiget, *get_i);
+//		nb_tx_tot[send_qp_i]++;
+//	}
+//
+//	if (MEASURE_LATENCY == 1) {
+//		cache_meta *tmp = (cache_meta *) &(*next_req_ptr)->key.rem_meta;
+//		if (tmp->state != 0) {
+//      if ((ENABLE_WORKER_COALESCING == 0) || ((multiget == 0) || (*get_i == 1)))
+//        *last_measured_wr_i = wr_i;
+//      else
+//        *last_measured_wr_i = wr_i - 1;
+////			printf("I see a req for measuring from client %d, state: %d wr_i %d\n", *clt_i, tmp->state, wr_i);
+//			wr[*last_measured_wr_i].opcode = IBV_WR_SEND_WITH_IMM;
+//			wr[*last_measured_wr_i].imm_data = REMOTE_LATENCY_MARK;
+////			(*clt_i) -= CLIENT_NUM;
+//		}
+//	}
+//
+//}
+//
+//// Check all the conditions to stop polling for remote requests, or switch qp or exit the  current multiget
+//static inline enum control_flow_directive check_polling_conditions(bool* multiget, uint16_t get_i, uint16_t get_num,
+//                                       int* pull_ptr, uint16_t* qp_i, uint32_t per_qp_buf_slots, uint16_t per_qp_received_messages,
+//                                       uint16_t wr_i, uint16_t received_messages, uint16_t wrkr_lid, uint32_t max_reqs)
+//{
+//  if ((*multiget) == true && get_i == get_num) { // check if the multiget should be over
+//    (*multiget) = false;
+//    MOD_ADD_WITH_BASE(pull_ptr[(*qp_i)], per_qp_buf_slots, 0);
+//    // if (wrkr_lid == 0)
+//    // 	hrd_green_printf("Multiget from clt %d is over wr_i %d, received messages %d, pull_ptr %d, get_num %d\n",
+//    // 			clt_i, wr_i, received_messages, pull_ptr[(*qp_i)],get_num );
+//  }
+//  if (WORKER_NUM_UD_QPS > 1) {
+//    if (per_qp_received_messages== per_qp_buf_slots && (*multiget) == false) {
+//      if ((*qp_i) == WORKER_NUM_UD_QPS -1 ) return break_; // all qp buffers were checked
+//      else MOD_ADD_WITH_BASE((*qp_i), WORKER_NUM_UD_QPS, 0);
+//    }
+//  }
+//  if (wr_i == WORKER_MAX_BATCH || (received_messages == max_reqs && (*multiget) == false)) {
+//    if (ENABLE_ASSERTIONS) {
+//      if ((*multiget) == true) {
+//        red_printf("Worker %d: wr_i = %d, received_messages %d, max reqs %d, get_i %d, get_num %d\n",
+//                   wrkr_lid, wr_i, received_messages, max_reqs, get_i, get_num);
+//        assert(false);
+//      }
+//    }
+//    return break_;
+//  }
+//  return no_cf_change;
+//}
+//
+//// poll the worker's receive completions according to the messages that have been polled from the REquest Region
+//static inline void poll_workers_recv_completions(uint16_t* per_qp_received_messages, uint16_t received_messages,
+//                                    struct hrd_ctrl_blk* cb, struct ibv_wc* wc, bool multiget, uint32_t* debug_recv,
+//                                    uint16_t wr_i, uint16_t wrkr_lid, uint32_t max_reqs)
+//{
+//  uint16_t wc_i = 0, qp_i;
+//  for (qp_i = 0; qp_i < WORKER_NUM_UD_QPS; qp_i++) { // take care to poll the correct recv queues
+////      printf("Polling wr_i= %d, received_messages = %d, per_qp_received_messages[qp_i] = %d, qp_i =%d \n", wr_i,
+////      						received_messages, per_qp_received_messages[qp_i], qp_i );
+//    if (per_qp_received_messages[qp_i] > 0) {
+//      if (ENABLE_ASSERTIONS) {
+//        assert(per_qp_received_messages[qp_i] <= WS_PER_WORKER * (CLIENT_NUM - CLIENTS_PER_MACHINE));
+//        if (WORKER_NUM_UD_QPS == 1) assert(per_qp_received_messages[qp_i] == received_messages);
+//      }
+//      hrd_poll_cq(cb->dgram_recv_cq[qp_i], per_qp_received_messages[qp_i], &wc[wc_i]);
+//      if (DEBUG_WORKER_RECVS) *debug_recv-= per_qp_received_messages[qp_i];
+//      wc_i += per_qp_received_messages[qp_i];
+//    }
+//  }
+//  if (ENABLE_ASSERTIONS == 1) {
+//    assert(multiget == false);
+//    assert(wc_i == received_messages);
+//    assert(wr_i <= WORKER_MAX_BATCH);
+//    if (received_messages * MAX_COALESCE_PER_MACH < wr_i)
+//      red_printf("Worker %d: wr_i = %d, received_messages %d, max reqs %d \n",
+//                 wrkr_lid, wr_i, received_messages, max_reqs);
+//    assert(received_messages <= max_reqs);
+//    if (WORKER_NUM_UD_QPS == 1)
+//      assert(per_qp_received_messages[0] == received_messages);
+//    assert(received_messages <= WORKER_MAX_BATCH);
+//  }
+//}
+//
+//
+//// Have each send work request point to the MICA response and delete the corresponding request from the Request Region
+//static inline void append_responses_to_work_requests_and_delete_requests(uint16_t wr_i, struct mica_op** op_ptr_arr,
+//                                      struct ibv_send_wr* wr, struct mica_resp* mica_resp_arr, uint16_t* resp_buf_i,
+//                                      uint16_t wrkr_lid, struct ibv_sge* sgl, struct wrkr_coalesce_mica_op* response_buffer,
+//																			uint8_t* requests_per_message)
+//{
+//  uint16_t i;
+//	uint16_t message_i = 0;
+//	uint8_t per_message_reqs = 0;
+//  for (i = 0; i < wr_i; i++) {
+//    if (ENABLE_ASSERTIONS) assert(op_ptr_arr[i] !=  NULL);
+//    op_ptr_arr[i]->opcode = 0;
+////    printf("size  is %d, it should be at most %d  \n", mica_resp_arr[i].val_len << SHIFT_BITS, HERD_PUT_REQ_SIZE);
+//
+//		if (ENABLE_WORKER_COALESCING == 1) {
+//			if (per_message_reqs == 0) {
+//				wr[message_i].sg_list->length = 0;
+//				sgl[message_i].addr = (uintptr_t) response_buffer[(*resp_buf_i)].value;
+//			}
+//			memcpy(response_buffer[(*resp_buf_i)].value + wr[message_i].sg_list->length, mica_resp_arr[i].val_ptr,
+//						 (mica_resp_arr[i].val_len << SHIFT_BITS));
+//			wr[message_i].sg_list->length += (mica_resp_arr[i].val_len << SHIFT_BITS);
+//			if (ENABLE_ASSERTIONS) {
+//				assert(wr[message_i].sg_list->length <= sizeof(struct wrkr_coalesce_mica_op));}
+//			per_message_reqs++;
+//
+//			if (per_message_reqs == requests_per_message[message_i]) {
+////				printf("Created message %d, with %d reqs, message length %d, payload at %llu \n", message_i, per_message_reqs,
+////							 wr[message_i].sg_list->length, response_buffer[(*resp_buf_i)].value);
+//				message_i++;
+//				per_message_reqs = 0;
+//				MOD_ADD_WITH_BASE((*resp_buf_i), WORKER_SS_BATCH, 0);
+//			}
+//		}
+//		else {
+//			wr[i].sg_list->length = mica_resp_arr[i].val_len << SHIFT_BITS;
+//			if (WORKER_ENABLE_INLINING == 1) {
+//				wr[i].sg_list->addr = (uint64_t) mica_resp_arr[i].val_ptr;
+//			} else {				if (ENABLE_ASSERTIONS) {
+//					if (!((*resp_buf_i) < WORKER_SS_BATCH)) {
+//						printf("Worker %d, resp_buf_i %d, ss_batch %d, wr_i %d, current batch size %d\n",
+//									 wrkr_lid, (*resp_buf_i), WORKER_SS_BATCH, i, wr_i);
+//						assert(0);
+//					}
+//				}
+//				sgl[i].addr = (uintptr_t) response_buffer[(*resp_buf_i)].value;
+//				memcpy(response_buffer[(*resp_buf_i)].value, mica_resp_arr[i].val_ptr, wr[i].sg_list->length);
+////       printf("Sending val_len %d\n", wr[i].sg_list->length);
+//				MOD_ADD_WITH_BASE((*resp_buf_i), WORKER_SS_BATCH, 0);
+//			}
+//		}
+//  }
+//}
 
-/* ---------------------------------------------------------------------------
------------------------------- WORKER MAIN LOOP -----------------------------
----------------------------------------------------------------------------*/
-//poll and serve the local requests
-static inline void serve_local_reqs(uint16_t wrkr_lid, struct mica_kv* kv, struct mica_op **local_op_ptr_arr,
-																		struct mica_resp* local_responses)
-{
-	uint16_t clt_i, i;
-	for (clt_i = 0; clt_i < CLIENTS_PER_MACHINE; clt_i++) {
-		for (i = 0; i < LOCAL_REGIONS; i++) {
-			if (local_recv_flag[wrkr_lid][clt_i][i] == 0) continue; // find a client that has filled his region
-			uint16_t wrkr_offset = (clt_i * LOCAL_WINDOW) + (i * LOCAL_REGION_SIZE);
-			// green_printf("Worker %d reads locals from clt %d at local region %d, offset\n", wrkr_lid, clt_i,	i, wrkr_offset );
-			struct mica_resp *local_resp_arr = local_responses + wrkr_offset;
-			KVS_BATCH_OP(kv, LOCAL_REGION_SIZE, &local_op_ptr_arr[wrkr_offset], local_resp_arr);
-			if (ENABLE_ASSERTIONS == 1) assert(local_recv_flag[wrkr_lid][clt_i][i] == 1);
-			local_recv_flag[wrkr_lid][clt_i][i] = 0;
-			w_stats[wrkr_lid].locals_per_worker += LOCAL_REGION_SIZE;
-		}
-	}
-}
-
-static inline void worker_remote_request_error_checking(int pull_ptr, uint32_t per_qp_buf_slots, struct mica_op* next_req_ptr,
-                                                   uint16_t wrkr_lid, uint16_t qp_i, uint16_t wr_i, struct wrkr_ud_req* req,
-                                                   long long nb_tx_tot, int push_ptr, int clt_i, bool multiget, uint16_t get_i)
-{
-  if (ENABLE_ASSERTIONS == 1) {
-    assert(pull_ptr <= (int)per_qp_buf_slots);
-    assert(push_ptr <= (int)per_qp_buf_slots);
-    assert((next_req_ptr)->opcode == MICA_OP_GET ||	/* XXX */
-           next_req_ptr->opcode == MICA_OP_PUT);
-    if (next_req_ptr->opcode == MICA_OP_PUT) {
-      if (next_req_ptr->val_len != (HERD_VALUE_SIZE >> SHIFT_BITS)) {
-        yellow_printf("Wrker %d: qp_i %d, pull_ptr %d, wr_i %d, len %d, op %d, total reqs %llu\n",
-                      wrkr_lid, qp_i,	pull_ptr, wr_i, req->m_op.val_len,
-                      next_req_ptr->opcode, nb_tx_tot );
-        assert(false);
-      }
-    }
-  }
-  //printf("gets %d\n", req[pull_ptr].m_op.value[0]);
-
-//  green_printf("Worker %d  sees a req with key bkt %u , at qp %d , wr_i %d, recv_per_qp %d, opcode %d  \n", wrkr_lid, req.m_op.key.bkt,
-//                  qp_i, wr_i, per_recv_qp_wr_i, req.m_op.opcode);
-
-
-  if (ENABLE_ASSERTIONS == 1) {
-    if (!(clt_i >= 0 && clt_i < CLIENT_NUM)) {
-      printf("mutliget %d, clt_i %d, multiget %d get_i %d\n", multiget, clt_i, multiget, get_i);
-      assert(false);
-    }
-    assert(clt_i / CLIENTS_PER_MACHINE != machine_id);
-  }
-}
-
-// poll the remote request region and return a control flow directive
-static inline enum control_flow_directive poll_remote_region(uint16_t* qp_i, int* pull_ptr, uint32_t* per_qp_buf_slots, struct wrkr_ud_req* req,
-                    bool* multiget, uint16_t wr_i, uint16_t* received_messages, uint16_t* per_qp_received_messages,
-                    struct mica_op** next_req_ptr, uint16_t* get_i, uint16_t* get_num, uint8_t* requests_per_message)
-{
-  uint32_t index = (pull_ptr[(*qp_i)] + 1) % per_qp_buf_slots[(*qp_i)];
-  if (req[index].m_op.opcode != MICA_OP_GET && req[index].m_op.opcode != MICA_OP_PUT) {
-    if (ENABLE_COALESCING && req[index].m_op.opcode == MICA_OP_MULTI_GET) {
-      if ((*multiget) == false) { // if it's the first request
-        struct mica_op *tmp = (struct mica_op *) (req[index].m_op.value + (req[index].m_op.val_len - 2) * HERD_GET_REQ_SIZE);
-        if (tmp->opcode != MICA_OP_GET) return continue_;
-        (*get_num)  = req[index].m_op.val_len;
-        if (wr_i + (*get_num) > WORKER_MAX_BATCH) {
-          // printf("breaking %d\n", wrkr_lid);
-          return break_;
-        }
-        (*multiget)  = true;
-				requests_per_message[(*received_messages)] = *get_num;
-        (*get_i)  = 0;
-        req[index].m_op.opcode = MICA_OP_GET;// necessary to work with the MICA API
-        (*next_req_ptr) = (struct mica_op *) &(req[index].m_op);
-
-        (*received_messages)++;
-        per_qp_received_messages[(*qp_i)]++;
-//        green_printf("I see a Multi Get of %d gets \n", (*get_num) );
-        if (ENABLE_ASSERTIONS && (*next_req_ptr)->opcode != MICA_OP_GET) {
-          red_printf("req opcode %d, next_rq_ptr opcode %d\n",req[index].m_op.opcode,  (*next_req_ptr)->opcode);
-        }
-      }
-      else if (ENABLE_ASSERTIONS) assert(false);
-    }
-    else { // we need to check the rest of the buffers
-      if (ENABLE_ASSERTIONS)
-        if(req[index].m_op.opcode != 0) {
-          red_printf("Wrong Opcode %d \n", req[index].m_op.opcode);
-          assert(false);
-        }
-      if ((*qp_i)  == WORKER_NUM_UD_QPS -1) return break_; // all qp buffers were checked
-      else {
-        HRD_MOD_ADD((*qp_i) , WORKER_NUM_UD_QPS);
-        return continue_; // move to the next buffer
-      }
-    }
-  }
-  return no_cf_change;
-}
-
-//do the required bookkeeping for a request
-static inline void request_bookkeeping(bool multiget, int* pull_ptr, uint16_t qp_i, uint32_t* per_qp_buf_slots,
-                                       struct mica_op** next_req_ptr, uint16_t* received_messages, uint16_t* per_qp_received_messages,
-                                       struct wrkr_ud_req* req, uint16_t* get_i, uint16_t wr_i, struct ibv_send_wr* wr, long long* nb_tx_tot,
-                                       int* clt_i, uint32_t* index, uint16_t send_qp_i, struct hrd_ctrl_blk* cb, uint16_t wrkr_lid,
-                                       int push_ptr, uint16_t* last_measured_wr_i, uint8_t* requests_per_message)
-{
-  struct ibv_wc send_wc;
-  if (!multiget) {
-    MOD_ADD_WITH_BASE(pull_ptr[qp_i], per_qp_buf_slots[qp_i], 0);
-    (*index) = pull_ptr[qp_i];
-    (*next_req_ptr) = (struct mica_op *) &(req[*index].m_op);
-    if (ENABLE_ASSERTIONS) assert((*next_req_ptr)->opcode == MICA_OP_GET || (*next_req_ptr)->opcode == MICA_OP_PUT);
-		requests_per_message[(*received_messages)] = 1;
-    (*received_messages)++;
-    per_qp_received_messages[qp_i]++;
-  }
-  else { // if multiget
-    (*get_i)++;
-    if ((*get_i) > 1) { // move to the next get req
-      // hrd_green_printf("Multiget is moving to get_i  %d, get_num %d\n", (*get_i), get_num );
-      (*next_req_ptr) = (struct mica_op *)(req[(*index)].m_op.value + (((*get_i) - 2) * HERD_GET_REQ_SIZE));
-    }
-  }
-
-
-	if ((ENABLE_WORKER_COALESCING == 0) || ((multiget == 0) || (*get_i == 1))) {
-
-		if (wr_i > 0) wr[wr_i - 1].next = &wr[wr_i];
-		wr[wr_i].send_flags = ((nb_tx_tot[send_qp_i] % WORKER_SS_BATCH) == 0)
-													? IBV_SEND_SIGNALED : 0;
-		if ((nb_tx_tot[send_qp_i] % WORKER_SS_BATCH) == WORKER_SS_BATCH - 1) {
-			hrd_poll_cq(cb->dgram_send_cq[send_qp_i], 1, &send_wc);
-		}
-		if (WORKER_ENABLE_INLINING == 1) wr[wr_i].send_flags |= IBV_SEND_INLINE;
-		(*clt_i) = (*next_req_ptr)->key.rem_meta.clt_gid;
-		wr[wr_i].wr.ud.ah = remote_clt_qp[(*clt_i)][REMOTE_UD_QP_ID].ah;
-		wr[wr_i].wr.ud.remote_qpn = remote_clt_qp[(*clt_i)][REMOTE_UD_QP_ID].qpn;
-
-//		green_printf("Creating a request %d for client %d\n", wr_i, *clt_i);
-
-		if (ENABLE_ASSERTIONS)
-			worker_remote_request_error_checking(pull_ptr[qp_i], per_qp_buf_slots[qp_i], *next_req_ptr,
-																					 wrkr_lid, qp_i, wr_i, &req[*index], nb_tx_tot[send_qp_i],
-																					 push_ptr, *clt_i, multiget, *get_i);
-		nb_tx_tot[send_qp_i]++;
-	}
-
-	if (MEASURE_LATENCY == 1) {
-		cache_meta *tmp = (cache_meta *) &(*next_req_ptr)->key.rem_meta;
-		if (tmp->state != 0) {
-      if ((ENABLE_WORKER_COALESCING == 0) || ((multiget == 0) || (*get_i == 1)))
-        *last_measured_wr_i = wr_i;
-      else
-        *last_measured_wr_i = wr_i - 1;
-//			printf("I see a req for measuring from client %d, state: %d wr_i %d\n", *clt_i, tmp->state, wr_i);
-			wr[*last_measured_wr_i].opcode = IBV_WR_SEND_WITH_IMM;
-			wr[*last_measured_wr_i].imm_data = REMOTE_LATENCY_MARK;
-//			(*clt_i) -= CLIENT_NUM;
-		}
-	}
-
-}
-
-// Check all the conditions to stop polling for remote requests, or switch qp or exit the  current multiget
-static inline enum control_flow_directive check_polling_conditions(bool* multiget, uint16_t get_i, uint16_t get_num,
-                                       int* pull_ptr, uint16_t* qp_i, uint32_t per_qp_buf_slots, uint16_t per_qp_received_messages,
-                                       uint16_t wr_i, uint16_t received_messages, uint16_t wrkr_lid, uint32_t max_reqs)
-{
-  if ((*multiget) == true && get_i == get_num) { // check if the multiget should be over
-    (*multiget) = false;
-    MOD_ADD_WITH_BASE(pull_ptr[(*qp_i)], per_qp_buf_slots, 0);
-    // if (wrkr_lid == 0)
-    // 	hrd_green_printf("Multiget from clt %d is over wr_i %d, received messages %d, pull_ptr %d, get_num %d\n",
-    // 			clt_i, wr_i, received_messages, pull_ptr[(*qp_i)],get_num );
-  }
-  if (WORKER_NUM_UD_QPS > 1) {
-    if (per_qp_received_messages== per_qp_buf_slots && (*multiget) == false) {
-      if ((*qp_i) == WORKER_NUM_UD_QPS -1 ) return break_; // all qp buffers were checked
-      else MOD_ADD_WITH_BASE((*qp_i), WORKER_NUM_UD_QPS, 0);
-    }
-  }
-  if (wr_i == WORKER_MAX_BATCH || (received_messages == max_reqs && (*multiget) == false)) {
-    if (ENABLE_ASSERTIONS) {
-      if ((*multiget) == true) {
-        red_printf("Worker %d: wr_i = %d, received_messages %d, max reqs %d, get_i %d, get_num %d\n",
-                   wrkr_lid, wr_i, received_messages, max_reqs, get_i, get_num);
-        assert(false);
-      }
-    }
-    return break_;
-  }
-  return no_cf_change;
-}
-
-// poll the worker's receive completions according to the messages that have been polled from the REquest Region
-static inline void poll_workers_recv_completions(uint16_t* per_qp_received_messages, uint16_t received_messages,
-                                    struct hrd_ctrl_blk* cb, struct ibv_wc* wc, bool multiget, uint32_t* debug_recv,
-                                    uint16_t wr_i, uint16_t wrkr_lid, uint32_t max_reqs)
-{
-  uint16_t wc_i = 0, qp_i;
-  for (qp_i = 0; qp_i < WORKER_NUM_UD_QPS; qp_i++) { // take care to poll the correct recv queues
-//      printf("Polling wr_i= %d, received_messages = %d, per_qp_received_messages[qp_i] = %d, qp_i =%d \n", wr_i,
-//      						received_messages, per_qp_received_messages[qp_i], qp_i );
-    if (per_qp_received_messages[qp_i] > 0) {
-      if (ENABLE_ASSERTIONS) {
-        assert(per_qp_received_messages[qp_i] <= WS_PER_WORKER * (CLIENT_NUM - CLIENTS_PER_MACHINE));
-        if (WORKER_NUM_UD_QPS == 1) assert(per_qp_received_messages[qp_i] == received_messages);
-      }
-      hrd_poll_cq(cb->dgram_recv_cq[qp_i], per_qp_received_messages[qp_i], &wc[wc_i]);
-      if (DEBUG_WORKER_RECVS) *debug_recv-= per_qp_received_messages[qp_i];
-      wc_i += per_qp_received_messages[qp_i];
-    }
-  }
-  if (ENABLE_ASSERTIONS == 1) {
-    assert(multiget == false);
-    assert(wc_i == received_messages);
-    assert(wr_i <= WORKER_MAX_BATCH);
-    if (received_messages * MAX_COALESCE_PER_MACH < wr_i)
-      red_printf("Worker %d: wr_i = %d, received_messages %d, max reqs %d \n",
-                 wrkr_lid, wr_i, received_messages, max_reqs);
-    assert(received_messages <= max_reqs);
-    if (WORKER_NUM_UD_QPS == 1)
-      assert(per_qp_received_messages[0] == received_messages);
-    assert(received_messages <= WORKER_MAX_BATCH);
-  }
-}
-
-
-// Have each send work request point to the MICA response and delete the corresponding request from the Request Region
-static inline void append_responses_to_work_requests_and_delete_requests(uint16_t wr_i, struct mica_op** op_ptr_arr,
-                                      struct ibv_send_wr* wr, struct mica_resp* mica_resp_arr, uint16_t* resp_buf_i,
-                                      uint16_t wrkr_lid, struct ibv_sge* sgl, struct wrkr_coalesce_mica_op* response_buffer,
-																			uint8_t* requests_per_message)
-{
-  uint16_t i;
-	uint16_t message_i = 0;
-	uint8_t per_message_reqs = 0;
-  for (i = 0; i < wr_i; i++) {
-    if (ENABLE_ASSERTIONS) assert(op_ptr_arr[i] !=  NULL);
-    op_ptr_arr[i]->opcode = 0;
-//    printf("size  is %d, it should be at most %d  \n", mica_resp_arr[i].val_len << SHIFT_BITS, HERD_PUT_REQ_SIZE);
-
-		if (ENABLE_WORKER_COALESCING == 1) {
-			if (per_message_reqs == 0) {
-				wr[message_i].sg_list->length = 0;
-				sgl[message_i].addr = (uintptr_t) response_buffer[(*resp_buf_i)].value;
-			}
-			memcpy(response_buffer[(*resp_buf_i)].value + wr[message_i].sg_list->length, mica_resp_arr[i].val_ptr,
-						 (mica_resp_arr[i].val_len << SHIFT_BITS));
-			wr[message_i].sg_list->length += (mica_resp_arr[i].val_len << SHIFT_BITS);
-			if (ENABLE_ASSERTIONS) {
-				assert(wr[message_i].sg_list->length <= sizeof(struct wrkr_coalesce_mica_op));}
-			per_message_reqs++;
-
-			if (per_message_reqs == requests_per_message[message_i]) {
-//				printf("Created message %d, with %d reqs, message length %d, payload at %llu \n", message_i, per_message_reqs,
-//							 wr[message_i].sg_list->length, response_buffer[(*resp_buf_i)].value);
-				message_i++;
-				per_message_reqs = 0;
-				MOD_ADD_WITH_BASE((*resp_buf_i), WORKER_SS_BATCH, 0);
-			}
-		}
-		else {
-			wr[i].sg_list->length = mica_resp_arr[i].val_len << SHIFT_BITS;
-			if (WORKER_ENABLE_INLINING == 1) {
-				wr[i].sg_list->addr = (uint64_t) mica_resp_arr[i].val_ptr;
-			} else {				if (ENABLE_ASSERTIONS) {
-					if (!((*resp_buf_i) < WORKER_SS_BATCH)) {
-						printf("Worker %d, resp_buf_i %d, ss_batch %d, wr_i %d, current batch size %d\n",
-									 wrkr_lid, (*resp_buf_i), WORKER_SS_BATCH, i, wr_i);
-						assert(0);
-					}
-				}
-				sgl[i].addr = (uintptr_t) response_buffer[(*resp_buf_i)].value;
-				memcpy(response_buffer[(*resp_buf_i)].value, mica_resp_arr[i].val_ptr, wr[i].sg_list->length);
-//       printf("Sending val_len %d\n", wr[i].sg_list->length);
-				MOD_ADD_WITH_BASE((*resp_buf_i), WORKER_SS_BATCH, 0);
-			}
-		}
-  }
-}
-
-// Worker post receives on all of its qps and then posts its sends
-static inline void worker_post_receives_and_sends(uint16_t nb_new_req_tot, struct hrd_ctrl_blk* cb, uint16_t* per_qp_received_messages,
-                                       struct ibv_recv_wr* recv_wr, struct ibv_sge* recv_sgl, int* push_ptr, uint32_t* qp_buf_base,
-                                       uint32_t* per_qp_buf_slots, uint32_t* debug_recv, uint16_t* clts_per_qp, struct ibv_send_wr* wr,
-                                       uint16_t send_qp_i, uint16_t wrkr_lid, uint16_t last_measured_wr_i, uint16_t total_reqs_sent)
-{
-  uint16_t qp_i, i;
-  int ret;
-  struct ibv_recv_wr *bad_recv_wr;
-  struct ibv_send_wr *bad_send_wr;
-  // Refill the depleted RECVs before sending anything
-  for (qp_i = 0; qp_i < WORKER_NUM_UD_QPS; qp_i++) {
-//      printf("Received %d\n",  per_qp_received_messages[qp_i]);
-    // printf("Total slots %d\n", per_qp_buf_slots[qp_i]);
-    if(WORKER_NUM_UD_QPS == 1 && nb_new_req_tot > 0 && ENABLE_ASSERTIONS)
-      assert(per_qp_received_messages[qp_i] > 0 && per_qp_received_messages[qp_i] <= WORKER_MAX_BATCH);
-    for (i = 0; i < per_qp_received_messages[qp_i]; i++) {
-      // printf("Receiving at slot  %d\n", qp_buf_base[qp_i] + push_ptr[qp_i] );
-      recv_sgl[i].addr = (uintptr_t) &cb->dgram_buf[(qp_buf_base[qp_i] + push_ptr[qp_i]) * sizeof(struct wrkr_ud_req)];
-      MOD_ADD_WITH_BASE(push_ptr[qp_i], per_qp_buf_slots[qp_i], 0);
-      recv_wr[i].next = (i == per_qp_received_messages[qp_i] - 1) ? NULL : &recv_wr[i + 1];
-      if (DEBUG_WORKER_RECVS) (*debug_recv)++;
-    }
-    if (per_qp_received_messages[qp_i] > 0) {
-      ret = ibv_post_recv(cb->dgram_qp[qp_i], &recv_wr[0], &bad_recv_wr);
-      CPE(ret, " Worker ibv_post_recv error", ret);
-    }
-    if (ENABLE_ASSERTIONS && DEBUG_WORKER_RECVS) assert(*debug_recv >= clts_per_qp[0]  * WS_PER_WORKER);
-  }
-
-  // Send the batch to the NIC
-  if (nb_new_req_tot > 0) {
-    wr[nb_new_req_tot - 1].next = NULL;
-    ret = ibv_post_send(cb->dgram_qp[send_qp_i], &wr[0], &bad_send_wr);
-    CPE(ret, "worker ibv_post_send error", ret);
-//		green_printf("Sending %d responses through qp %d\n", nb_new_req_tot, send_qp_i);
-    w_stats[wrkr_lid].batches_per_worker++;
-    w_stats[wrkr_lid].remotes_per_worker+= total_reqs_sent;
-    if (MEASURE_LATENCY == 1) {
-      wr[last_measured_wr_i].opcode = IBV_WR_SEND;
-    }
-    MOD_ADD_WITH_BASE(send_qp_i, WORKER_NUM_UD_QPS, 0);
-  }
-}
+//// Worker post receives on all of its qps and then posts its sends
+//static inline void worker_post_receives_and_sends(uint16_t nb_new_req_tot, struct hrd_ctrl_blk* cb, uint16_t* per_qp_received_messages,
+//                                       struct ibv_recv_wr* recv_wr, struct ibv_sge* recv_sgl, int* push_ptr, uint32_t* qp_buf_base,
+//                                       uint32_t* per_qp_buf_slots, uint32_t* debug_recv, uint16_t* clts_per_qp, struct ibv_send_wr* wr,
+//                                       uint16_t send_qp_i, uint16_t wrkr_lid, uint16_t last_measured_wr_i, uint16_t total_reqs_sent)
+//{
+//  uint16_t qp_i, i;
+//  int ret;
+//  struct ibv_recv_wr *bad_recv_wr;
+//  struct ibv_send_wr *bad_send_wr;
+//  // Refill the depleted RECVs before sending anything
+//  for (qp_i = 0; qp_i < WORKER_NUM_UD_QPS; qp_i++) {
+////      printf("Received %d\n",  per_qp_received_messages[qp_i]);
+//    // printf("Total slots %d\n", per_qp_buf_slots[qp_i]);
+//    if(WORKER_NUM_UD_QPS == 1 && nb_new_req_tot > 0 && ENABLE_ASSERTIONS)
+//      assert(per_qp_received_messages[qp_i] > 0 && per_qp_received_messages[qp_i] <= WORKER_MAX_BATCH);
+//    for (i = 0; i < per_qp_received_messages[qp_i]; i++) {
+//      // printf("Receiving at slot  %d\n", qp_buf_base[qp_i] + push_ptr[qp_i] );
+//      recv_sgl[i].addr = (uintptr_t) &cb->dgram_buf[(qp_buf_base[qp_i] + push_ptr[qp_i]) * sizeof(struct wrkr_ud_req)];
+//      MOD_ADD_WITH_BASE(push_ptr[qp_i], per_qp_buf_slots[qp_i], 0);
+//      recv_wr[i].next = (i == per_qp_received_messages[qp_i] - 1) ? NULL : &recv_wr[i + 1];
+//      if (DEBUG_WORKER_RECVS) (*debug_recv)++;
+//    }
+//    if (per_qp_received_messages[qp_i] > 0) {
+//      ret = ibv_post_recv(cb->dgram_qp[qp_i], &recv_wr[0], &bad_recv_wr);
+//      CPE(ret, " Worker ibv_post_recv error", ret);
+//    }
+//    if (ENABLE_ASSERTIONS && DEBUG_WORKER_RECVS) assert(*debug_recv >= clts_per_qp[0]  * WS_PER_WORKER);
+//  }
+//
+//  // Send the batch to the NIC
+//  if (nb_new_req_tot > 0) {
+//    wr[nb_new_req_tot - 1].next = NULL;
+//    ret = ibv_post_send(cb->dgram_qp[send_qp_i], &wr[0], &bad_send_wr);
+//    CPE(ret, "worker ibv_post_send error", ret);
+////		green_printf("Sending %d responses through qp %d\n", nb_new_req_tot, send_qp_i);
+//    w_stats[wrkr_lid].batches_per_worker++;
+//    w_stats[wrkr_lid].remotes_per_worker+= total_reqs_sent;
+//    if (MEASURE_LATENCY == 1) {
+//      wr[last_measured_wr_i].opcode = IBV_WR_SEND;
+//    }
+//    MOD_ADD_WITH_BASE(send_qp_i, WORKER_NUM_UD_QPS, 0);
+//  }
+//}
 
 #endif /* INLINE_UTILS_H */

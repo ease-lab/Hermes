@@ -1,29 +1,31 @@
 #include "util.h"
-#include "inline_util.h"
+#include "config.h"
+//#include "inline_util.h"
 
-void *print_stats(void* no_arg)
-{
+void* print_stats(void* no_arg){
     int j;
     uint16_t i, print_count = 0;
     long long all_clients_cache_hits = 0, all_workers_remotes = 0, all_workers_locals = 0;
     double total_throughput = 0, all_clients_throughput = 0, all_workers_throughput = 0;
-    ///double worker_throughput[WORKERS_PER_MACHINE];
+    double worker_throughput[WORKERS_PER_MACHINE];
     int sleep_time = 20;
     struct client_stats curr_c_stats[CLIENTS_PER_MACHINE], prev_c_stats[CLIENTS_PER_MACHINE];
-    ///struct worker_stats curr_w_stats[WORKERS_PER_MACHINE], prev_w_stats[WORKERS_PER_MACHINE];
+    struct worker_stats curr_w_stats[WORKERS_PER_MACHINE], prev_w_stats[WORKERS_PER_MACHINE];
     struct stats all_stats;
     sleep(4);
     memcpy(prev_c_stats, (void*) w_stats, CLIENTS_PER_MACHINE * (sizeof(struct client_stats)));
-    ///memcpy(prev_w_stats, (void*) w_stats, WORKERS_PER_MACHINE * (sizeof(struct worker_stats)));
+    memcpy(prev_w_stats, (void*) w_stats, WORKERS_PER_MACHINE * (sizeof(struct worker_stats)));
     struct timespec start, end;
     clock_gettime(CLOCK_REALTIME, &start);
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wmissing-noreturn"
     while(true) {
         sleep(sleep_time);
         clock_gettime(CLOCK_REALTIME, &end);
         double seconds = (end.tv_sec - start.tv_sec) + (double) (end.tv_nsec - start.tv_nsec) / 1000000001;
         start = end;
         memcpy(curr_c_stats, (void*) w_stats, CLIENTS_PER_MACHINE * (sizeof(struct client_stats)));
-        ///memcpy(curr_w_stats, (void*) w_stats, WORKERS_PER_MACHINE * (sizeof(struct worker_stats)));
+        memcpy(curr_w_stats, (void*) w_stats, WORKERS_PER_MACHINE * (sizeof(struct worker_stats)));
         all_clients_cache_hits = 0; all_workers_remotes = 0; all_workers_locals = 0;
         print_count++;
         if (EXIT_ON_PRINT == 1 && print_count == PRINT_NUM) {
@@ -60,36 +62,36 @@ void *print_stats(void* no_arg)
                 all_stats.stalled_time_per_client[i] = 0;
             }
 
-            uint32_t total_loops = curr_c_stats[i].batches_per_client - prev_c_stats[i].batches_per_client +
-                                   curr_c_stats[i].wasted_loops - prev_c_stats[i].wasted_loops;
+            uint32_t total_loops = (uint32_t) (curr_c_stats[i].batches_per_client - prev_c_stats[i].batches_per_client +
+                                   curr_c_stats[i].wasted_loops - prev_c_stats[i].wasted_loops);
             if (total_loops > 0)
                 all_stats.empty_reqs_per_client[i] =  (curr_c_stats[i].tot_empty_reqs_per_trace - prev_c_stats[i].tot_empty_reqs_per_trace) / total_loops ;
         }
 
-//        // PER WORKER STATS
-//        for (i = 0; i < WORKERS_PER_MACHINE; i++) {
-//            all_workers_remotes += curr_w_stats[i].remotes_per_worker - prev_w_stats[i].remotes_per_worker;
-//            all_workers_locals += curr_w_stats[i].locals_per_worker - prev_w_stats[i].locals_per_worker;
-//            worker_throughput[i] = (curr_w_stats[i].remotes_per_worker - prev_w_stats[i].remotes_per_worker +
-//                                    curr_w_stats[i].locals_per_worker - prev_w_stats[i].locals_per_worker) / seconds;
-//
-//            all_stats.remotes_per_worker[i] = (curr_w_stats[i].remotes_per_worker - prev_w_stats[i].remotes_per_worker) / seconds;
-//            all_stats.locals_per_worker[i] = (curr_w_stats[i].locals_per_worker - prev_w_stats[i].locals_per_worker) / seconds;
-//            if (curr_w_stats[i].batches_per_worker - prev_w_stats[i].batches_per_worker > 0) {
-//                all_stats.batch_size_per_worker[i] = (curr_w_stats[i].remotes_per_worker - prev_w_stats[i].remotes_per_worker) /
-//                    (double) (curr_w_stats[i].batches_per_worker - prev_w_stats[i].batches_per_worker);
-//                all_stats.aver_reqs_polled_per_worker[i] = (curr_w_stats[i].remotes_per_worker - prev_w_stats[i].remotes_per_worker) /
-//                    (double) (curr_w_stats[i].empty_polls_per_worker - prev_w_stats[i].empty_polls_per_worker +
-//                        curr_w_stats[i].batches_per_worker - prev_w_stats[i].batches_per_worker);
-//            }
-//            else {
-//                all_stats.batch_size_per_worker[i] = 0;
-//                all_stats.aver_reqs_polled_per_worker[i] = 0;
-//            }
-//        }
+        // PER WORKER STATS
+        for (i = 0; i < WORKERS_PER_MACHINE; i++) {
+            all_workers_remotes += curr_w_stats[i].remotes_per_worker - prev_w_stats[i].remotes_per_worker;
+            all_workers_locals += curr_w_stats[i].locals_per_worker - prev_w_stats[i].locals_per_worker;
+            worker_throughput[i] = (curr_w_stats[i].remotes_per_worker - prev_w_stats[i].remotes_per_worker +
+                                    curr_w_stats[i].locals_per_worker - prev_w_stats[i].locals_per_worker) / seconds;
+
+            all_stats.remotes_per_worker[i] = (curr_w_stats[i].remotes_per_worker - prev_w_stats[i].remotes_per_worker) / seconds;
+            all_stats.locals_per_worker[i] = (curr_w_stats[i].locals_per_worker - prev_w_stats[i].locals_per_worker) / seconds;
+            if (curr_w_stats[i].batches_per_worker - prev_w_stats[i].batches_per_worker > 0) {
+                all_stats.batch_size_per_worker[i] = (curr_w_stats[i].remotes_per_worker - prev_w_stats[i].remotes_per_worker) /
+                    (double) (curr_w_stats[i].batches_per_worker - prev_w_stats[i].batches_per_worker);
+                all_stats.aver_reqs_polled_per_worker[i] = (curr_w_stats[i].remotes_per_worker - prev_w_stats[i].remotes_per_worker) /
+                    (double) (curr_w_stats[i].empty_polls_per_worker - prev_w_stats[i].empty_polls_per_worker +
+                        curr_w_stats[i].batches_per_worker - prev_w_stats[i].batches_per_worker);
+            }
+            else {
+                all_stats.batch_size_per_worker[i] = 0;
+                all_stats.aver_reqs_polled_per_worker[i] = 0;
+            }
+        }
 
         memcpy(prev_c_stats, curr_c_stats, CLIENTS_PER_MACHINE * (sizeof(struct client_stats)));
-        ///memcpy(prev_w_stats, curr_w_stats, WORKERS_PER_MACHINE * (sizeof(struct worker_stats)));
+        memcpy(prev_w_stats, curr_w_stats, WORKERS_PER_MACHINE * (sizeof(struct worker_stats)));
         total_throughput = (all_clients_cache_hits + all_workers_remotes + all_workers_locals) / seconds;
         all_clients_throughput = all_clients_cache_hits / seconds;
         all_workers_throughput = (all_workers_remotes + all_workers_locals) / seconds;
@@ -98,10 +100,10 @@ void *print_stats(void* no_arg)
                          total_throughput, all_clients_throughput, all_workers_throughput);
         for (i = 0; i < CLIENTS_PER_MACHINE; i++) {
             double cacheHitRate;
-            double trace_ratio;
+            double trace_ratio = 0;
             long long total_reqs = curr_c_stats[i].cache_hits_per_client + curr_c_stats[i].remotes_per_client + curr_c_stats[i].locals_per_client;
             if (total_reqs > 0)
-                trace_ratio =  curr_c_stats[i].cache_hits_per_client / (double)total_reqs;
+                trace_ratio =  curr_c_stats[i].cache_hits_per_client / (double) total_reqs;
             if (all_stats.remotes_per_client[i] > 0)
                 cacheHitRate = all_stats.cache_hits_per_client[i] / (all_stats.cache_hits_per_client[i] + all_stats.remotes_per_client[i] + all_stats.locals_per_client[i]);
             yellow_printf("C%d: %.2f MIOPS-Batch %.2f(%.2f) -H %.2f -W %llu -E %.2f -AC %.2f  ", i, all_stats.cache_hits_per_client[i], all_stats.batch_size_per_client[i],
@@ -110,14 +112,14 @@ void *print_stats(void* no_arg)
             if  (i > 0 && i % 2 == 0) printf("\n");
         }
         printf("\n");
-//        for (i = 0; i < WORKERS_PER_MACHINE; i++) {
-//            cyan_printf("WORKER %d: TOTAL: %.2f MIOPS, REMOTES: %.2f MIOPS, LOCALS: %.2f MIOPS, Batch %.2f(%.2f) \n",
-//                            i, worker_throughput[i], all_stats.remotes_per_worker[i], all_stats.locals_per_worker[i], all_stats.batch_size_per_worker[i],
-//                            all_stats.aver_reqs_polled_per_worker[i]);
-//        }
+        for (i = 0; i < WORKERS_PER_MACHINE; i++) {
+            cyan_printf("WORKER %d: TOTAL: %.2f MIOPS, REMOTES: %.2f MIOPS, LOCALS: %.2f MIOPS, Batch %.2f(%.2f) \n",
+                            i, worker_throughput[i], all_stats.remotes_per_worker[i], all_stats.locals_per_worker[i], all_stats.batch_size_per_worker[i],
+                            all_stats.aver_reqs_polled_per_worker[i]);
+        }
         printf("---------------------------------------\n");
-        if(ENABLE_CACHE_STATS == 1)
-             print_cache_stats(start, machine_id);
+        //if(ENABLE_CACHE_STATS == 1)
+             //print_cache_stats(start, machine_id);
         // // Write to a file all_clients_throughput, per_worker_remote_throughput[], per_worker_local_throughput[]
         if(DUMP_STATS_2_FILE == 1)
             dump_stats_2_file(&all_stats);
@@ -126,8 +128,9 @@ void *print_stats(void* no_arg)
                          total_throughput, all_clients_throughput, all_workers_throughput);
 
     }
+#pragma clang diagnostic pop
 }
-
+/*
 #define FIRST_N_HOT_IN_WINDOW 10
 void window_stats(struct extended_cache_op *op, struct mica_resp *resp) {
 	int i = 0, j = 0;
@@ -234,10 +237,10 @@ void window_stats(struct extended_cache_op *op, struct mica_resp *resp) {
 		}*/
 	//}
 	//meta.num_put_success -= stalled_brcs;
-}
+//}
 
 //assuming microsecond latency
-void print_latency_stats(void){
+/*void print_latency_stats(void){
   FILE *latency_stats_fd;
   int i = 0;
   char filename[128];
@@ -249,24 +252,18 @@ void print_latency_stats(void){
       "SS" //Strong Consistency (stalling)
   };
 
-//  sprintf(filename, "%s/latency_stats_%s_%s_%s_s_%d_a_%d_v_%d_m_%d_c_%d_w_%d_r_%d%s_C_%d.csv", path,
-//          DISABLE_CACHE == 1 ? "BS" : exectype[protocol],
-//          LOAD_BALANCE == 1 ? "UNIF" : "SKEW",
-//          EMULATING_CREW == 1 ? "CREW" : "EREW",
-//          DISABLE_CACHE == 0 && protocol == 2 && ENABLE_MULTIPLE_SESSIONS != 0 && SESSIONS_PER_CLIENT != 0 ? SESSIONS_PER_CLIENT: 0,
-//          SKEW_EXPONENT_A,
-//          USE_BIG_OBJECTS == 1 ? ((EXTRA_CACHE_LINES * 64) + BASE_VALUE_SIZE): BASE_VALUE_SIZE,
-//          MACHINE_NUM, CLIENTS_PER_MACHINE,
-//          WORKERS_PER_MACHINE, WRITE_RATIO,
-//          BALANCE_HOT_WRITES == 1  ? "_lbw" : "",
-//          CACHE_BATCH_SIZE);
+  sprintf(filename, "%s/latency_stats_%s_%s_%s_s_%d_a_%d_v_%d_m_%d_c_%d_w_%d_r_%d%s_C_%d.csv", path,
+          DISABLE_CACHE == 1 ? "BS" : exectype[protocol],
+          LOAD_BALANCE == 1 ? "UNIF" : "SKEW",
+          EMULATING_CREW == 1 ? "CREW" : "EREW",
+          DISABLE_CACHE == 0 && protocol == 2 && ENABLE_MULTIPLE_SESSIONS != 0 && SESSIONS_PER_CLIENT != 0 ? SESSIONS_PER_CLIENT: 0,
+          SKEW_EXPONENT_A,
+          USE_BIG_OBJECTS == 1 ? ((EXTRA_CACHE_LINES * 64) + BASE_VALUE_SIZE): BASE_VALUE_SIZE,
+          MACHINE_NUM, CLIENTS_PER_MACHINE,
+          WORKERS_PER_MACHINE, WRITE_RATIO,
+          BALANCE_HOT_WRITES == 1  ? "_lbw" : "",
+          CACHE_BATCH_SIZE);
 
-    sprintf(filename, "%s/UD_SENDS_n_%d_w_%d_t_%d_b_%d_s_%d_%s-%d.csv", path,
-            MACHINE_NUM, WRITE_RATIO,
-            CLIENTS_PER_MACHINE, CACHE_BATCH_SIZE,
-            USE_BIG_OBJECTS == 1 ? ((EXTRA_CACHE_LINES * 64) + BASE_VALUE_SIZE): BASE_VALUE_SIZE,
-            LOAD_BALANCE == 1 ? "UNIF" : "SKEW",
-            machine_id);
   latency_stats_fd = fopen(filename, "w");
   fprintf(latency_stats_fd, "#---------------- Remote Reqs --------------\n");
   for(i = 0; i < LATENCY_BUCKETS; ++i)

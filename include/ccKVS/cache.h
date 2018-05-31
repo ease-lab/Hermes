@@ -60,7 +60,7 @@ SC - skewed writes
 #define CACHE_OP_BRC 116       //Warning although this is cache opcode it's returned by cache to either Broadcast upd or inv
 
 //Cache Response
-#define EMPTY 120
+#define ST_EMPTY 120
 #define CACHE_GET_SUCCESS 121
 #define CACHE_PUT_SUCCESS 122
 #define CACHE_UPD_SUCCESS 123
@@ -87,7 +87,7 @@ struct key_home{
 };
 
 /* Fixed-size 16 byte keys */
-struct cache_key {
+struct spacetime_key {
 	cache_meta meta; // This should be 8B (unused --> in mica)
 	unsigned int bkt			:32;
 	unsigned int server			:16;
@@ -95,7 +95,7 @@ struct cache_key {
 };
 
 
-struct cache_op {
+struct spacetime_op {
 	struct cache_key key;	/* This must be the 1st field and 16B aligned */
 	uint8_t opcode;
 	uint8_t val_len;
@@ -103,7 +103,7 @@ struct cache_op {
 };
 
 // this is used to facilitate the coalescing
-struct extended_cache_op {
+struct spacetime_op_coalescing {
 	struct cache_key key;	/* This must be the 1st field and 16B aligned */
 	uint8_t opcode;
 	uint8_t val_len;
@@ -201,7 +201,7 @@ static inline void start_measurement(struct timespec* start, struct latency_flag
 
 	if (ENABLE_ASSERTIONS) assert(ops[op_i].key.meta.state == 0);
   if ((latency_info->measured_req_flag) == NO_REQ) {
-    if (c_stats[local_client_id].batches_per_client > K_32 &&
+    if (w_stats[local_client_id].batches_per_client > K_32 &&
         op_i == ((((latency_count.total_measurements % CACHE_BATCH_SIZE) + next_op_i) % CACHE_BATCH_SIZE) + next_op_i) &&
         local_client_id == 0 && machine_id == 0) {
 //      printf("tag a key for latency measurement \n");
@@ -220,7 +220,7 @@ static inline void start_measurement(struct timespec* start, struct latency_flag
 
       latency_info->last_measured_op_i = op_i;
 //		green_printf("Measuring a req %llu, opcode %d, flag %d op_i %d \n",
-//								 c_stats[local_client_id].batches_per_client, opcode, latency_info->measured_req_flag, latency_info->last_measured_op_i);
+//								 w_stats[local_client_id].batches_per_worker, opcode, latency_info->measured_req_flag, latency_info->last_measured_op_i);
 
       clock_gettime(CLOCK_MONOTONIC, start);
 
@@ -272,13 +272,14 @@ static inline void hot_request_bookkeeping_for_latency_measurements(struct times
 void cache_init(int cache_id, int num_threads);
 void cache_populate_fixed_len(struct mica_kv* kv, int n, int val_len);
 void cache_insert_one(struct cache_op *op, struct mica_resp *resp);
+
 void cache_batch_op_sc_non_stalling_sessions(int op_num, int thread_id, struct extended_cache_op **op, struct mica_resp *resp);
 void cache_batch_op_sc_non_stalling_sessions_with_cache_op(int op_num, int thread_id, struct cache_op **op, struct mica_resp *resp);
 void cache_batch_op_sc_non_stalling_sessions_with_small_cache_op(int op_num, int thread_id, struct small_cache_op **op, struct mica_resp *resp);
 void cache_batch_op_sc_non_stalling(int op_num, int thread_id, struct extended_cache_op **ops, struct mica_resp *resp);
 void cache_batch_op_sc_stalling(int op_num, int thread_id, struct extended_cache_op **ops, struct mica_resp *resp);
-void cache_batch_op_ec(int op_num, int thread_id, struct extended_cache_op **ops, struct mica_resp *resp);
-void cache_batch_op_ec_with_cache_op(int op_num, int thread_id, struct cache_op **op, struct mica_resp *resp);
+//void cache_batch_op_ec(int op_num, int thread_id, struct extended_cache_op **ops, struct mica_resp *resp);
+//void cache_batch_op_ec_with_cache_op(int op_num, int thread_id, struct cache_op **op, struct mica_resp *resp);
 int batch_from_trace_to_cache(int trace_iter, int thread_id, struct trace_command *trace, struct extended_cache_op *ops,
 															struct mica_resp *resp, struct key_home* kh, int isSC, uint16_t next_op_i ,
 															struct latency_flags*, struct timespec*, uint16_t*);

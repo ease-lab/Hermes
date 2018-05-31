@@ -3,7 +3,7 @@
 HOSTS=( "austin" "houston" "sanantonio")
 HOSTS=( "austin" "houston" "sanantonio" "indianapolis" "philly" "baltimore" "chicago" "atlanta" "detroit")
 LOCAL_HOST=`hostname`
-EXECUTABLES=( "traces" ) #"run-hermes.sh" )
+EXECUTABLES=( "traces" ) #"run-rdma_writes.sh" )
 HOME_FOLDER="/home/user/hermes/"
 DEST_FOLDER="/home/user/hermes-exec/"
 

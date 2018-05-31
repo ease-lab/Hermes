@@ -1,90 +1,245 @@
+#include <spacetime.h>
 #include "util.h"
-#include "config.h"
-
+#include "inline-util.h"
 
 void *run_worker(void *arg){
 	struct thread_params params = *(struct thread_params *) arg;
-	uint16_t wrkr_lid = params.id;	/* Local ID of this worker thread*/
-	//int num_server_ports = params.num_server_ports, base_port_index = params.base_port_index;
-	//int num_server_ports = 1, base_port_index = 0;
+	uint16_t worker_lid = (uint16_t) params.id;	/* Local ID of this worker thread*/
+	uint16_t worker_gid = (uint16_t) (machine_id * WORKERS_PER_MACHINE + params.id);	/* Global ID of this worker thread*/
 
-	// Initialize a control block
-	struct hrd_ctrl_blk* cb = hrd_ctrl_blk_init(
-			wrkr_lid,                /* local_hid */
-			0, -1,            /* port_index, numa_node_id */
-			1, 0,             /* #conn qps, uc */
-			NULL, 4096, -1,   /* prealloc conn buf, buf size, key */
-			0, 0, -1, 0, 0);  /* num_dgram_qps, dgram_buf_size, key, recv q dept, send q depth*/
+	int *recv_q_depths, *send_q_depths;
+	setup_q_depths(&recv_q_depths, &send_q_depths);
+	struct hrd_ctrl_blk *cb = hrd_ctrl_blk_init(worker_gid,	/* local_hid */
+												0, -1, /* port_index, numa_node_id */
+												0, 0,	/* #conn qps, uc */
+												NULL, 0, -1,	/* prealloc conn buf, buf size, key */
+												TOTAL_WORKER_UD_QPs, DGRAM_BUFF_SIZE,	/* num_dgram_qps, dgram_buf_size */
+												BASE_SHM_KEY + worker_lid, /* key */
+												recv_q_depths, send_q_depths); /* Depth of the dgram RECV, SEND Q*/
+	///printf("Worker(%d): Connection is up\n", worker_lid);
 
-	struct hrd_qp_attr** remote_qps = setup_and_return_qps(wrkr_lid, cb);
-	const int remote_qps_size = (WORKER_NUM - WORKERS_PER_MACHINE);
+	/* -----------------------------------------------------
+	--------------DECLARATIONS------------------------------
+	---------------------------------------------------------*/
+	///Send declarations
+	struct ibv_send_wr send_inv_wr[SEND_INV_Q_DEPTH],
+			send_ack_wr[SEND_ACK_Q_DEPTH],
+			send_val_wr[SEND_VAL_Q_DEPTH],
+			send_crd_wr[SEND_CRD_Q_DEPTH], *bad_send_wr;
 
-	printf("Connection is up\n");
-	//
+	struct ibv_sge send_inv_sgl[MAX_BCAST_BATCH],
+			send_ack_sgl[SEND_ACK_Q_DEPTH],
+			send_val_sgl[SEND_VAL_Q_DEPTH], send_crd_sgl;
 
-	/* Some tracking info */
-	int ws[WORKER_NUM] = {0}; /* Window slot to use for a worker */
+	//Only for immediates
+	struct ibv_wc  recv_inv_wc[SEND_INV_Q_DEPTH],
+			recv_ack_wc[SEND_ACK_Q_DEPTH],
+			send_val_wc[SEND_VAL_Q_DEPTH],
+			send_crd_wc[SEND_CRD_Q_DEPTH];
 
-	//struct mica_op* req_buf = memalign(4096, sizeof(struct mica_op));
-	//assert(req_buf != NULL);
+	uint8_t credits[TOTAL_WORKER_UD_QPs][MACHINE_NUM];
 
-	uint64_t seed = 0xdeadbeef;
-	struct ibv_send_wr wr, *bad_send_wr;
-	struct ibv_sge sgl;
-	struct ibv_wc wc[WINDOW_SIZE];
+	///Receive declarations
+	struct ibv_recv_wr recv_inv_wr[RECV_INV_Q_DEPTH],
+			recv_ack_wr[RECV_ACK_Q_DEPTH],
+			recv_val_wr[RECV_VAL_Q_DEPTH],
+			recv_crd_wr[RECV_CRD_Q_DEPTH], *bad_recv_wr;
 
-	//struct ibv_recv_wr recv_wr[WINDOW_SIZE], *bad_recv_wr;
-	//struct ibv_sge recv_sgl[WINDOW_SIZE];
+	struct ibv_sge 	   recv_inv_sgl[RECV_INV_Q_DEPTH],
+			recv_ack_sgl[RECV_ACK_Q_DEPTH],
+			recv_val_sgl[RECV_VAL_Q_DEPTH], recv_crd_sgl;
 
-	long long rolling_iter = 0; /* For throughput measurement */
-	long long nb_tx = 0;        /* Total requests performed or queued */
-	int wn = 0;                 /* Worker number */
-	int ret, is_update, req_counter = 0;
-	int* object = (int*) malloc(sizeof(int));
-	*object = 41194;
-	// start the big loop
-	while (1) {
 
-		wn = hrd_fastrand(&seed) % remote_qps_size; /* Choose a remote worker */
-		is_update = (hrd_fastrand(&seed) % 100 < WRITE_RATIO) ? 1 : 0;
-		/* Forge the HERD request */
-		//key_i = hrd_fastrand(&seed) % HERD_NUM_KEYS; /* Choose a key */
+	ud_req_inv_t *incoming_invs = (ud_req_inv_t *) cb->dgram_buf;
+	ud_req_ack_t *incoming_acks = (ud_req_ack_t *) &cb->dgram_buf[ sizeof(ud_req_inv_t) * RECV_INV_Q_DEPTH];
+	ud_req_val_t *incoming_vals = (ud_req_val_t *) &cb->dgram_buf[ sizeof(ud_req_inv_t) * RECV_INV_Q_DEPTH
+																   + sizeof(ud_req_ack_t) * RECV_ACK_Q_DEPTH];
+//	ud_req_crd_t *incoming_crds = (ud_req_crd_t *) &cb->dgram_buf[ sizeof(ud_req_inv_t) * RECV_INV_Q_DEPTH
+//																   + sizeof(ud_req_ack_t) * RECV_ACK_Q_DEPTH
+//																   + sizeof(ud_req_val_t) * RECV_VAL_Q_DEPTH];
 
-		//*(uint128*)req_buf = CityHash128((char*)&key_arr[key_i], 4);
-		//req_buf->opcode = is_update ? HERD_OP_PUT : HERD_OP_GET;
-		//req_buf->val_len = is_update ? HERD_VALUE_SIZE : -1;
+	int inv_push_recv_ptr = 0, inv_pull_recv_ptr = -1,
+		ack_push_recv_ptr = 0, ack_pull_recv_ptr = -1,
+		val_push_recv_ptr = 0, val_pull_recv_ptr = -1,
+		crd_push_recv_ptr = 0, crd_pull_recv_ptr = -1;
+	int inv_push_send_ptr = 0, ack_push_send_ptr = 0, val_push_send_ptr = 0;
+   	int i;
+	//init receiv buffs as empty (not need for CRD since CRD msgs are (immediate) header-only
+	for(i = 0; i < RECV_INV_Q_DEPTH; i ++)
+        incoming_invs[i].req.opcode = ST_EMPTY;
+	for(i = 0; i < RECV_ACK_Q_DEPTH; i ++)
+		incoming_acks[i].req.opcode = ST_EMPTY;
+	for(i = 0; i < RECV_VAL_Q_DEPTH; i ++)
+		incoming_vals[i].req.opcode = ST_EMPTY;
 
-		/* Forge the RDMA work request */
-		sgl.length = sizeof(int); //is_update ? HERD_PUT_REQ_SIZE : HERD_GET_REQ_SIZE;
-		sgl.addr = (uint64_t) (uintptr_t) object;
-
-		wr.opcode = IBV_WR_RDMA_WRITE;
-		wr.num_sge = 1;
-		wr.next = NULL;
-		wr.sg_list = &sgl;
-
-		wr.send_flags = (req_counter & MSG_GRAN_OF_SELECTIVE_SIGNALING) == 0 ? IBV_SEND_SIGNALED : 0;
-		if ((req_counter & MSG_GRAN_OF_SELECTIVE_SIGNALING_) == MSG_GRAN_OF_SELECTIVE_SIGNALING_){
-			hrd_poll_cq(cb->conn_cq[0], 1, wc);
-			//printf("Issuing Req (%d) - Worker %d, Machine %d: sending to remote worker %d\n", req_counter, wrkr_lid, machine_id, wn);
+	/* Post receives, we need to do this early */
+	if (WRITE_RATIO > 0)
+		for(i = 0; i < MACHINE_NUM - 1; i++) {
+			post_receives(cb, INV_CREDITS, ST_INV_BUFF, incoming_invs, &inv_push_recv_ptr);
+//			post_receives(cb, ACK_CREDITS, ST_ACK_BUFF, incoming_acks, &ack_push_recv_ptr);
+			post_receives(cb, VAL_CREDITS, ST_VAL_BUFF, incoming_vals, &val_push_recv_ptr);
 		}
-		wr.send_flags |= IBV_SEND_INLINE;
-		wr.wr.rdma.remote_addr = remote_qps[wn]->buf_addr; //+ OFFSET(wn, clt_gid, ws[wn]) * sizeof(struct mica_op);
-		wr.wr.rdma.rkey = remote_qps[wn]->rkey;
+	red_printf("Receives posted!\n");
+	setup_qps(worker_gid, cb);
 
-		ret = ibv_post_send(cb->conn_qp[0], &wr, &bad_send_wr);
-        req_counter++;
-		printf("Issuing Req (%d) - Worker %d, Machine %d: sending to remote worker %d\n", req_counter, wrkr_lid, machine_id, wn);
-		CPE(ret, "ibv_post_send error", ret);
-//		else{
-//		//if (nb_tx % WINDOW_SIZE == 0 && nb_tx > 0) {
-//			hrd_poll_cq(cb->conn_cq[0], WINDOW_SIZE, wc);
-//			req_counter = 0;
-//		}
+	int inv_ops_i = 0, ack_ops_i = 0, val_ops_i = 0;
+	uint16_t outstanding_invs = 0, outstanding_acks = 0, outstanding_vals = 0;
+	spacetime_op_t *ops;
+	spacetime_inv_t *inv_recv_ops, *inv_send_ops;
+	spacetime_ack_t *ack_recv_ops, *ack_send_ops;
+	spacetime_val_t *val_recv_ops, *val_send_ops;
+	spacetime_op_resp_t *ops_resp;
+	setup_ops(&ops, &ops_resp, &inv_recv_ops, &ack_recv_ops,
+			  &val_recv_ops, &inv_send_ops, &ack_send_ops, &val_send_ops);
+	///setup_invs / acks / /vals
+	///if no inlinig declare & set_up_mrs()
+	//struct ibv_mr *inv_mr, *ack_mr, *val_mr, *crd_mr;
+	setup_credits(credits, cb, send_crd_wr, &send_crd_sgl, recv_crd_wr, &recv_crd_sgl);
+	setup_WRs(send_inv_wr, send_inv_sgl, recv_inv_wr, recv_inv_sgl,
+			  send_ack_wr, send_ack_sgl, recv_ack_wr, recv_ack_sgl,
+			  send_val_wr, send_val_sgl, recv_val_wr, recv_val_sgl, cb, worker_lid);
+
+	int j, is_update;
+	long long rolling_iter = 0; /* For throughput measurement */
+	uint32_t credit_debug_cnt = 0;
+	long long int inv_br_tx = 0, val_br_tx = 0, send_ack_tx = 0;
+
+	/* -----------------------------------------------------
+	--------------Start the main Loop-----------------------
+	---------------------------------------------------------*/
+	int tmp_only_for_dbg = 0, tmp = 0;
+//while (rolling_iter < 50000000) {
+//	while (tmp_only_for_dbg != 6) {
+	while (true) {
+		if (unlikely(credit_debug_cnt > M_1)) {
+			red_printf("Worker %d misses credits \n", worker_gid);
+			red_printf("Inv Credits %d, Ack credits %d, Val credits %d, CRD credits %d\n",
+					   credits[INV_UD_QP_ID][(machine_id + 1) % MACHINE_NUM],
+					   credits[ACK_UD_QP_ID][(machine_id + 1) % MACHINE_NUM],
+					   credits[VAL_UD_QP_ID][(machine_id + 1) % MACHINE_NUM],
+					   credits[CRD_UD_QP_ID][(machine_id + 1) % MACHINE_NUM]);
+			credit_debug_cnt = 0;
+		}
+		if(machine_id == 0) { ///WARNING ONLY FOR DEBUGGING
+			for (j = 0; j < MAX_BATCH_OPS_SIZE; j++) {
+				///uint32 key_i = hrd_fastrand(&seed) % NUM_KEYS; /* Choose a key */
+				///uint32 key_i = rand() % NUM_KEYS; /* Choose a key */
+				if (ops[j].state != ST_EMPTY) continue;
+				ops[j].state = ST_NEW;
+				uint32_t key_i = (uint32_t) j;
+				uint128 key_hash = CityHash128((char *) &key_i, 4);
+
+				memcpy(&ops[j].key, &key_hash, sizeof(spacetime_key_t));
+				///is_update = (hrd_fastrand(&seed) % 100 < WRITE_RATIO) ? 1 : 0;
+//			is_update = (rand() % 100 < WRITE_RATIO) ? 1 : 0;
+//			is_update = rolling_iter == 0 ? 1 : 0 ;
+//				is_update = (tmp++ / MAX_BATCH_OPS_SIZE) % 2 == 0 ? 1 : 0;
+				is_update =  1; //write-only
+				ops[j].opcode = (uint8) (is_update == 1 ? ST_OP_PUT : ST_OP_GET);
+				if (is_update)
+					memset(ops[j].value, ((uint8_t) machine_id % 2 == 0 ? 'x' : 'y'), ST_VALUE_SIZE);
+				ops[j].val_len = (uint8) (is_update == 1 ? ST_VALUE_SIZE : -1);
+				red_printf("Key id: %d, op: %s, hash:%" PRIu64 "\n", key_i,
+						   code_to_str(ops[j].opcode), ((uint64_t *) &ops[j].key)[1]);
+			}
+
+			spacetime_batch_ops(MAX_BATCH_OPS_SIZE, &ops, ops_resp, worker_lid);
+		}
+
+
+
+		if (WRITE_RATIO > 0) {
+			///~~~~~~~~~~~~~~~~~~~~~~INVS~~~~~~~~~~~~~~~~~~~~~~~~~~~
+			///TODO remove credits recv etc from bcst_invs
+			broadcasts_invs(ops, ops_resp, inv_send_ops, &inv_push_send_ptr,
+							send_inv_wr, send_inv_sgl, credits, cb, &inv_br_tx,
+							incoming_acks, &ack_push_recv_ptr ,worker_lid);
+			///Poll for INVs
+			poll_buff(incoming_invs, ST_INV_BUFF, &inv_pull_recv_ptr, inv_recv_ops,
+					  &inv_ops_i, outstanding_invs, cb->dgram_recv_cq[INV_UD_QP_ID],
+					  recv_inv_wc, credits, worker_lid);
+			//printf("inv_ops_i: %d, outstanding_invs: %d, inv_pull_ptr: %d\n", inv_ops_i, outstanding_invs, inv_pull_ptr);
+
+
+			if(inv_ops_i > 0) {
+				///TODO fix outstanding_invs
+				spacetime_batch_invs(inv_ops_i, &inv_recv_ops, worker_lid);
+
+				///INVS_bookkeeping
+				outstanding_invs = 0; //TODO this is only for testing
+
+				///~~~~~~~~~~~~~~~~~~~~~~ACKS~~~~~~~~~~~~~~~~~~~~~~~~~~~
+				issue_acks(inv_recv_ops, ack_send_ops, &ack_push_send_ptr,
+						   &send_ack_tx, send_ack_wr, send_ack_sgl, credits,
+						   cb, incoming_invs, &inv_push_recv_ptr, worker_lid);
+				inv_ops_i = 0;
+			}
+
+			///Poll for Acks
+			poll_buff(incoming_acks, ST_ACK_BUFF, &ack_pull_recv_ptr, ack_recv_ops,
+					  &ack_ops_i, outstanding_acks, cb->dgram_recv_cq[ACK_UD_QP_ID],
+					  recv_ack_wc, credits, worker_lid);
+			if(ack_ops_i > 0){
+
+				spacetime_batch_acks(ack_ops_i, &ack_recv_ops, &ops, worker_lid);
+
+				/*
+				///~~~~~~~~~~~~~~~~~~~~~~VALS~~~~~~~~~~~~~~~~~~~~~~~~~~~
+				broadcasts_vals(ack_recv_ops, val_send_ops, &val_push_send_ptr,
+								send_val_wr, send_val_sgl, credits, cb, send_crd_wc,
+								&credit_debug_cnt, &val_br_tx, recv_crd_wr, worker_lid);
+								*/
+				ack_ops_i = 0;
+			}
+            /*
+			///Poll for Vals
+			///TODO outstandig_vals are not really required
+			poll_buff(incoming_vals, ST_VAL_BUFF, &val_pull_recv_ptr, val_recv_ops,
+					  &val_ops_i, outstanding_vals, credits, worker_lid);
+			if(val_ops_i > 0){
+
+				spacetime_batch_vals(val_ops_i, &val_recv_ops, &ops, worker_lid);
+
+				///~~~~~~~~~~~~~~~~~~~~~~CREDITS~~~~~~~~~~~~~~~~~~~~~~~~~~~
+//                send_credits(crd_o)
+				val_ops_i = 0;
+			}
+
+			///poll_credits
+             */
+		}
+		if(machine_id == 0) { ///WARNING ONLY FOR DEBUGGING
+			for(j = 0; j < MAX_BATCH_OPS_SIZE; j++) {
+				if (val_recv_ops[j].opcode == ST_VAL_SUCCESS)
+					val_recv_ops[j].opcode = ST_EMPTY;
+				if (ops[j].state == ST_COMPLETE) {
+					green_printf("Key Hash:%" PRIu64 "\n\t\tType: %s, version %d, tie-b: %d, value(len-%d): %s\n",
+								 ((uint64_t *) &ops[j].key)[1],
+								 code_to_str(ops_resp[j].resp_opcode), ops_resp[j].version,
+								 ops_resp[j].tie_breaker_id, ops_resp[j].val_len, ops_resp[j].val_ptr);
+					ops[j].state = ST_EMPTY;
+					tmp_only_for_dbg++;
+				}
+			}
+		}
+
+		///w_stats[worker_lid].cache_hits_per_client += MAX_BATCH_OPS_SIZE;
 		rolling_iter++;
-		//hrd_poll_cq_ret();
-		//hrd_poll_cq();
-		//HRD_MOD_ADD(ws[wn], WINDOW_SIZE);
 	}
 	return NULL;
 }
+
+
+//// Used after polling for received credits, to increment the right Virtual Channel's credits depending on the protocol
+//static inline void increment_credits(int credits_found, struct ibv_wc* credit_wc, uint8_t credits[][MACHINE_NUM])
+//{
+//	uint16_t j;
+//	for (j = 0; j < credits_found; j++) {
+//		if (credit_wc[j].imm_data >= (2* MACHINE_NUM))
+//			credits[INV_UD_QP_ID][credit_wc[j].imm_data - (2* MACHINE_NUM)] += CREDITS_IN_MESSAGE;
+//		else if (credit_wc[j].imm_data >= MACHINE_NUM)
+//			credits[ACK_UD_QP_ID][credit_wc[j].imm_data - MACHINE_NUM] += CREDITS_IN_MESSAGE;
+//		else credits[VAL_UD_QP_ID][credit_wc[j].imm_data] += CREDITS_IN_MESSAGE;
+//	}
+//}
+

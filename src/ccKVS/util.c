@@ -7,56 +7,56 @@ void createAHs(uint16_t clt_gid, struct hrd_ctrl_blk *cb)
     int i, qp_i;
     int ib_port_index = 0;
     struct ibv_ah *clt_ah[CLIENT_NUM][CLIENT_UD_QPS];
-    struct ibv_ah *wrkr_ah[WORKER_NUM_UD_QPS][WORKER_NUM];
+    ///struct ibv_ah *wrkr_ah[WORKER_NUM_UD_QPS][WORKER_NUM];
     struct hrd_qp_attr *clt_qp[CLIENT_NUM][CLIENT_UD_QPS];
-    struct hrd_qp_attr *wrkr_qp[WORKER_NUM_UD_QPS][WORKER_NUM];
+    ///struct hrd_qp_attr *wrkr_qp[WORKER_NUM_UD_QPS][WORKER_NUM];
     // -- CONNECT WITH WORKERS
-    for (qp_i = 0; qp_i < WORKER_NUM_UD_QPS; qp_i++) {
-        for(i = 0; i < WORKER_NUM; i++) {
-            if (i / WORKERS_PER_MACHINE == machine_id) continue; // skip the local workers
-            /* Compute the control block and physical port index for client @i */
-            // int cb_i = i % num_server_ports;
-            int local_port_i = ib_port_index;// + cb_i;
-
-            char wrkr_name[HRD_QP_NAME_SIZE];
-            sprintf(wrkr_name, "worker-dgram-%d-%d-%d", i / WORKERS_PER_MACHINE, i % WORKERS_PER_MACHINE, qp_i);
-
-            /* Get the UD queue pair for the ith worker */
-            wrkr_qp[qp_i][i] = NULL;
-            // printf("CLIENT %d Looking for worker %s\n", clt_gid, wrkr_name );
-            while(wrkr_qp[qp_i][i] == NULL) {
-                wrkr_qp[qp_i][i] = hrd_get_published_qp(wrkr_name);
-                if(wrkr_qp[qp_i][i] == NULL)
-                    usleep(200000);
-            }
-            //  printf("main:Client %d found qp %d worker %d of %d workers. Worker LID: %d\n",
-            // clt_gid, qp_i, i, WORKER_NUM, wrkr_qp[qp_i][i]->lid);
-            struct ibv_ah_attr ah_attr = {
-                    //-----INFINIBAND----------
-                    .is_global = 0,
-                    .dlid = (uint16_t) wrkr_qp[qp_i][i]->lid,
-                    .sl = (uint8_t) wrkr_qp[qp_i][i]->sl,
-                    .src_path_bits = 0,
-                    /* port_num (> 1): device-local port for responses to this worker */
-                    .port_num = (uint8_t) (local_port_i + 1),
-            };
-
-            // // <Vasilis>  ---ROCE----------
-            if (is_roce == 1) {
-                ah_attr.is_global = 1;
-                ah_attr.dlid = 0;
-                ah_attr.grh.dgid.global.interface_id =  wrkr_qp[qp_i][i]->gid_global_interface_id;
-                ah_attr.grh.dgid.global.subnet_prefix = wrkr_qp[qp_i][i]->gid_global_subnet_prefix;
-                ah_attr.grh.sgid_index = 0;
-                ah_attr.grh.hop_limit = 1;
-            }
-            // </vasilis>
-            wrkr_ah[qp_i][i]= ibv_create_ah(cb->pd, &ah_attr);
-            assert(wrkr_ah[qp_i][i] != NULL);
-            remote_wrkr_qp[qp_i][i].ah = wrkr_ah[qp_i][i];
-            remote_wrkr_qp[qp_i][i].qpn = wrkr_qp[qp_i][i]->qpn;
-        }
-    }
+//    for (qp_i = 0; qp_i < WORKER_NUM_UD_QPS; qp_i++) {
+//        for(i = 0; i < WORKER_NUM; i++) {
+//            if (i / WORKERS_PER_MACHINE == machine_id) continue; // skip the local workers
+//            /* Compute the control block and physical port index for client @i */
+//            // int cb_i = i % num_server_ports;
+//            int local_port_i = ib_port_index;// + cb_i;
+//
+//            char wrkr_name[HRD_QP_NAME_SIZE];
+//            sprintf(wrkr_name, "worker-dgram-%d-%d-%d", i / WORKERS_PER_MACHINE, i % WORKERS_PER_MACHINE, qp_i);
+//
+//            /* Get the UD queue pair for the ith worker */
+//            wrkr_qp[qp_i][i] = NULL;
+//            // printf("CLIENT %d Looking for worker %s\n", clt_gid, wrkr_name );
+//            while(wrkr_qp[qp_i][i] == NULL) {
+//                wrkr_qp[qp_i][i] = hrd_get_published_qp(wrkr_name);
+//                if(wrkr_qp[qp_i][i] == NULL)
+//                    usleep(200000);
+//            }
+//            //  printf("main:Client %d found qp %d worker %d of %d workers. Worker LID: %d\n",
+//            // clt_gid, qp_i, i, WORKER_NUM, wrkr_qp[qp_i][i]->lid);
+//            struct ibv_ah_attr ah_attr = {
+//                    //-----INFINIBAND----------
+//                    .is_global = 0,
+//                    .dlid = (uint16_t) wrkr_qp[qp_i][i]->lid,
+//                    .sl = (uint8_t) wrkr_qp[qp_i][i]->sl,
+//                    .src_path_bits = 0,
+//                    /* port_num (> 1): device-local port for responses to this worker */
+//                    .port_num = (uint8_t) (local_port_i + 1),
+//            };
+//
+//            // // <Vasilis>  ---ROCE----------
+//            if (is_roce == 1) {
+//                ah_attr.is_global = 1;
+//                ah_attr.dlid = 0;
+//                ah_attr.grh.dgid.global.interface_id =  wrkr_qp[qp_i][i]->gid_global_interface_id;
+//                ah_attr.grh.dgid.global.subnet_prefix = wrkr_qp[qp_i][i]->gid_global_subnet_prefix;
+//                ah_attr.grh.sgid_index = 0;
+//                ah_attr.grh.hop_limit = 1;
+//            }
+//            // </vasilis>
+//            wrkr_ah[qp_i][i]= ibv_create_ah(cb->pd, &ah_attr);
+//            assert(wrkr_ah[qp_i][i] != NULL);
+//            remote_wrkr_qp[qp_i][i].ah = wrkr_ah[qp_i][i];
+//            remote_wrkr_qp[qp_i][i].qpn = wrkr_qp[qp_i][i]->qpn;
+//        }
+//    }
 
     // -- CONNECT WITH CLIENTS
 
@@ -78,8 +78,8 @@ void createAHs(uint16_t clt_gid, struct hrd_ctrl_blk *cb)
                 if(clt_qp[i][qp_i] == NULL)
                     usleep(200000);
             }
-            // printf("main:Client %d found clt %d. Client LID: %d\n",
-            //        clt_gid, i, clt_qp[i][qp_i]->lid);
+            //printf("main:Client %d found clt %d. Client LID: %d\n",
+             //       clt_gid, i, clt_qp[i][qp_i]->lid);
             struct ibv_ah_attr ah_attr = {
                     //-----INFINIBAND----------
                     .is_global = 0,
@@ -107,112 +107,113 @@ void createAHs(uint16_t clt_gid, struct hrd_ctrl_blk *cb)
         }
     }
 }
-
-// Worker creates Ahs for the Client Qps that are used for Remote requests
-void createAHs_for_worker(uint16_t wrkr_lid, struct hrd_ctrl_blk *cb) {
-    int i, qp_i;
-    struct ibv_ah *clt_ah[CLIENT_NUM][CLIENT_UD_QPS];
-    struct hrd_qp_attr *clt_qp[CLIENT_NUM][CLIENT_UD_QPS];
-
-    for(i = 0; i < CLIENT_NUM; i++) {
-        if (i / CLIENTS_PER_MACHINE == machine_id) continue; // skip the local clients
-        /* Compute the control block and physical port index for client @i */
-        int local_port_i = 0;
-
-        char clt_name[HRD_QP_NAME_SIZE];
-        sprintf(clt_name, "client-dgram-%d-%d", i, REMOTE_UD_QP_ID);
-        /* Get the UD queue pair for the ith client */
-        clt_qp[i][REMOTE_UD_QP_ID] = NULL;
-
-        while(clt_qp[i][REMOTE_UD_QP_ID] == NULL) {
-            clt_qp[i][REMOTE_UD_QP_ID] = hrd_get_published_qp(clt_name);
-            //printf("Worker %d is expecting client %s\n" , wrkr_lid, clt_name);
-            if(clt_qp[i][REMOTE_UD_QP_ID] == NULL) {
-                usleep(200000);
-            }
-        }
-        //  printf("main: Worker %d found client %d. Client LID: %d\n",
-        //  	wrkr_lid, i, clt_qp[i][REMOTE_UD_QP_ID]->lid);
-
-        struct ibv_ah_attr ah_attr = {
-                //-----INFINIBAND----------
-                .is_global = 0,
-                .dlid = (uint16_t) clt_qp[i][REMOTE_UD_QP_ID]->lid,
-                .sl = clt_qp[i][REMOTE_UD_QP_ID]->sl,
-                .src_path_bits = 0,
-                /* port_num (> 1): device-local port for responses to this client */
-                .port_num = (uint8) (local_port_i + 1),
-        };
-
-        //  ---ROCE----------
-        if (is_roce == 1) {
-            ah_attr.is_global = 1;
-            ah_attr.dlid = 0;
-            ah_attr.grh.dgid.global.interface_id =  clt_qp[i][REMOTE_UD_QP_ID]->gid_global_interface_id;
-            ah_attr.grh.dgid.global.subnet_prefix = clt_qp[i][REMOTE_UD_QP_ID]->gid_global_subnet_prefix;
-            ah_attr.grh.sgid_index = 0;
-            ah_attr.grh.hop_limit = 1;
-        }
-        clt_ah[i][REMOTE_UD_QP_ID] = ibv_create_ah(cb->pd, &ah_attr);
-        assert(clt_ah[i][REMOTE_UD_QP_ID] != NULL);
-        remote_clt_qp[i][REMOTE_UD_QP_ID].ah = clt_ah[i][REMOTE_UD_QP_ID];
-        remote_clt_qp[i][REMOTE_UD_QP_ID].qpn = clt_qp[i][REMOTE_UD_QP_ID]->qpn;
-    }
-}
-/* Generate a random permutation of [0, n - 1] for client @clt_gid */
-int* get_random_permutation(int n, int clt_gid, uint64_t *seed) {
-    int i, j, temp;
-    assert(n > 0);
-
-    /* Each client uses a different range in the cycle space of fastrand */
-    for(i = 0; i < clt_gid * CACHE_NUM_KEYS; i++) {
-        hrd_fastrand(seed);
-    }
-
-    printf("client %d: creating a permutation of 0--%d. This takes time..\n",
-           clt_gid, n - 1);
-
-    int *log = (int *) malloc(n * sizeof(int));
-    assert(log != NULL);
-    for(i = 0; i < n; i++) {
-        log[i] = i;
-    }
-
-    printf("\tclient %d: shuffling..\n", clt_gid);
-    for(i = n - 1; i >= 1; i--) {
-        j = hrd_fastrand(seed) % (i + 1);
-        temp = log[i];
-        log[i] = log[j];
-        log[j] = temp;
-    }
-    printf("\tclient %d: done creating random permutation\n", clt_gid);
-
-    return log;
-}
-
-// Set up the buffer space of the worker for multiple qps: With M QPs per worker, Client X sends its reqs to QP: X mod M
-void set_up_the_buffer_space(uint16_t clts_per_qp[], uint32_t per_qp_buf_slots[], uint32_t qp_buf_base[]) {
-    int i, clt_i,qp = 0;
-    // decide how many clients go to each QP
-//    for (i = 0; i < CLIENTS_PER_MACHINE; i++) {
-//        assert(qp < WORKER_NUM_UD_QPS);
-//        clts_per_qp[qp]++;
-//        HRD_MOD_ADD(qp, WORKER_NUM_UD_QPS);
+//
+//// Worker creates Ahs for the Client Qps that are used for Remote requests
+//void createAHs_for_worker(uint16_t wrkr_lid, struct hrd_ctrl_blk *cb) {
+//    int i, qp_i;
+//    struct ibv_ah *clt_ah[CLIENT_NUM][CLIENT_UD_QPS];
+//    struct hrd_qp_attr *clt_qp[CLIENT_NUM][CLIENT_UD_QPS];
+//
+//    for(i = 0; i < CLIENT_NUM; i++) {
+//        if (i / CLIENTS_PER_MACHINE == machine_id) continue; // skip the local clients
+//        /* Compute the control block and physical port index for client @i */
+//        int local_port_i = 0;
+//
+//        char clt_name[HRD_QP_NAME_SIZE];
+//        sprintf(clt_name, "client-dgram-%d-%d", i, REMOTE_UD_QP_ID);
+//        /* Get the UD queue pair for the ith client */
+//        clt_qp[i][REMOTE_UD_QP_ID] = NULL;
+//
+//        while(clt_qp[i][REMOTE_UD_QP_ID] == NULL) {
+//            clt_qp[i][REMOTE_UD_QP_ID] = hrd_get_published_qp(clt_name);
+//            //printf("Worker %d is expecting client %s\n" , wrkr_lid, clt_name);
+//            if(clt_qp[i][REMOTE_UD_QP_ID] == NULL) {
+//                usleep(200000);
+//            }
+//        }
+//        //  printf("main: Worker %d found client %d. Client LID: %d\n",
+//        //  	wrkr_lid, i, clt_qp[i][REMOTE_UD_QP_ID]->lid);
+//
+//        struct ibv_ah_attr ah_attr = {
+//                //-----INFINIBAND----------
+//                .is_global = 0,
+//                .dlid = (uint16_t) clt_qp[i][REMOTE_UD_QP_ID]->lid,
+//                .sl = clt_qp[i][REMOTE_UD_QP_ID]->sl,
+//                .src_path_bits = 0,
+//                /* port_num (> 1): device-local port for responses to this client */
+//                .port_num = (uint8) (local_port_i + 1),
+//        };
+//
+//        //  ---ROCE----------
+//        if (is_roce == 1) {
+//            ah_attr.is_global = 1;
+//            ah_attr.dlid = 0;
+//            ah_attr.grh.dgid.global.interface_id =  clt_qp[i][REMOTE_UD_QP_ID]->gid_global_interface_id;
+//            ah_attr.grh.dgid.global.subnet_prefix = clt_qp[i][REMOTE_UD_QP_ID]->gid_global_subnet_prefix;
+//            ah_attr.grh.sgid_index = 0;
+//            ah_attr.grh.hop_limit = 1;
+//        }
+//        clt_ah[i][REMOTE_UD_QP_ID] = ibv_create_ah(cb->pd, &ah_attr);
+//        assert(clt_ah[i][REMOTE_UD_QP_ID] != NULL);
+//        remote_clt_qp[i][REMOTE_UD_QP_ID].ah = clt_ah[i][REMOTE_UD_QP_ID];
+//        remote_clt_qp[i][REMOTE_UD_QP_ID].qpn = clt_qp[i][REMOTE_UD_QP_ID]->qpn;
 //    }
-    for (i = 0; i < MACHINE_NUM; i++) {
-        if (i == machine_id) continue;
-        for (clt_i = 0; clt_i < CLIENTS_PER_MACHINE; clt_i++) {
-            clts_per_qp[(clt_i + i)% WORKER_NUM_UD_QPS]++;
-        }
-    }
-    qp_buf_base[0] = 0;
-    for (i = 0; i < WORKER_NUM_UD_QPS; i++) {
-        per_qp_buf_slots[i] = clts_per_qp[i]  * WS_PER_WORKER;
-//        cyan_printf("per_qp_buf_slots for qp %d : %d\n", i, per_qp_buf_slots[i]);
-        if (i < WORKER_NUM_UD_QPS - 1)
-            qp_buf_base[i + 1] =  qp_buf_base[i] + per_qp_buf_slots[i];
-    }
-}
+//}
+//
+///* Generate a random permutation of [0, n - 1] for client @clt_gid */
+//int* get_random_permutation(int n, int clt_gid, uint64_t *seed) {
+//    int i, j, temp;
+//    assert(n > 0);
+//
+//    /* Each client uses a different range in the cycle space of fastrand */
+//    for(i = 0; i < clt_gid * CACHE_NUM_KEYS; i++) {
+//        hrd_fastrand(seed);
+//    }
+//
+//    printf("client %d: creating a permutation of 0--%d. This takes time..\n",
+//           clt_gid, n - 1);
+//
+//    int *log = (int *) malloc(n * sizeof(int));
+//    assert(log != NULL);
+//    for(i = 0; i < n; i++) {
+//        log[i] = i;
+//    }
+//
+//    printf("\tclient %d: shuffling..\n", clt_gid);
+//    for(i = n - 1; i >= 1; i--) {
+//        j = hrd_fastrand(seed) % (i + 1);
+//        temp = log[i];
+//        log[i] = log[j];
+//        log[j] = temp;
+//    }
+//    printf("\tclient %d: done creating random permutation\n", clt_gid);
+//
+//    return log;
+//}
+//
+//// Set up the buffer space of the worker for multiple qps: With M QPs per worker, Client X sends its reqs to QP: X mod M
+//void set_up_the_buffer_space(uint16_t clts_per_qp[], uint32_t per_qp_buf_slots[], uint32_t qp_buf_base[]) {
+//    int i, clt_i,qp = 0;
+//    // decide how many clients go to each QP
+////    for (i = 0; i < CLIENTS_PER_MACHINE; i++) {
+////        assert(qp < WORKER_NUM_UD_QPS);
+////        clts_per_qp[qp]++;
+////        HRD_MOD_ADD(qp, WORKER_NUM_UD_QPS);
+////    }
+//    for (i = 0; i < MACHINE_NUM; i++) {
+//        if (i == machine_id) continue;
+//        for (clt_i = 0; clt_i < CLIENTS_PER_MACHINE; clt_i++) {
+//            clts_per_qp[(clt_i + i)% WORKER_NUM_UD_QPS]++;
+//        }
+//    }
+//    qp_buf_base[0] = 0;
+//    for (i = 0; i < WORKER_NUM_UD_QPS; i++) {
+//        per_qp_buf_slots[i] = clts_per_qp[i]  * WS_PER_WORKER;
+////        cyan_printf("per_qp_buf_slots for qp %d : %d\n", i, per_qp_buf_slots[i]);
+//        if (i < WORKER_NUM_UD_QPS - 1)
+//            qp_buf_base[i + 1] =  qp_buf_base[i] + per_qp_buf_slots[i];
+//    }
+//}
 
 int parse_trace(char* path, struct trace_command **cmds, int clt_gid){
     FILE * fp;
@@ -280,39 +281,39 @@ int parse_trace(char* path, struct trace_command **cmds, int clt_gid){
                 (*cmds)[i].home_machine_id = (uint8_t) (strtoul(word, &ptr, 10) % MACHINE_NUM);
                 if (RANDOM_MACHINE == 1) (*cmds)[i].home_machine_id = (uint8_t) (rand() % MACHINE_NUM);
                 assert((*cmds)[i].home_machine_id < MACHINE_NUM);
-                if (LOAD_BALANCE == 1){
+                if (LOAD_BALANCE == 1)
                     (*cmds)[i].home_machine_id = (uint8_t) (rand() % MACHINE_NUM);
 //                    printf("random %d \n", (*cmds)[i].home_machine_id);
-                    while (DISABLE_LOCALS == 1 && (*cmds)[i].home_machine_id == machine_id)
-                        (*cmds)[i].home_machine_id = (uint8_t) (rand() % MACHINE_NUM);
-                }else if(DISABLE_LOCALS == 1 && (*cmds)[i].home_machine_id == (uint8_t) machine_id)
-                    (*cmds)[i].home_machine_id = (uint8_t) (((*cmds)[i].home_machine_id + 1) % MACHINE_NUM);
+                ///    while (DISABLE_LOCALS == 1 && (*cmds)[i].home_machine_id == machine_id)
+                ///       (*cmds)[i].home_machine_id = (uint8_t) (rand() % MACHINE_NUM);
+                ///}else if(DISABLE_LOCALS == 1 && (*cmds)[i].home_machine_id == (uint8_t) machine_id)
+                ///   (*cmds)[i].home_machine_id = (uint8_t) (((*cmds)[i].home_machine_id + 1) % MACHINE_NUM);
                 if (SEND_ONLY_TO_ONE_MACHINE == 1)
-                    if(DISABLE_LOCALS == 1 && machine_id == 0)
-                        (*cmds)[i].home_machine_id = (uint8_t) 1;
-                    else
-                        (*cmds)[i].home_machine_id = (uint8_t) 0;
-                else if(SEND_ONLY_TO_NEXT_MACHINE == 1)
-                    (*cmds)[i].home_machine_id = (uint8_t) ((machine_id + 1) % MACHINE_NUM);
+                    ///  if(DISABLE_LOCALS == 1 && machine_id == 0)
+                    ///    (*cmds)[i].home_machine_id = (uint8_t) 1;
+                    ///else
+                    (*cmds)[i].home_machine_id = (uint8_t) 0;
+                    ///else if(SEND_ONLY_TO_NEXT_MACHINE == 1)
+                    ///(*cmds)[i].home_machine_id = (uint8_t) ((machine_id + 1) % MACHINE_NUM);
                 else if(BALANCE_REQS_IN_CHUNKS == 1)
                     (*cmds)[i].home_machine_id = (uint8_t) (CHUNK_NUM == 0? 0 : (i / CHUNK_NUM) % MACHINE_NUM);
                 else if (DO_ONLY_LOCALS == 1) (*cmds)[i].home_machine_id = (uint8) machine_id;
-                assert(DISABLE_LOCALS == 0 || machine_id != (*cmds)[i].home_machine_id);
+                ///assert(DISABLE_LOCALS == 0 || machine_id != (*cmds)[i].home_machine_id);
             } else if(word_count == 2){
-                (*cmds)[i].home_worker_id = (uint8_t) (strtoul(word, &ptr, 10) % WORKERS_PER_MACHINE);
-                if(LOAD_BALANCE == 1 || EMULATING_CREW == 1){
-                    //(*cmds)[i].home_worker_id = (uint8_t) (worker_id % WORKERS_PER_MACHINE);
-                    //HRD_MOD_ADD(worker_id, WORKER_NUM);
-                    (*cmds)[i].home_worker_id = (uint8_t) (rand() % ACTIVE_WORKERS_PER_MACHINE );
-                    //(*cmds)[i].home_worker_id = (uint8_t) (hrd_fastrand(&seed) % WORKERS_PER_MACHINE );
-                }
-                assert((*cmds)[i].home_worker_id < WORKERS_PER_MACHINE);
+//                (*cmds)[i].home_worker_id = (uint8_t) (strtoul(word, &ptr, 10) % WORKERS_PER_MACHINE);
+//                if(LOAD_BALANCE == 1 || EMULATING_CREW == 1){
+//                    //(*cmds)[i].home_worker_id = (uint8_t) (worker_id % WORKERS_PER_MACHINE);
+//                    //HRD_MOD_ADD(worker_id, WORKER_NUM);
+//                    (*cmds)[i].home_worker_id = (uint8_t) (rand() % ACTIVE_WORKERS_PER_MACHINE );
+//                    //(*cmds)[i].home_worker_id = (uint8_t) (hrd_fastrand(&seed) % WORKERS_PER_MACHINE );
+                //}
+                //assert((*cmds)[i].home_worker_id < WORKERS_PER_MACHINE);
             } else if(word_count == 3){
                 (*cmds)[i].key_id = (uint32_t) strtoul(word, &ptr, 10);
                 if (ONLY_CACHE_HITS == 1)
                     (*cmds)[i].key_id = (uint32) rand() % CACHE_NUM_KEYS;
-                // HOT KEYS
-               else if ((*cmds)[i].key_id < CACHE_NUM_KEYS) {
+                    // HOT KEYS
+                else if ((*cmds)[i].key_id < CACHE_NUM_KEYS) {
                     if ((BALANCE_HOT_WRITES == 1 && is_update) || BALANCE_HOT_REQS == 1) {
                         (*cmds)[i].key_id = (uint32_t) rand() % CACHE_NUM_KEYS;
                         range_assert((*cmds)[i].key_id, 0, CACHE_NUM_KEYS);
@@ -399,7 +400,7 @@ int parse_trace(char* path, struct trace_command **cmds, int clt_gid){
                               (double) (hottest_key_counter * 100) / cmd_count, HOTTEST_KEYS_TO_TRACK);
     (*cmds)[cmd_count].opcode = NOP;
     // printf("CLient %d Trace size: %d, debug counter %d hot keys %d, cold keys %d \n",clt_gid, cmd_count, debug_cnt,
-    //         c_stats[clt_gid].hot_keys_per_trace, c_stats[clt_gid].cold_keys_per_trace );
+    //         w_stats[clt_gid].hot_keys_per_trace, w_stats[clt_gid].cold_keys_per_trace );
     assert(cmd_count == debug_cnt);
     fclose(fp);
     if (line)
@@ -465,9 +466,9 @@ void dump_stats_2_file(struct stats* st){
 //            WORKERS_PER_MACHINE, WRITE_RATIO,
 //            BALANCE_HOT_WRITES == 1  ? "_lbw" : "",
 //            machine_id);
-    sprintf(filename, "%s/UD_SENDS_n_%d_w_%d_t_%d_b_%d_%s-%d.csv", path,
+    sprintf(filename, "%s/UD_SENDS_n_%d_t_%d_b_%d_%s-%d.csv", path,
             MACHINE_NUM, WRITE_RATIO,
-            WORKERS_PER_MACHINE, CACHE_BATCH_SIZE,
+            CACHE_BATCH_SIZE,
             LOAD_BALANCE == 1 ? "UNIF" : "SKEW",
             machine_id);
     printf("%s\n", filename);
@@ -475,11 +476,11 @@ void dump_stats_2_file(struct stats* st){
     fprintf(fp, "machine_id: %d\n", machine_id);
     fprintf(fp, "comment: worker ID, total MIOPS, local MIOPS, remote MIOPS\n");
 
-    for(i = 0; i < WORKERS_PER_MACHINE; ++i){
-        total_MIOPS = st->locals_per_worker[i] + st->remotes_per_worker[i];
-        fprintf(fp, "worker: %d, %.2f, %.2f, %.2f\n", i, total_MIOPS,
-                st->locals_per_worker[i], st->remotes_per_worker[i]);
-    }
+//    for(i = 0; i < WORKERS_PER_MACHINE; ++i){
+//        total_MIOPS = st->locals_per_worker[i] + st->remotes_per_worker[i];
+//        fprintf(fp, "worker: %d, %.2f, %.2f, %.2f\n", i, total_MIOPS,
+//                st->locals_per_worker[i], st->remotes_per_worker[i]);
+//    }
 
     fprintf(fp, "comment: client ID, total MIOPS, cache MIOPS, local MIOPS,"
             "remote MIOPS, updates, invalidates, acks, received updates,"
@@ -519,51 +520,51 @@ int spawn_stats_thread() {
     cpu_set_t cpus_stats;
     pthread_attr_init(&attr);
     CPU_ZERO(&cpus_stats);
-    if(WORKERS_PER_MACHINE + CLIENTS_PER_MACHINE > 17)
+    ///if(WORKERS_PER_MACHINE + CLIENTS_PER_MACHINE > 17)
+    if(CLIENTS_PER_MACHINE > 17)
         CPU_SET(39, &cpus_stats);
     else
-        CPU_SET(2 *(WORKERS_PER_MACHINE + CLIENTS_PER_MACHINE) + 2, &cpus_stats);
+        CPU_SET(2 *(CLIENTS_PER_MACHINE) + 2, &cpus_stats);
     pthread_attr_setaffinity_np(&attr, sizeof(cpu_set_t), &cpus_stats);
     return pthread_create(&thread_arr[0], &attr, print_stats, NULL);
 }
 
 // pin a worker thread to a core
-int pin_worker(int w_id) {
-    int w_core;
-    w_core = PHYSICAL_CORE_DISTANCE * w_id;
-    if(w_core > TOTAL_CORES_) { //if you run out of cores in numa node 0
-        if (WORKER_HYPERTHREADING) { //use hyperthreading rather than go to the other socket
-            w_core = PHYSICAL_CORE_DISTANCE * (w_id - PHYSICAL_CORES_PER_SOCKET) + 2;
-        }
-        else { //spawn clients to numa node 1
-            w_core = (w_id - PHYSICAL_CORES_PER_SOCKET) * PHYSICAL_CORE_DISTANCE + 1;
-        }
-    }
-    assert(w_core >= 0 && w_core < TOTAL_CORES);
-    return w_core;
-}
-
-// pin a client thread to a core
 int pin_client(int c_id) {
     int c_core;
-    if (!WORKER_HYPERTHREADING || WORKERS_PER_MACHINE < PHYSICAL_CORES_PER_SOCKET) {
-        if (c_id < WORKERS_PER_MACHINE) c_core = PHYSICAL_CORE_DISTANCE * c_id + 2;
-        else c_core = (WORKERS_PER_MACHINE * 2) + (c_id * 2);
-
-        //if (DISABLE_CACHE == 1) c_core = 4 * i + 2; // when bypassing the cache
-        //if (DISABLE_HYPERTHREADING == 1) c_core = (WORKERS_PER_MACHINE * 4) + (c_id * 4);
-        if (c_core > TOTAL_CORES_) { //spawn clients to numa node 1 if you run out of cores in 0
-            c_core -= TOTAL_CORES_;
+    c_core = PHYSICAL_CORE_DISTANCE * c_id;
+    if(c_core > TOTAL_CORES_) { //if you run out of cores in numa node 0
+        if (CLIENT_HYPERTHREADING) { //use hyperthreading rather than go to the other socket
+            c_core = PHYSICAL_CORE_DISTANCE * (c_id - PHYSICAL_CORES_PER_SOCKET) + 2;
+        } else { //spawn clients to numa node 1
+            c_core = (c_id - PHYSICAL_CORES_PER_SOCKET) * PHYSICAL_CORE_DISTANCE + 1;
         }
-    }
-    else { //we are keeping workers on the same socket
-        c_core = (WORKERS_PER_MACHINE - PHYSICAL_CORES_PER_SOCKET) * 4 + 2 + (4 * c_id);
-        if (c_core > TOTAL_CORES_) c_core = c_core - (TOTAL_CORES_ + 2);
-        if (c_core > TOTAL_CORES_) c_core = c_core - (TOTAL_CORES_ - 1);
     }
     assert(c_core >= 0 && c_core < TOTAL_CORES);
     return c_core;
 }
+//
+//// pin a client thread to a core
+//int pin_client(int c_id) {
+//    int c_core;
+//    if (!WORKER_HYPERTHREADING || WORKERS_PER_MACHINE < PHYSICAL_CORES_PER_SOCKET) {
+//        if (c_id < WORKERS_PER_MACHINE) c_core = PHYSICAL_CORE_DISTANCE * c_id + 2;
+//        else c_core = (WORKERS_PER_MACHINE * 2) + (c_id * 2);
+//
+//        //if (DISABLE_CACHE == 1) c_core = 4 * i + 2; // when bypassing the cache
+//        //if (DISABLE_HYPERTHREADING == 1) c_core = (WORKERS_PER_MACHINE * 4) + (c_id * 4);
+//        if (c_core > TOTAL_CORES_) { //spawn clients to numa node 1 if you run out of cores in 0
+//            c_core -= TOTAL_CORES_;
+//        }
+//    }
+//    else { //we are keeping workers on the same socket
+//        c_core = (WORKERS_PER_MACHINE - PHYSICAL_CORES_PER_SOCKET) * 4 + 2 + (4 * c_id);
+//        if (c_core > TOTAL_CORES_) c_core = c_core - (TOTAL_CORES_ + 2);
+//        if (c_core > TOTAL_CORES_) c_core = c_core - (TOTAL_CORES_ - 1);
+//    }
+//    assert(c_core >= 0 && c_core < TOTAL_CORES);
+//    return c_core;
+//}
 
 /* ---------------------------------------------------------------------------
 ------------------------------CLIENT INITIALIZATION --------------------------
@@ -573,8 +574,8 @@ void post_coh_recvs(struct hrd_ctrl_blk *cb, int* push_ptr, struct mcast_essenti
 {
     check_protocol(protocol);
     int i, j;
-    int credits = protocol == EVENTUAL ? EC_CREDITS : BROADCAST_CREDITS;
-    int max_reqs = protocol == EVENTUAL ? EC_CLT_BUF_SLOTS : SC_CLT_BUF_SLOTS;
+    int credits = BROADCAST_CREDITS;
+    int max_reqs = SC_CLT_BUF_SLOTS;
     for(i = 0; i < MACHINE_NUM - 1; i++) {
         for(j = 0; j < credits; j++) {
             if (ENABLE_MULTICAST == 1) {
@@ -594,10 +595,9 @@ void init_multicast(struct mcast_info **mcast_data, struct mcast_essentials **mc
                     int local_client_id, struct hrd_ctrl_blk *cb, int protocol)
 {
     check_protocol(protocol);
-    uint16_t remote_buf_size =  ENABLE_WORKER_COALESCING == 1 ?
-                                (GRH_SIZE + sizeof(struct wrkr_coalesce_mica_op)) : UD_REQ_SIZE;
-    size_t dgram_buf_size = (size_t) (protocol == EVENTUAL ? EC_CLT_BUF_SIZE + remote_buf_size : SC_CLT_BUF_SIZE + remote_buf_size);
-    int recv_q_depth = protocol == EVENTUAL ? EC_CLIENT_RECV_BR_Q_DEPTH : SC_CLIENT_RECV_BR_Q_DEPTH;
+    uint16_t remote_buf_size = UD_REQ_SIZE;
+    size_t dgram_buf_size = (size_t) (SC_CLT_BUF_SIZE + remote_buf_size);
+    int recv_q_depth = SC_CLIENT_RECV_BR_Q_DEPTH;
     *mcast_data = malloc(sizeof(struct mcast_info));
     (*mcast_data)->clt_id = local_client_id;
     setup_multicast(*mcast_data, recv_q_depth);
@@ -625,19 +625,20 @@ void set_up_queue_depths(int** recv_q_depths, int** send_q_depths, int protocol)
       3rd Dgram for Flow Control (Credit-based) */
     *send_q_depths = malloc(CLIENT_UD_QPS * sizeof(int));
     *recv_q_depths = malloc(CLIENT_UD_QPS * sizeof(int));
-    if (protocol == EVENTUAL) {
-        (*recv_q_depths)[REMOTE_UD_QP_ID] = CLIENT_RECV_REM_Q_DEPTH;
-        (*recv_q_depths)[BROADCAST_UD_QP_ID] = ENABLE_MULTICAST == 1 ? 1 : EC_CLIENT_RECV_BR_Q_DEPTH;
-        (*recv_q_depths)[FC_UD_QP_ID] = EC_CLIENT_RECV_CR_Q_DEPTH;
-        (*send_q_depths)[REMOTE_UD_QP_ID] = CLIENT_SEND_REM_Q_DEPTH;
-        (*send_q_depths)[BROADCAST_UD_QP_ID] = EC_CLIENT_SEND_BR_Q_DEPTH;
-        (*send_q_depths)[FC_UD_QP_ID] = EC_CLIENT_SEND_CR_Q_DEPTH;
-    }
-    else if (protocol == STRONG_CONSISTENCY) {
-        (*recv_q_depths)[REMOTE_UD_QP_ID] = CLIENT_RECV_REM_Q_DEPTH;
+//    if (protocol == EVENTUAL) {
+//        (*recv_q_depths)[REMOTE_UD_QP_ID] = CLIENT_RECV_REM_Q_DEPTH;
+//        (*recv_q_depths)[BROADCAST_UD_QP_ID] = ENABLE_MULTICAST == 1 ? 1 : EC_CLIENT_RECV_BR_Q_DEPTH;
+//        (*recv_q_depths)[FC_UD_QP_ID] = EC_CLIENT_RECV_CR_Q_DEPTH;
+//        (*send_q_depths)[REMOTE_UD_QP_ID] = CLIENT_SEND_REM_Q_DEPTH;
+//        (*send_q_depths)[BROADCAST_UD_QP_ID] = EC_CLIENT_SEND_BR_Q_DEPTH;
+//        (*send_q_depths)[FC_UD_QP_ID] = EC_CLIENT_SEND_CR_Q_DEPTH;
+//    }
+//    else
+    if (protocol == STRONG_CONSISTENCY) {
+        ///(*recv_q_depths)[REMOTE_UD_QP_ID] = CLIENT_RECV_REM_Q_DEPTH;
         (*recv_q_depths)[BROADCAST_UD_QP_ID] = SC_CLIENT_RECV_BR_Q_DEPTH;
         (*recv_q_depths)[FC_UD_QP_ID] = SC_CLIENT_RECV_CR_Q_DEPTH;
-        (*send_q_depths)[REMOTE_UD_QP_ID] = CLIENT_SEND_REM_Q_DEPTH;
+        ///(*send_q_depths)[REMOTE_UD_QP_ID] = CLIENT_SEND_REM_Q_DEPTH;
         (*send_q_depths)[BROADCAST_UD_QP_ID] = SC_CLIENT_SEND_BR_Q_DEPTH;
         (*send_q_depths)[FC_UD_QP_ID] = SC_CLIENT_SEND_CR_Q_DEPTH;
     }
@@ -710,17 +711,17 @@ void set_up_coh_ops(struct cache_op **update_ops, struct cache_op **ack_bcast_op
     uint16_t cache_op_size = sizeof(struct cache_op);
     uint16_t small_cache_op_size = sizeof(struct small_cache_op);
     *update_ops = (struct cache_op *)malloc(BCAST_TO_CACHE_BATCH * cache_op_size); /* Batch of incoming broadcasts for the Cache*/
-    if (protocol != EVENTUAL) {
+    if (protocol == STRONG_CONSISTENCY) {
         *ack_bcast_ops = (struct cache_op *)malloc(BCAST_TO_CACHE_BATCH * cache_op_size);
         *inv_ops = (struct small_cache_op *)malloc(BCAST_TO_CACHE_BATCH * small_cache_op_size);
         *inv_to_send_ops = (struct small_cache_op *)malloc(BCAST_TO_CACHE_BATCH * small_cache_op_size);
     }
     assert(*update_ops != NULL);
-    if (protocol != EVENTUAL)
+    if (protocol == STRONG_CONSISTENCY)
         assert(*ack_bcast_ops != NULL && *inv_ops != NULL && *inv_to_send_ops != NULL);
     for(i = 0; i < BCAST_TO_CACHE_BATCH; i++) {
         update_resp[i].type = EMPTY;
-        if (protocol != EVENTUAL) {
+        if (protocol == STRONG_CONSISTENCY) {
             inv_resp[i].type = EMPTY;
             (*inv_to_send_ops)[i].opcode = EMPTY;
         }
@@ -737,35 +738,35 @@ void set_up_mrs(struct ibv_mr **ops_mr, struct ibv_mr **coh_mr, struct extended_
         if (WRITE_RATIO != 0) *coh_mr = register_buffer(cb->pd, (void*)coh_buf, COH_BUF_SIZE);
     }
 }
-
-// Set up the remote Requests send and recv WRs
-void set_up_remote_WRs(struct ibv_send_wr* rem_send_wr, struct ibv_sge* rem_send_sgl,
-                       struct ibv_recv_wr* rem_recv_wr, struct ibv_sge* rem_recv_sgl,
-                       struct hrd_ctrl_blk *cb, int clt_gid, struct ibv_mr* ops_mr, int protocol)
-{
-    int i;
-    check_protocol(protocol);
-    uint16_t remote_buf_size = ENABLE_WORKER_COALESCING == 1 ?
-                               (GRH_SIZE + sizeof(struct wrkr_coalesce_mica_op)) : UD_REQ_SIZE ;
-    // This should be same for both protocols
-    for (i = 0; i < WINDOW_SIZE; i++) {
-        if (CLIENT_ENABLE_INLINING == 0) rem_send_sgl[i].lkey = ops_mr->lkey;
-        else rem_send_wr[i].send_flags = IBV_SEND_INLINE;
-        rem_send_wr[i].wr.ud.remote_qkey = HRD_DEFAULT_QKEY;
-        rem_send_wr[i].imm_data = (uint32) clt_gid;
-        rem_send_wr[i].opcode = IBV_WR_SEND_WITH_IMM;
-        rem_send_wr[i].num_sge = 1;
-        rem_send_wr[i].sg_list = &rem_send_sgl[i];
-        if (USE_ONLY_BIG_MESSAGES == 1)
-            rem_recv_sgl->length = HERD_PUT_REQ_SIZE + sizeof(struct ibv_grh);
-        else
-            rem_recv_sgl->length = remote_buf_size;
-        rem_recv_sgl->lkey = cb->dgram_buf_mr->lkey;
-        rem_recv_sgl->addr = (uintptr_t) &cb->dgram_buf[0];
-        rem_recv_wr[i].sg_list = rem_recv_sgl;
-        rem_recv_wr[i].num_sge = 1;
-    }
-}
+//
+//// Set up the remote Requests send and recv WRs
+//void set_up_remote_WRs(struct ibv_send_wr* rem_send_wr, struct ibv_sge* rem_send_sgl,
+//                       struct ibv_recv_wr* rem_recv_wr, struct ibv_sge* rem_recv_sgl,
+//                       struct hrd_ctrl_blk *cb, int clt_gid, struct ibv_mr* ops_mr, int protocol)
+//{
+//    int i;
+//    check_protocol(protocol);
+//    ///uint16_t remote_buf_size = ENABLE_WORKER_COALESCING == 1 ?
+//    uint16_t remote_buf_size = UD_REQ_SIZE ;
+//    // This should be same for both protocols
+//    for (i = 0; i < WINDOW_SIZE; i++) {
+//        if (CLIENT_ENABLE_INLINING == 0) rem_send_sgl[i].lkey = ops_mr->lkey;
+//        else rem_send_wr[i].send_flags = IBV_SEND_INLINE;
+//        rem_send_wr[i].wr.ud.remote_qkey = HRD_DEFAULT_QKEY;
+//        rem_send_wr[i].imm_data = (uint32) clt_gid;
+//        rem_send_wr[i].opcode = IBV_WR_SEND_WITH_IMM;
+//        rem_send_wr[i].num_sge = 1;
+//        rem_send_wr[i].sg_list = &rem_send_sgl[i];
+//        if (USE_ONLY_BIG_MESSAGES == 1)
+//            rem_recv_sgl->length = HERD_PUT_REQ_SIZE + sizeof(struct ibv_grh);
+//        else
+//            rem_recv_sgl->length = remote_buf_size;
+//        rem_recv_sgl->lkey = cb->dgram_buf_mr->lkey;
+//        rem_recv_sgl->addr = (uintptr_t) &cb->dgram_buf[0];
+//        rem_recv_wr[i].sg_list = rem_recv_sgl;
+//        rem_recv_wr[i].num_sge = 1;
+//    }
+//}
 
 // Set up all coherence WRs
 void set_up_coh_WRs(struct ibv_send_wr *coh_send_wr, struct ibv_sge *coh_send_sgl,
@@ -778,7 +779,7 @@ void set_up_coh_WRs(struct ibv_send_wr *coh_send_wr, struct ibv_sge *coh_send_sg
     check_protocol(protocol);
     //BROADCAST WRs and credit Receives
     for (j = 0; j < MAX_BCAST_BATCH; j++) {
-        if (protocol == EVENTUAL) coh_send_sgl[j].length = HERD_PUT_REQ_SIZE;
+        ///if (protocol == EVENTUAL) coh_send_sgl[j].length = HERD_PUT_REQ_SIZE;
         //coh_send_sgl[j].addr = (uint64_t) (uintptr_t) (coh_buf + j);
         if (CLIENT_ENABLE_INLINING == 0) coh_send_sgl[j].lkey = coh_mr->lkey;
         for (i = 0; i < MESSAGES_IN_BCAST; i++) {
@@ -797,23 +798,26 @@ void set_up_coh_WRs(struct ibv_send_wr *coh_send_wr, struct ibv_sge *coh_send_sg
                 coh_send_wr[index].wr.ud.remote_qpn = (uint32) remote_clt_qp[clt_i][BROADCAST_UD_QP_ID].qpn;
                 coh_send_wr[index].wr.ud.remote_qkey = HRD_DEFAULT_QKEY;
             }
-            if (protocol == EVENTUAL) coh_send_wr[index].opcode = IBV_WR_SEND_WITH_IMM; // TODO we should remove imms from here too
-            else coh_send_wr[index].opcode = IBV_WR_SEND; // Attention!! there is no immediate here, cids do the job!
+            ///if (protocol == EVENTUAL) coh_send_wr[index].opcode = IBV_WR_SEND_WITH_IMM; // TODO we should remove imms from here too
+            ///else
+            coh_send_wr[index].opcode = IBV_WR_SEND; // Attention!! there is no immediate here, cids do the job!
             coh_send_wr[index].num_sge = 1;
             coh_send_wr[index].sg_list = &coh_send_sgl[j];
-            if (protocol == EVENTUAL) coh_send_wr[index].imm_data = (uint32) machine_id;
+            ///if (protocol == EVENTUAL) coh_send_wr[index].imm_data = (uint32) machine_id;
             if (CLIENT_ENABLE_INLINING == 1) coh_send_wr[index].send_flags = IBV_SEND_INLINE;
             coh_send_wr[index].next = (i == MESSAGES_IN_BCAST - 1) ? NULL : &coh_send_wr[index + 1];
         }
     }
 
     // Coherence Receives
-    int max_coh_receives = protocol == EVENTUAL ? EC_MAX_COH_RECEIVES : MAX_COH_RECEIVES;
+    int max_coh_receives = MAX_COH_RECEIVES;
+    ///int max_coh_receives = protocol == EVENTUAL ? EC_MAX_COH_RECEIVES : MAX_COH_RECEIVES;
     for (i = 0; i < max_coh_receives; i++) {
         coh_recv_sgl[i].length = UD_REQ_SIZE;
-        if (protocol == EVENTUAL && ENABLE_MULTICAST == 1)
-            coh_recv_sgl[i].lkey = mcast->recv_mr->lkey;
-        else  coh_recv_sgl[i].lkey = cb->dgram_buf_mr->lkey;
+//        if (protocol == EVENTUAL && ENABLE_MULTICAST == 1)
+//            coh_recv_sgl[i].lkey = mcast->recv_mr->lkey;
+//        else
+        coh_recv_sgl[i].lkey = cb->dgram_buf_mr->lkey;
         coh_recv_wr[i].sg_list = &coh_recv_sgl[i];
         coh_recv_wr[i].num_sge = 1;
     }
@@ -838,25 +842,27 @@ void set_up_credits(uint8_t credits[][MACHINE_NUM], struct ibv_send_wr* credit_s
 {
     check_protocol(protocol);
     int i = 0;
-    int max_credt_wrs = protocol == EVENTUAL ?  EC_MAX_CREDIT_WRS : MAX_CREDIT_WRS;
-    int max_credit_recvs = protocol == EVENTUAL ? EC_MAX_CREDIT_RECVS : MAX_CREDIT_RECVS;
+    ///int max_credt_wrs = protocol == EVENTUAL ?  EC_MAX_CREDIT_WRS : MAX_CREDIT_WRS;
+    ///int max_credit_recvs = protocol == EVENTUAL ? EC_MAX_CREDIT_RECVS : MAX_CREDIT_RECVS;
+    int max_credt_wrs = MAX_CREDIT_WRS;
+    int max_credit_recvs = MAX_CREDIT_RECVS;
     // Credits
-    if (protocol == EVENTUAL)
-        for (i = 0; i < MACHINE_NUM; i++) credits[EC_UPD_VC][i] = EC_CREDITS;
-    else {
-        for (i = 0; i < MACHINE_NUM; i++) {
-            credits[ACK_VC][i] = ACK_CREDITS;
-            credits[INV_VC][i] = INV_CREDITS;
-            credits[UPD_VC][i] = UPD_CREDITS;
-        }
+//    if (protocol == EVENTUAL)
+//        for (i = 0; i < MACHINE_NUM; i++) credits[EC_UPD_VC][i] = EC_CREDITS;
+    ///else {
+    for (i = 0; i < MACHINE_NUM; i++) {
+        credits[ACK_VC][i] = ACK_CREDITS;
+        credits[INV_VC][i] = INV_CREDITS;
+        credits[UPD_VC][i] = UPD_CREDITS;
     }
+    ///}
     // Credit WRs
     for (i = 0; i < max_credt_wrs; i++) {
         credit_send_sgl->length = 0;
         credit_send_wr[i].opcode = IBV_WR_SEND_WITH_IMM;
         credit_send_wr[i].num_sge = 0;
         credit_send_wr[i].sg_list = credit_send_sgl;
-        if (protocol == EVENTUAL) credit_send_wr[i].imm_data = (uint32) machine_id;
+        ///    if (protocol == EVENTUAL) credit_send_wr[i].imm_data = (uint32) machine_id;
         credit_send_wr[i].wr.ud.remote_qkey = HRD_DEFAULT_QKEY;
         credit_send_wr[i].next = NULL;
         credit_send_wr[i].send_flags = IBV_SEND_INLINE;
@@ -876,48 +882,48 @@ void set_up_credits(uint8_t credits[][MACHINE_NUM], struct ibv_send_wr* credit_s
 ------------------------------WORKER INITIALIZATION --------------------------
 ---------------------------------------------------------------------------*/
 
-void set_up_wrs(struct wrkr_coalesce_mica_op** response_buffer, struct ibv_mr* resp_mr, struct hrd_ctrl_blk *cb, struct ibv_sge* recv_sgl,
-                struct ibv_recv_wr* recv_wr, struct ibv_send_wr* wr, struct ibv_sge* sgl, uint16_t wrkr_lid)
-{
-    uint16_t i;
-    if ((WORKER_ENABLE_INLINING == 0) || (ENABLE_WORKER_COALESCING == 1)) {
-        uint32_t resp_buf_size = ENABLE_WORKER_COALESCING == 1 ? sizeof(struct wrkr_coalesce_mica_op)* WORKER_SS_BATCH :
-                                 sizeof(struct mica_op)* WORKER_SS_BATCH; //the buffer needs to be large enough to deal with NIC asynchronous reads
-        *response_buffer = malloc(resp_buf_size);
-        resp_mr = register_buffer(cb->pd, (void*)(*response_buffer), resp_buf_size);
-    }
-
-    // Initialize the Work requests and the Receive requests
-    for (i = 0; i < WORKER_MAX_BATCH; i++) {
-        if (!ENABLE_COALESCING)
-          recv_sgl[i].length = HERD_PUT_REQ_SIZE + sizeof(struct ibv_grh);//req_size;
-        else recv_sgl[i].length = sizeof(struct wrkr_ud_req);
-        recv_sgl[i].lkey = cb->dgram_buf_mr->lkey;
-        recv_wr[i].sg_list = &recv_sgl[i];
-        recv_wr[i].num_sge = 1;
-
-
-        wr[i].wr.ud.remote_qkey = HRD_DEFAULT_QKEY;
-        wr[i].opcode = IBV_WR_SEND; // Immediate is not used here
-        if (WORKER_ENABLE_INLINING == 0) {
-            sgl[i].lkey = resp_mr->lkey;
-            // sgl[i].addr = (uintptr_t)(*response_buffer)[i].value;
-        }
-        if(ENABLE_MULTI_BATCHES) //) || MEASURE_LATENCY)
-            wr[i].opcode = IBV_WR_SEND_WITH_IMM; // Immediate is not used here
-        wr[i].num_sge = 1;
-        wr[i].sg_list = &sgl[i];
-        if(ENABLE_MULTI_BATCHES || MEASURE_LATENCY)
-            wr[i].imm_data = (uint32) (machine_id * WORKERS_PER_MACHINE) + wrkr_lid;
-    }
-}
+//void set_up_wrs(struct wrkr_coalesce_mica_op** response_buffer, struct ibv_mr* resp_mr, struct hrd_ctrl_blk *cb, struct ibv_sge* recv_sgl,
+//                struct ibv_recv_wr* recv_wr, struct ibv_send_wr* wr, struct ibv_sge* sgl, uint16_t wrkr_lid)
+//{
+//    uint16_t i;
+//    if ((WORKER_ENABLE_INLINING == 0) || (ENABLE_WORKER_COALESCING == 1)) {
+//        uint32_t resp_buf_size = ENABLE_WORKER_COALESCING == 1 ? sizeof(struct wrkr_coalesce_mica_op)* WORKER_SS_BATCH :
+//                                 sizeof(struct mica_op)* WORKER_SS_BATCH; //the buffer needs to be large enough to deal with NIC asynchronous reads
+//        *response_buffer = malloc(resp_buf_size);
+//        resp_mr = register_buffer(cb->pd, (void*)(*response_buffer), resp_buf_size);
+//    }
+//
+//    // Initialize the Work requests and the Receive requests
+//    for (i = 0; i < WORKER_MAX_BATCH; i++) {
+//        if (!ENABLE_COALESCING)
+//          recv_sgl[i].length = HERD_PUT_REQ_SIZE + sizeof(struct ibv_grh);//req_size;
+//        else recv_sgl[i].length = sizeof(struct wrkr_ud_req);
+//        recv_sgl[i].lkey = cb->dgram_buf_mr->lkey;
+//        recv_wr[i].sg_list = &recv_sgl[i];
+//        recv_wr[i].num_sge = 1;
+//
+//
+//        wr[i].wr.ud.remote_qkey = HRD_DEFAULT_QKEY;
+//        wr[i].opcode = IBV_WR_SEND; // Immediate is not used here
+//        if (WORKER_ENABLE_INLINING == 0) {
+//            sgl[i].lkey = resp_mr->lkey;
+//            // sgl[i].addr = (uintptr_t)(*response_buffer)[i].value;
+//        }
+//        if(ENABLE_MULTI_BATCHES) //) || MEASURE_LATENCY)
+//            wr[i].opcode = IBV_WR_SEND_WITH_IMM; // Immediate is not used here
+//        wr[i].num_sge = 1;
+//        wr[i].sg_list = &sgl[i];
+//        if(ENABLE_MULTI_BATCHES || MEASURE_LATENCY)
+//            wr[i].imm_data = (uint32) (machine_id * WORKERS_PER_MACHINE) + wrkr_lid;
+//    }
+//}
 
 /* ---------------------------------------------------------------------------
 ------------------------------UTILITY --------------------------------------
 ---------------------------------------------------------------------------*/
-void check_protocol(int protocol)
-{
-    if (protocol != EVENTUAL && protocol != STRONG_CONSISTENCY) {
+void check_protocol(int protocol) {
+    if (protocol != STRONG_CONSISTENCY) {
+        ///if (protocol != EVENTUAL && protocol != STRONG_CONSISTENCY) {
         red_printf("Wrong protocol specified when setting up the queue depths %d \n", protocol);
         assert(false);
     }
@@ -992,8 +998,7 @@ void set_up_qp(struct cm_qps* qps, int max_recv_q_depth)
 }
 
 // Initial function to call to setup multicast, this calls the rest of the relevant functions
-void setup_multicast(struct mcast_info *mcast_data, int recv_q_depth)
-{
+void setup_multicast(struct mcast_info *mcast_data, int recv_q_depth) {
     int ret, i, clt_id = mcast_data->clt_id;
     static enum rdma_port_space port_space = RDMA_PS_UDP;
     // Create the channel
@@ -1003,7 +1008,7 @@ void setup_multicast(struct mcast_info *mcast_data, int recv_q_depth)
         exit(1);
     }
     // Set up the cma_ids
-    for (i = 0; i < MCAST_QPS; i++ ) {
+    for (i = 0; i < MCAST_QPS; i++) {
         ret = rdma_create_id(mcast_data->channel, &mcast_data->cm_qp[i].cma_id, &mcast_data->cm_qp[i], port_space);
         if (ret) printf("Client %d :failed to create cma_id\n", mcast_data->clt_id);
     }
@@ -1012,8 +1017,8 @@ void setup_multicast(struct mcast_info *mcast_data, int recv_q_depth)
     // set up the 2 qps
     set_up_qp(mcast_data->cm_qp, recv_q_depth);
 
-    struct rdma_cm_event* event;
-    for (i = 0; i < MCAST_GROUPS_PER_CLIENT; i ++) {
+    struct rdma_cm_event *event;
+    for (i = 0; i < MCAST_GROUPS_PER_CLIENT; i++) {
         int qp_i = i == machine_id ? SEND_MCAST_QP : RECV_MCAST_QP;
         ret = rdma_resolve_addr(mcast_data->cm_qp[i].cma_id, mcast_data->src_addr, mcast_data->dst_addr[i], 20000);
         if (ret) printf("Client %d: failed to resolve address: %d, qp_i %d \n", clt_id, i, qp_i);
@@ -1036,61 +1041,63 @@ void setup_multicast(struct mcast_info *mcast_data, int recv_q_depth)
             rdma_ack_cm_event(event);
             if (event->event == RDMA_CM_EVENT_MULTICAST_JOIN) break;
         }
-        if (i != RECV_MCAST_QP) {
-            // destroying the QPs works fine but hurts performance...
-            //  rdma_destroy_qp(mcast_data->cm_qp[i].cma_id);
-            //  rdma_destroy_id(mcast_data->cm_qp[i].cma_id);
-        }
     }
-    // rdma_destroy_event_channel(mcast_data->channel);
-    // if (mcast_data->mcast_ud_param == NULL) mcast_data->mcast_ud_param = event->param.ud;
 }
+// if (i != RECV_MCAST_QP) {
+// destroying the QPs works fine but hurts performance...
+//  rdma_destroy_qp(mcast_data->cm_qp[i].cma_id);
+//  rdma_destroy_id(mcast_data->cm_qp[i].cma_id);
+//}
+//    }
+// rdma_destroy_event_channel(mcast_data->channel);
+// if (mcast_data->mcast_ud_param == NULL) mcast_data->mcast_ud_param = event->param.ud;
+//}
 
-
-// call to test the multicast
-void multicast_testing(struct mcast_essentials *mcast, int clt_gid, struct hrd_ctrl_blk *cb)
-{
-
-    struct ibv_wc mcast_wc;
-    printf ("Client: Multicast Qkey %u and qpn %u \n", mcast->qkey, mcast->qpn);
-
-
-    struct ibv_sge mcast_sg;
-    struct ibv_send_wr mcast_wr;
-    struct ibv_send_wr *mcast_bad_wr;
-
-    memset(&mcast_sg, 0, sizeof(mcast_sg));
-    mcast_sg.addr	  = (uintptr_t)cb->dgram_buf;
-    mcast_sg.length = 10;
-    //mcast_sg.lkey	  = cb->dgram_buf_mr->lkey;
-
-    memset(&mcast_wr, 0, sizeof(mcast_wr));
-    mcast_wr.wr_id      = 0;
-    mcast_wr.sg_list    = &mcast_sg;
-    mcast_wr.num_sge    = 1;
-    mcast_wr.opcode     = IBV_WR_SEND_WITH_IMM;
-    mcast_wr.send_flags = IBV_SEND_SIGNALED | IBV_SEND_INLINE;
-    mcast_wr.imm_data   = (uint32) clt_gid + 120 + (machine_id * 10);
-    mcast_wr.next       = NULL;
-
-    mcast_wr.wr.ud.ah          = mcast->send_ah;
-    mcast_wr.wr.ud.remote_qpn  = mcast->qpn;
-    mcast_wr.wr.ud.remote_qkey = mcast->qkey;
-
-    if (ibv_post_send(cb->dgram_qp[0], &mcast_wr, &mcast_bad_wr)) {
-        fprintf(stderr, "Error, ibv_post_send() failed\n");
-        assert(false);
-    }
-
-    printf("THe mcast was sent, I am waiting for confirmation imm data %d\n", mcast_wr.imm_data);
-    hrd_poll_cq(cb->dgram_send_cq[0], 1, &mcast_wc);
-    printf("The mcast was sent \n");
-    hrd_poll_cq(mcast->recv_cq, 1, &mcast_wc);
-    printf("Client %d imm data recved %d \n", clt_gid, mcast_wc.imm_data);
-    hrd_poll_cq(mcast->recv_cq, 1, &mcast_wc);
-    printf("Client %d imm data recved %d \n", clt_gid, mcast_wc.imm_data);
-    hrd_poll_cq(mcast->recv_cq, 1, &mcast_wc);
-    printf("Client %d imm data recved %d \n", clt_gid, mcast_wc.imm_data);
-
-    exit(0);
-}
+//
+//// call to test the multicast
+//void multicast_testing(struct mcast_essentials *mcast, int clt_gid, struct hrd_ctrl_blk *cb)
+//{
+//
+//    struct ibv_wc mcast_wc;
+//    printf ("Client: Multicast Qkey %u and qpn %u \n", mcast->qkey, mcast->qpn);
+//
+//
+//    struct ibv_sge mcast_sg;
+//    struct ibv_send_wr mcast_wr;
+//    struct ibv_send_wr *mcast_bad_wr;
+//
+//    memset(&mcast_sg, 0, sizeof(mcast_sg));
+//    mcast_sg.addr	  = (uintptr_t)cb->dgram_buf;
+//    mcast_sg.length = 10;
+//    //mcast_sg.lkey	  = cb->dgram_buf_mr->lkey;
+//
+//    memset(&mcast_wr, 0, sizeof(mcast_wr));
+//    mcast_wr.wr_id      = 0;
+//    mcast_wr.sg_list    = &mcast_sg;
+//    mcast_wr.num_sge    = 1;
+//    mcast_wr.opcode     = IBV_WR_SEND_WITH_IMM;
+//    mcast_wr.send_flags = IBV_SEND_SIGNALED | IBV_SEND_INLINE;
+//    mcast_wr.imm_data   = (uint32) clt_gid + 120 + (machine_id * 10);
+//    mcast_wr.next       = NULL;
+//
+//    mcast_wr.wr.ud.ah          = mcast->send_ah;
+//    mcast_wr.wr.ud.remote_qpn  = mcast->qpn;
+//    mcast_wr.wr.ud.remote_qkey = mcast->qkey;
+//
+//    if (ibv_post_send(cb->dgram_qp[0], &mcast_wr, &mcast_bad_wr)) {
+//        fprintf(stderr, "Error, ibv_post_send() failed\n");
+//        assert(false);
+//    }
+//
+//    printf("THe mcast was sent, I am waiting for confirmation imm data %d\n", mcast_wr.imm_data);
+//    hrd_poll_cq(cb->dgram_send_cq[0], 1, &mcast_wc);
+//    printf("The mcast was sent \n");
+//    hrd_poll_cq(mcast->recv_cq, 1, &mcast_wc);
+//    printf("Client %d imm data recved %d \n", clt_gid, mcast_wc.imm_data);
+//    hrd_poll_cq(mcast->recv_cq, 1, &mcast_wc);
+//    printf("Client %d imm data recved %d \n", clt_gid, mcast_wc.imm_data);
+//    hrd_poll_cq(mcast->recv_cq, 1, &mcast_wc);
+//    printf("Client %d imm data recved %d \n", clt_gid, mcast_wc.imm_data);
+//
+//    exit(0);
+//}
