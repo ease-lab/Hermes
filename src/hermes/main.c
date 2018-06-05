@@ -28,6 +28,8 @@ int main(int argc, char *argv[]){
     assert(MACHINE_NUM <= GROUP_MEMBERSHIP_ARRAY_SIZE * 8);//bit vector for acks / group membership
 //	assert(MACHINE_NUM <= sizeof(((spacetime_object_meta*)0)->write_acks) * 8);
     assert(sizeof(spacetime_crd_t) < sizeof(((struct ibv_send_wr*)0)->imm_data)); //for inlined credits
+    assert(MAX_MESSAGES_IN_BCAST * MAX_PCIE_BCAST_BATCH <= SEND_INV_Q_DEPTH);
+	assert(MAX_MESSAGES_IN_BCAST * MAX_PCIE_BCAST_BATCH <= SEND_VAL_Q_DEPTH);
 
     ///Make sure that assigned numbers to States are monotonically increasing with the following order
 	assert(VALID_STATE < INVALID_STATE);

@@ -13,15 +13,7 @@
 /* ---------------------------------------------------------------------------
 ------------------------------------GENERIC-----------------------------------
 ---------------------------------------------------------------------------*/
-static inline int poll_completions(int num_of_completions, struct ibv_cq* completion_q, struct ibv_wc* work_completions){
-	int completions_found = ibv_poll_cq(completion_q, num_of_completions, work_completions);
-//	if(ENABLE_ASSERTIONS == 1){
-//        if(completions_found != num_of_completions)
-//			red_printf("Completions found: %d, vs completions wanted: %d\n",completions_found, num_of_completions);
-//		assert(completions_found == num_of_completions);
-//	}
-	return completions_found;
-}
+
 ///TODO ADD Batching to the NIC for post RECEIVES
 static inline void post_receives(struct hrd_ctrl_blk *cb, uint16_t num_of_receives,
 								 uint8_t buff_type, void *recv_buff, int *push_ptr){
@@ -73,6 +65,7 @@ static inline void post_receives(struct hrd_ctrl_blk *cb, uint16_t num_of_receiv
             default: assert(0);
         }
 //		printf("POST: Push_ptr: %d, recv_q_depth: %d, addr: %d, op: %d\n",*push_ptr, recv_q_depth, next_buff_addr, next_buff_opcode);
+        memset(next_buff_addr, 0, (size_t) req_size);
         *next_buff_opcode = ST_EMPTY;
         hrd_post_dgram_recv(cb->dgram_qp[qp_id],
                             next_buff_addr,
@@ -81,7 +74,6 @@ static inline void post_receives(struct hrd_ctrl_blk *cb, uint16_t num_of_receiv
     }
 }
 
-/*
 static inline void poll_buff(void* incoming_buff, uint8_t buff_type, int* buf_pull_ptr,
 							 void* recv_ops, int* ops_push_ptr, uint16_t outstanding_ops,
 							 struct ibv_cq* completion_q, struct ibv_wc* work_completions,
@@ -120,20 +112,27 @@ static inline void poll_buff(void* incoming_buff, uint8_t buff_type, int* buf_pu
 		default: assert(0);
 	}
 
-	reqs_polled = poll_completions(MAX_BATCH_OPS_SIZE - outstanding_ops - *ops_push_ptr , completion_q, work_completions);
-//	while (*ops_push_ptr < MAX_BATCH_OPS_SIZE) {
-	if(reqs_polled > 0)
-		printf("FOUND %d completions\n",reqs_polled);
+	reqs_polled = ibv_poll_cq(completion_q, MAX_BATCH_OPS_SIZE - outstanding_ops - *ops_push_ptr, work_completions);
+//	if(reqs_polled > 0)
+//		printf("FOUND %d completions pull_ptr %d\n",reqs_polled, *buf_pull_ptr);
 	for(i = 0; i < reqs_polled; i++){
-		printf("iter %d \n",i);
 		index = (*buf_pull_ptr + 1) % recv_q_depth;
 		switch (buff_type) {
 			case ST_INV_BUFF:
 				sender = ((ud_req_inv_t *) incoming_buff)[index].req.sender;
 				next_req_ptr = &((ud_req_inv_t *) incoming_buff)[index].req;
 				next_opcode_ptr = &((ud_req_inv_t *) incoming_buff)[index].req.opcode;
-				if (ENABLE_ASSERTIONS == 1)
+//                printf("Op Ptr: %d Code: %s sender %d\n", next_opcode_ptr, code_to_str(*next_opcode_ptr), sender);
+                spacetime_inv_t* tmp = next_req_ptr;
+//				green_printf("Key Hash:%" PRIu64 "\n\t\tType: %s, version %d, tie-b: %d, sender: %d, value: %s\n",
+//						 ((uint64_t *) &tmp->key)[1],
+//						 code_to_str(tmp->opcode),tmp->version,
+//						 tmp->tie_breaker_id, tmp->sender,
+//						 tmp->value);
+				if (ENABLE_ASSERTIONS == 1) {
 					assert(*next_opcode_ptr == ST_OP_INV || *next_opcode_ptr == ST_EMPTY);
+					assert(((spacetime_inv_t*) next_req_ptr)->sender == 0);
+				}
 				break;
 			case ST_ACK_BUFF:
 				sender = ((ud_req_ack_t *) incoming_buff)[index].req.sender;
@@ -161,7 +160,6 @@ static inline void poll_buff(void* incoming_buff, uint8_t buff_type, int* buf_pu
 		}
 		if (*next_opcode_ptr == ST_EMPTY) {
             assert(0);
-//			break;
 		} else {
 //			if (outstanding_ops + *ops_push_ptr == MAX_BATCH_OPS_SIZE) break; // Back pressure if no empty slots
 			void *recv_op_ptr = ((uint8_t *) recv_ops) + (*ops_push_ptr * req_size);
@@ -185,9 +183,9 @@ static inline void poll_buff(void* incoming_buff, uint8_t buff_type, int* buf_pu
 			switch(buff_type){
 				case ST_INV_BUFF:
 					w_stats[worker_lid].received_invs_per_worker += reqs_polled;
-					cyan_printf("Polled: INVs %d, (total: %d)!\n", reqs_polled, w_stats[worker_lid].received_invs_per_worker);
-					yellow_printf("Credits: ACK incremented (%d) of sender %d!\n", credits[qp_credits_to_inc][sender], sender);
-					red_printf("Poll Completions: INVs %d\n",reqs_polled);
+					green_printf("^^^ Polled reqs: INVs %d, (total: %d)!\n", reqs_polled, w_stats[worker_lid].received_invs_per_worker);
+					printf("$$$ Credits: ACK incremented (%d) of sender %d!\n", credits[qp_credits_to_inc][sender], sender);
+//					red_printf("Polled Completions: INVs %d\n",reqs_polled);
 //			            green_printf("Key Hash:%" PRIu64 "\n\t\tType: %s, version %d, tie-b: %d, sender: %d, value: %s\n",
 //						 ((uint64_t *) &inv_ops[*inv_ops_i - 1].key)[1],
 //						 code_to_str(inv_ops[*inv_ops_i - 1].opcode),inv_ops[*inv_ops_i - 1].version,
@@ -196,25 +194,28 @@ static inline void poll_buff(void* incoming_buff, uint8_t buff_type, int* buf_pu
 					break;
 				case ST_ACK_BUFF:
 					w_stats[worker_lid].received_acks_per_worker += reqs_polled;
-					cyan_printf("Polled: ACKs %d, (total: %d)!\n", reqs_polled, w_stats[worker_lid].received_acks_per_worker);
-					yellow_printf("Credits: INV incremented to (%d) of sender %d!\n", credits[qp_credits_to_inc][sender], sender);
-					red_printf("Poll Completions: ACKs %d\n",reqs_polled);
+					green_printf("^^^ Polled reqs: ACKs %d, (total: %d)!\n", reqs_polled, w_stats[worker_lid].received_acks_per_worker);
+					printf("$$$ Credits: INV incremented to (%d) of sender %d!\n", credits[qp_credits_to_inc][sender], sender);
+//					red_printf("Poll Completions: ACKs %d\n",reqs_polled);
 					break;
 				case ST_VAL_BUFF:
 					w_stats[worker_lid].received_vals_per_worker += reqs_polled;
-					cyan_printf("VALs polled %d, (total: %d)!\n", reqs_polled, w_stats[worker_lid].received_vals_per_worker);
-					yellow_printf("Credits: CRD incremented to (%d) of sender %d!\n", credits[qp_credits_to_inc][sender], sender);
-					red_printf("Poll Completions: VALs %d\n",reqs_polled);
+					green_printf("^^^ Polled reqs: VALs %d, (total: %d)!\n", reqs_polled, w_stats[worker_lid].received_vals_per_worker);
+					printf("$$$ Credits: CRD incremented to (%d) of sender %d!\n", credits[qp_credits_to_inc][sender], sender);
+//					red_printf("Poll Completions: VALs %d\n",reqs_polled);
 					break;
 				case ST_CRD_BUFF:
-					yellow_printf("Credits: VAL incremented to (%d) of sender %d!\n", credits[qp_credits_to_inc][sender], sender);
-					red_printf("Poll Completions: CRDs %d\n",reqs_polled);
+					w_stats[worker_lid].received_crds_per_worker += reqs_polled;
+					green_printf("^^^ Polled reqs: CRDs %d, (total: %d)!\n", reqs_polled, w_stats[worker_lid].received_vals_per_worker);
+					printf("$$$ Credits: VAL incremented to (%d) of sender %d!\n", credits[qp_credits_to_inc][sender], sender);
+//					red_printf("Poll Completions: CRDs %d\n",reqs_polled);
 					break;
 				default: assert(0);
 			}
 	}
 }
-*/
+
+/*
 static inline void poll_buff(void* incoming_buff, uint8_t buff_type, int* buf_pull_ptr,
 							 void* recv_ops, int* ops_push_ptr, uint16_t outstanding_ops,
 							 struct ibv_cq* completion_q, struct ibv_wc* work_completions,
@@ -223,7 +224,7 @@ static inline void poll_buff(void* incoming_buff, uint8_t buff_type, int* buf_pu
 	uint8_t* next_opcode_ptr;
 	void* next_req_ptr;
 	int index = 0, recv_q_depth = 0, max_credits = 0;
-	uint8_t qp_credits_to_inc = 0, sender = 0, reqs_polled = 0;
+	uint8_t qp_credits_to_inc = 0, last_sender = 0,sender = 0, reqs_polled = 0;
 	size_t req_size = 0;
 	switch(buff_type){
 		case ST_INV_BUFF:
@@ -300,20 +301,22 @@ static inline void poll_buff(void* incoming_buff, uint8_t buff_type, int* buf_pu
 			(*ops_push_ptr)++;
 			//increment credits
 			credits[qp_credits_to_inc][sender]++;
+//			cyan_printf("Credits: %d, Sender %d\n",credits[qp_credits_to_inc][sender], sender);
 			reqs_polled++;
             if(ENABLE_ASSERTIONS == 1)
 				assert(credits[qp_credits_to_inc][sender] <= max_credits);
+			last_sender = sender;
 		}
 	}
 	if(reqs_polled > 0){
 		//poll completion q
-		poll_completions(reqs_polled, completion_q, work_completions);
+		ibv_poll_cq(completion_q, reqs_polled, work_completions);
 		if (ENABLE_STAT_COUNTING == 1)
 			switch(buff_type){
 				case ST_INV_BUFF:
 					w_stats[worker_lid].received_invs_per_worker += reqs_polled;
 					cyan_printf("Polled: INVs %d, (total: %d)!\n", reqs_polled, w_stats[worker_lid].received_invs_per_worker);
-					yellow_printf("Credits: ACK incremented (%d) of sender %d!\n", credits[qp_credits_to_inc][sender], sender);
+					yellow_printf("Credits: ACK incremented to %d (for machine %d)!\n", credits[qp_credits_to_inc][last_sender], last_sender);
 					red_printf("Poll Completions: INVs %d\n",reqs_polled);
 //			            green_printf("Key Hash:%" PRIu64 "\n\t\tType: %s, version %d, tie-b: %d, sender: %d, value: %s\n",
 //						 ((uint64_t *) &inv_ops[*inv_ops_i - 1].key)[1],
@@ -324,23 +327,24 @@ static inline void poll_buff(void* incoming_buff, uint8_t buff_type, int* buf_pu
 				case ST_ACK_BUFF:
 					w_stats[worker_lid].received_acks_per_worker += reqs_polled;
 					cyan_printf("Polled: ACKs %d, (total: %d)!\n", reqs_polled, w_stats[worker_lid].received_acks_per_worker);
-					yellow_printf("Credits: INV incremented to (%d) of sender %d!\n", credits[qp_credits_to_inc][sender], sender);
+					yellow_printf("Credits: INV incremented to %d (for machine %d)!\n", credits[qp_credits_to_inc][last_sender], last_sender);
 					red_printf("Poll Completions: ACKs %d\n",reqs_polled);
 					break;
 				case ST_VAL_BUFF:
 					w_stats[worker_lid].received_vals_per_worker += reqs_polled;
 					cyan_printf("VALs polled %d, (total: %d)!\n", reqs_polled, w_stats[worker_lid].received_vals_per_worker);
-					yellow_printf("Credits: CRD incremented to (%d) of sender %d!\n", credits[qp_credits_to_inc][sender], sender);
+					yellow_printf("Credits: CRD incremented to %d (for machine %d)!\n", credits[qp_credits_to_inc][last_sender], last_sender);
 					red_printf("Poll Completions: VALs %d\n",reqs_polled);
 					break;
 				case ST_CRD_BUFF:
-					yellow_printf("Credits: VAL incremented to (%d) of sender %d!\n", credits[qp_credits_to_inc][sender], sender);
+					yellow_printf("Credits: VAL incremented to %d (for machine %d)!\n", credits[qp_credits_to_inc][last_sender], last_sender);
 					red_printf("Poll Completions: CRDs %d\n",reqs_polled);
 					break;
 				default: assert(0);
 			}
 	}
 }
+*/
 
 // Poll for credits and increment the credits
 ///TODO I don't need to pass the whole credit array just the VAL_UD_QP_ID
@@ -412,6 +416,7 @@ static inline void forge_bcast_inv_wrs(spacetime_op_t* op, spacetime_op_resp_t* 
 									   struct hrd_ctrl_blk* cb, long long* br_tx,
 									   uint16_t br_i, uint16_t worker_lid)
 {
+	static int total_completions = 0;
 	struct ibv_wc signal_send_wc;
 
 	///TODO we need to empty the buffer space
@@ -427,19 +432,26 @@ static inline void forge_bcast_inv_wrs(spacetime_op_t* op, spacetime_op_resp_t* 
 
 	///TODO add code for non-inlining
 	w_stats[worker_lid].invs_per_worker++;
-	HRD_MOD_ADD(*inv_push_ops_ptr, MAX_BATCH_OPS_SIZE);
+	HRD_MOD_ADD(*inv_push_ops_ptr, SEND_INV_Q_DEPTH);
 
-	// Do a Signaled Send every BROADCAST_SS_BATCH broadcasts (BROADCAST_SS_BATCH * (MACHINE_NUM - 1) messages)
-	if ((*br_tx) % BROADCAST_SS_BATCH == 0) send_inv_wr[0].send_flags |= IBV_SEND_SIGNALED;
-	if(*br_tx > 0 && (*br_tx) % BROADCAST_SS_BATCH == BROADCAST_SS_BATCH - 1){
-		printf("INV completion\n");
+    //reset possibly signaled reqs from the prev round
+	send_inv_wr[br_i].send_flags = IBV_SEND_INLINE;
+	// Do a Signaled Send every INV_SS_BATCH broadcasts (INV_SS_BATCH * (MACHINE_NUM - 1) messages)
+	if ((*br_tx) % INV_SS_BATCH == 0){
+        printf("Send Signaled!\n");
+		send_inv_wr[0].send_flags |= IBV_SEND_SIGNALED;
+	}
+	if(*br_tx / INV_SS_BATCH > 0 && (*br_tx) % INV_SS_BATCH == INV_SS_BATCH - 1){
 		hrd_poll_cq(cb->dgram_send_cq[INV_UD_QP_ID], 1, &signal_send_wc);
+		red_printf("Polled send completion: Inv (total %d) --> send_q_size %d INV_SS_BATCH = %d \n",
+					 ++total_completions, SEND_INV_Q_DEPTH, INV_SS_BATCH);
 	}
 	(*br_tx)++;
 	// SET THE LAST SEND_WR TO POINT TO NULL
-//	if (br_i > 0)
-//		send_inv_wr[(br_i * MAX_MESSAGES_IN_BCAST) - 1].next = &send_inv_wr[br_i * MAX_MESSAGES_IN_BCAST];
+	if (br_i > 0)
+		send_inv_wr[(br_i * MAX_MESSAGES_IN_BCAST) - 1].next = &send_inv_wr[br_i * MAX_MESSAGES_IN_BCAST];
 }
+
 
 static inline void broadcasts_invs(spacetime_op_t* ops, spacetime_op_resp_t* resp,
 								   spacetime_inv_t* inv_send_ops, int* inv_push_ptr,
@@ -449,7 +461,8 @@ static inline void broadcasts_invs(spacetime_op_t* ops, spacetime_op_resp_t* res
 								   uint16_t worker_lid)
 {
 	uint8_t missing_credits = 0;
-	uint16_t i = 0, br_i = 0, j, credit_recv_counter = 0;
+	uint16_t i = 0, br_i = 0, j = 0, k = 0;
+//	uint16 credit_recv_counter = 0;
 	int ret;
 	struct ibv_send_wr *bad_send_wr;
 	static int inv_issued = 0; ///TODO just for debugging
@@ -480,22 +493,41 @@ static inline void broadcasts_invs(spacetime_op_t* ops, spacetime_op_resp_t* res
 							send_inv_sgl, cb, br_tx, br_i, worker_lid);
 		for (j = 0; j < MACHINE_NUM; j++)
 			credits[INV_UD_QP_ID][j]--;
-		yellow_printf("Credits: INVs decremented %d (for machine %d)\n",
+		yellow_printf("Credits: INVs decremented to %d (for machine %d)\n",
 					  credits[INV_UD_QP_ID][(machine_id + 1) % MACHINE_NUM],
 					  (machine_id + 1) % MACHINE_NUM);
-		if ((*br_tx) % CREDITS_IN_MESSAGE == 0) credit_recv_counter++;
+//		if ((*br_tx) % CREDITS_IN_MESSAGE == 0) credit_recv_counter++;
 		br_i++;
-		if (br_i == MAX_BCAST_BATCH) {
-			red_printf("Post Receives: ACK %d, Push_ptr %d\n",br_i * (MACHINE_NUM - 1), *ack_push_ptr);
+		if (br_i == MAX_PCIE_BCAST_BATCH) {
+			send_inv_wr[(br_i * MAX_MESSAGES_IN_BCAST) - 1].next = NULL;
+//			if(ENABLE_ASSERTIONS == 1)
+//				for(k = 0; k < br_i * MAX_MESSAGES_IN_BCAST; k++){
+//                    assert(send_inv_wr[k].sg_list == &send_inv_sgl[k]);
+//					if(k + 1 == br_i * MAX_MESSAGES_IN_BCAST)
+//						assert(send_inv_wr[k].next == NULL);
+//					else
+//						assert(send_inv_wr[k].next == &send_inv_wr[k+1]);
+//					assert(send_inv_wr[k].num_sge == 1);
+//					assert(((spacetime_inv_t*) send_inv_sgl[k].addr)->opcode == ST_OP_INV);
+//					assert(((spacetime_inv_t*) send_inv_sgl[k].addr)->sender == machine_id);
+//				}
+			yellow_printf("\\/\\/\\/ Post Receives: ACKs %d\n",br_i * (MACHINE_NUM - 1));
 			post_receives(cb, (uint16_t) (br_i * (MACHINE_NUM - 1)), ST_ACK_BUFF, incoming_acks, ack_push_ptr);
-//			post_credit_recvs_and_batch_bcasts_to_NIC(br_i, cb, send_inv_wr, credit_recv_wr,
-//													  &credit_recv_counter, INV_UD_QP_ID);
+			inv_issued+=br_i;
+			cyan_printf(">>> Send: INVs %d (Total %d)\n", br_i, inv_issued);
 			ret = ibv_post_send(cb->dgram_qp[INV_UD_QP_ID], &send_inv_wr[0], &bad_send_wr);
 			CPE(ret, "Broadcast ibv_post_send error", ret);
-			inv_issued+=br_i;
-			green_printf("Send: INVs %d (Total %d)\n", br_i, inv_issued);
 			br_i = 0;
 		}
+	}
+   	if(br_i > 0){
+		send_inv_wr[(br_i * MAX_MESSAGES_IN_BCAST) - 1].next = NULL;
+		yellow_printf("\\/\\/\\/ Post Receives: ACKs %d\n", br_i * (MACHINE_NUM - 1));
+		post_receives(cb, (uint16_t) (br_i * (MACHINE_NUM - 1)), ST_ACK_BUFF, incoming_acks, ack_push_ptr);
+		inv_issued+=br_i;
+		cyan_printf(">>> Send: INVs %d (Total %d)\n", br_i, inv_issued);
+		ret = ibv_post_send(cb->dgram_qp[INV_UD_QP_ID], &send_inv_wr[0], &bad_send_wr);
+		CPE(ret, "Broadcast ibv_post_send error", ret);
 	}
 }
 
@@ -508,6 +540,7 @@ static inline void forge_ack_wr(spacetime_inv_t* inv_recv_op, spacetime_ack_t* a
 								struct ibv_sge* send_ack_sgl, struct hrd_ctrl_blk* cb,
 								long long* send_ack_tx, uint16_t send_ack_count, uint16_t local_client_id)
 {
+	static int total_completions = 0;
 	struct ibv_wc signal_send_wc;
 
 	ack_send_ops[*ack_push_ptr].opcode = ST_OP_ACK;
@@ -519,10 +552,12 @@ static inline void forge_ack_wr(spacetime_inv_t* inv_recv_op, spacetime_ack_t* a
 	send_ack_sgl[send_ack_count].addr = (uint64_t) (uintptr_t) (ack_send_ops + (*ack_push_ptr));
 	send_ack_wr[send_ack_count].wr.ud.ah = remote_worker_qps[inv_recv_op->sender][ACK_UD_QP_ID].ah;
 	send_ack_wr[send_ack_count].wr.ud.remote_qpn = (uint32) remote_worker_qps[inv_recv_op->sender][ACK_UD_QP_ID].qpn;
+	send_ack_wr[send_ack_count].send_flags = IBV_SEND_INLINE;
 
+	printf("ACK: Push_ptr %d br_i %d\n",*ack_push_ptr, send_ack_count);
 	///TODO add code for non-inlining
 	w_stats[local_client_id].acks_per_worker++;
-	HRD_MOD_ADD(*ack_push_ptr, MAX_BATCH_OPS_SIZE);
+	HRD_MOD_ADD(*ack_push_ptr, SEND_ACK_Q_DEPTH);
 
 	if (send_ack_count > 0)
 		send_ack_wr[send_ack_count - 1].next = &send_ack_wr[send_ack_count];
@@ -532,8 +567,10 @@ static inline void forge_ack_wr(spacetime_inv_t* inv_recv_op, spacetime_ack_t* a
 	}
 	if(*send_ack_tx > 0 && (*send_ack_tx) % ACK_SS_BATCH == ACK_SS_BATCH - 1) {
 		// if (local_client_id == 0) green_printf("Polling for ack  %llu \n", *send_ack_tx);
-		printf("ACK completion\n");
 		hrd_poll_cq(cb->dgram_send_cq[ACK_UD_QP_ID], 1, &signal_send_wc);
+		green_printf("Polled send completion: ACK (total completions %d, curr acks %d) "
+							 "--> send q size %d ACK_SS_BATCH = %d \n",
+					 ++total_completions, *send_ack_tx, SEND_ACK_Q_DEPTH, ACK_SS_BATCH);
 	}
 	(*send_ack_tx)++; // Selective signaling
 }
@@ -556,7 +593,7 @@ static inline void issue_acks(spacetime_inv_t *inv_recv_ops, spacetime_ack_t* ac
 			continue; //TODO we may need to push this to the top of the stack + (seems ok to batch this again to the KVS)
 		//reduce credits
 		credits[ACK_UD_QP_ID][inv_recv_ops[i].sender]--;
-		yellow_printf("Credits: ACKs decrement %d (for machine %d)\n",
+		yellow_printf("Credits: ACKs decrement to %d (for machine %d)\n",
 					  credits[ACK_UD_QP_ID][inv_recv_ops[i].sender],
 					  inv_recv_ops[i].sender);
 		// Create the broadcast messages
@@ -585,12 +622,14 @@ static inline void issue_acks(spacetime_inv_t *inv_recv_ops, spacetime_ack_t* ac
 			assert(send_ack_wr[0].num_sge == 1);
 //			assert(send_ack_wr[0].send_flags == IBV_SEND_INLINE);
 		}
+		assert(((spacetime_inv_t*) send_ack_sgl[0].addr)->sender == machine_id);
+		ack_issued+=send_ack_count;
+		green_printf("Send: ACKs %d (Total %d)\n", send_ack_count, ack_issued);
 		ret = ibv_post_send(cb->dgram_qp[ACK_UD_QP_ID], &send_ack_wr[0], &bad_send_wr);
 		CPE(ret, "ibv_post_send error while sending ACKs", ret);
-        ack_issued+=send_ack_count;
-		green_printf("Send: ACKs %d (Total %d)\n", send_ack_count, ack_issued);
 	}
 }
+
 
 /* ---------------------------------------------------------------------------
 ------------------------------------VALs--------------------------------------
@@ -643,15 +682,16 @@ static inline void forge_bcast_val_wrs(spacetime_ack_t* ack_op, spacetime_val_t*
 	val_send_ops[*val_push_ptr].opcode = ST_OP_VAL;
 	val_send_ops[*val_push_ptr].sender = (uint8_t) machine_id;
 	send_val_sgl[br_i].addr = (uint64_t) (uintptr_t) (val_send_ops + (*val_push_ptr));
+	send_val_wr[br_i].send_flags = IBV_SEND_INLINE;
 
 	///TODO add code for non-inlining
 	w_stats[worker_lid].vals_per_worker++;
-	HRD_MOD_ADD(*val_push_ptr, MAX_BATCH_OPS_SIZE);
+	HRD_MOD_ADD(*val_push_ptr, SEND_VAL_Q_DEPTH);
 
-	// Do a Signaled Send every BROADCAST_SS_BATCH broadcasts (BROADCAST_SS_BATCH * (MACHINE_NUM - 1) messages)
-	if ((*br_tx) % BROADCAST_SS_BATCH == 0) send_val_wr[0].send_flags |= IBV_SEND_SIGNALED;
+	// Do a Signaled Send every VAL_SS_BATCH broadcasts (VAL_SS_BATCH * (MACHINE_NUM - 1) messages)
+	if ((*br_tx) % VAL_SS_BATCH == 0) send_val_wr[0].send_flags |= IBV_SEND_SIGNALED;
 	(*br_tx)++;
-	if((*br_tx) % BROADCAST_SS_BATCH == BROADCAST_SS_BATCH - 1)
+	if((*br_tx) % VAL_SS_BATCH == VAL_SS_BATCH - 1)
 		hrd_poll_cq(cb->dgram_send_cq[VAL_UD_QP_ID], 1, &signal_send_wc);
 
 	// SET THE LAST SEND_WR TO POINT TO NULL
@@ -670,7 +710,7 @@ static inline void broadcasts_vals(spacetime_ack_t* ack_ops, spacetime_val_t* va
 	int ret;
 	struct ibv_send_wr *bad_send_wr;
 	////TODO I don't think we need to traverse the whole array (MAX_BATCH_OPS_SIZE)
-	// traverse all of the ops to find invs
+	// traverse all of the ops to find bcasts
 	for (i = 0; i < MAX_BATCH_OPS_SIZE; i++) {
 		if (ack_ops[i].opcode != ST_LAST_ACK_SUCCESS)
 			continue;
@@ -688,12 +728,12 @@ static inline void broadcasts_vals(spacetime_ack_t* ack_ops, spacetime_val_t* va
 		for (j = 0; j < MACHINE_NUM; j++)
 			credits[VAL_UD_QP_ID][j]--;
 
-		yellow_printf("Credits: VALs decremented %d (for machine %d)\n",
+		yellow_printf("Credits: VALs decremented to %d (for machine %d)\n",
 					  credits[VAL_UD_QP_ID][(machine_id + 1) % MACHINE_NUM],
 					  (machine_id + 1) % MACHINE_NUM);
 		if ((*br_tx) % CREDITS_IN_MESSAGE == 0) credit_recv_counter++;
 		br_i++;
-		if (br_i == MAX_BCAST_BATCH) {
+		if (br_i == MAX_PCIE_BCAST_BATCH) {
 			//before sending acks post receives for INVs
 //            yellow_printf("VAL\n");
 			red_printf("Post receives: CRD %d \n", credit_recv_counter);

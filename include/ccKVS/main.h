@@ -186,7 +186,7 @@
 #define MCAST_GROUPS_PER_CLIENT MACHINE_NUM
 
 // ------COMMON-------------------
-#define MAX_BCAST_BATCH (ENABLE_MULTICAST == 1 ? 4 : 4) //8 //(128 / (MACHINE_NUM - 1)) // how many broadcasts can fit in a batch
+#define MAX_PCIE_BCAST_BATCH (ENABLE_MULTICAST == 1 ? 4 : 4) //8 //(128 / (MACHINE_NUM - 1)) // how many broadcasts can fit in a batch
 #define MESSAGES_IN_BCAST (ENABLE_MULTICAST == 1 ? 1 : (MACHINE_NUM - 1))
 #define MESSAGES_IN_BCAST_BATCH MAX_BCAST_BATCH * MESSAGES_IN_BCAST //must be smaller than the q_depth
 #define BCAST_TO_CACHE_BATCH 10 //90 //100 // helps to keep small //47 for EC
@@ -250,7 +250,7 @@
 #define CLIENT_SS_BATCH_ (CLIENT_SS_BATCH - 1)
 // if this is smaller than MAX_BCAST_BATCH + 2 it will deadlock because the signaling messaged is polled before actually posted
 #define BROADCAST_SS_BATCH MAX((MIN_SS_BATCH / (MACHINE_NUM - 1)), (MAX_BCAST_BATCH + 2))
-#define ACK_SS_BATCH MAX(MIN_SS_BATCH, (BCAST_TO_CACHE_BATCH + 1)) //* (MACHINE_NUM - 1)
+#define ACK_SS_BATCH MAX(MIN_SS_BATCH, (BCAST_TO_CACHE_BATCH + 2)) //* (MACHINE_NUM - 1)
 
 
 /*-------------------------------------------------

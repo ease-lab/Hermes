@@ -22,32 +22,32 @@ void *run_worker(void *arg){
 	--------------DECLARATIONS------------------------------
 	---------------------------------------------------------*/
 	///Send declarations
-	struct ibv_send_wr send_inv_wr[SEND_INV_Q_DEPTH],
-			send_ack_wr[SEND_ACK_Q_DEPTH],
-			send_val_wr[SEND_VAL_Q_DEPTH],
-			send_crd_wr[SEND_CRD_Q_DEPTH], *bad_send_wr;
+	struct ibv_send_wr send_inv_wr[MESSAGES_IN_BCAST_BATCH],
+					   send_ack_wr[SEND_ACK_Q_DEPTH],
+					   send_val_wr[MESSAGES_IN_BCAST_BATCH],
+			  		   send_crd_wr[SEND_CRD_Q_DEPTH]; //, *bad_send_wr;
 
-	struct ibv_sge send_inv_sgl[MAX_BCAST_BATCH],
-			send_ack_sgl[SEND_ACK_Q_DEPTH],
-			send_val_sgl[SEND_VAL_Q_DEPTH], send_crd_sgl;
-
-	//Only for immediates
-	struct ibv_wc  recv_inv_wc[SEND_INV_Q_DEPTH],
-			recv_ack_wc[SEND_ACK_Q_DEPTH],
-			send_val_wc[SEND_VAL_Q_DEPTH],
-			send_crd_wc[SEND_CRD_Q_DEPTH];
+	struct ibv_sge     send_inv_sgl[MAX_PCIE_BCAST_BATCH],
+			           send_ack_sgl[SEND_ACK_Q_DEPTH],
+			           send_val_sgl[MAX_PCIE_BCAST_BATCH], send_crd_sgl;
 
 	uint8_t credits[TOTAL_WORKER_UD_QPs][MACHINE_NUM];
 
 	///Receive declarations
 	struct ibv_recv_wr recv_inv_wr[RECV_INV_Q_DEPTH],
-			recv_ack_wr[RECV_ACK_Q_DEPTH],
-			recv_val_wr[RECV_VAL_Q_DEPTH],
-			recv_crd_wr[RECV_CRD_Q_DEPTH], *bad_recv_wr;
+					   recv_ack_wr[RECV_ACK_Q_DEPTH],
+					   recv_val_wr[RECV_VAL_Q_DEPTH],
+			           recv_crd_wr[RECV_CRD_Q_DEPTH]; // *bad_recv_wr;
 
 	struct ibv_sge 	   recv_inv_sgl[RECV_INV_Q_DEPTH],
-			recv_ack_sgl[RECV_ACK_Q_DEPTH],
-			recv_val_sgl[RECV_VAL_Q_DEPTH], recv_crd_sgl;
+			 		   recv_ack_sgl[RECV_ACK_Q_DEPTH],
+			           recv_val_sgl[RECV_VAL_Q_DEPTH], recv_crd_sgl;
+
+	//Only for immediates
+	struct ibv_wc      recv_inv_wc[RECV_INV_Q_DEPTH],
+				       recv_ack_wc[RECV_ACK_Q_DEPTH],
+			 	       recv_val_wc[RECV_VAL_Q_DEPTH],
+			           recv_crd_wc[RECV_CRD_Q_DEPTH];
 
 
 	ud_req_inv_t *incoming_invs = (ud_req_inv_t *) cb->dgram_buf;
@@ -133,10 +133,11 @@ void *run_worker(void *arg){
 				///is_update = (hrd_fastrand(&seed) % 100 < WRITE_RATIO) ? 1 : 0;
 //			is_update = (rand() % 100 < WRITE_RATIO) ? 1 : 0;
 //			is_update = rolling_iter == 0 ? 1 : 0 ;
-//				is_update = (tmp++ / MAX_BATCH_OPS_SIZE) % 2 == 0 ? 1 : 0;
-				is_update =  1; //write-only
+//                if(tmp == MAX_BATCH_OPS_SIZE * 3) exit(0);
+				is_update = (tmp++ / MAX_BATCH_OPS_SIZE) % 2 == 0 ? 1 : 0;
+//				is_update =  1; //write-only
 				ops[j].opcode = (uint8) (is_update == 1 ? ST_OP_PUT : ST_OP_GET);
-				if (is_update)
+				if (is_update == 1)
 					memset(ops[j].value, ((uint8_t) machine_id % 2 == 0 ? 'x' : 'y'), ST_VALUE_SIZE);
 				ops[j].val_len = (uint8) (is_update == 1 ? ST_VALUE_SIZE : -1);
 				red_printf("Key id: %d, op: %s, hash:%" PRIu64 "\n", key_i,
@@ -228,18 +229,4 @@ void *run_worker(void *arg){
 	}
 	return NULL;
 }
-
-
-//// Used after polling for received credits, to increment the right Virtual Channel's credits depending on the protocol
-//static inline void increment_credits(int credits_found, struct ibv_wc* credit_wc, uint8_t credits[][MACHINE_NUM])
-//{
-//	uint16_t j;
-//	for (j = 0; j < credits_found; j++) {
-//		if (credit_wc[j].imm_data >= (2* MACHINE_NUM))
-//			credits[INV_UD_QP_ID][credit_wc[j].imm_data - (2* MACHINE_NUM)] += CREDITS_IN_MESSAGE;
-//		else if (credit_wc[j].imm_data >= MACHINE_NUM)
-//			credits[ACK_UD_QP_ID][credit_wc[j].imm_data - MACHINE_NUM] += CREDITS_IN_MESSAGE;
-//		else credits[VAL_UD_QP_ID][credit_wc[j].imm_data] += CREDITS_IN_MESSAGE;
-//	}
-//}
 

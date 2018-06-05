@@ -23,6 +23,7 @@ struct worker_stats { // 2 cache lines
     long long received_acks_per_worker;
     long long received_invs_per_worker;
     long long received_vals_per_worker;
+	long long received_crds_per_worker;
 
     long long batches_per_worker;
     long long remote_messages_per_worker;

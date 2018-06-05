@@ -337,47 +337,99 @@ void setup_WRs(struct ibv_send_wr *inv_send_wr, struct ibv_sge *inv_send_sgl,
 {
     int i, j;
 
-    //Broadcast (INV< VAL) WRs
-    for (j = 0; j < MAX_BCAST_BATCH; j++) {
-        //coh_send_sgl[j].addr = (uint64_t) (uintptr_t) (coh_buf + j);
-        ///if (CLIENT_ENABLE_INLINING == 0) coh_send_sgl[j].lkey = coh_mr->lkey;
-		///do broadcasts (inv / vals)
-        for (i = 0; i < MAX_MESSAGES_IN_BCAST; i++) {
-            uint16_t rm_id;
-            if (i < machine_id) rm_id = (uint16_t) i;
-            else rm_id = (uint16_t) ((i + 1) % MACHINE_NUM);
-            uint16_t worker_i = (uint16_t) (rm_id * WORKERS_PER_MACHINE + local_worker_id);
-            uint16_t index = (uint16_t) ((j * MAX_MESSAGES_IN_BCAST) + i);
-            ///assert (index < MESSAGES_IN_BCAST_BATCH);
-			inv_send_wr[index].wr.ud.ah = remote_worker_qps[worker_i][INV_UD_QP_ID].ah;
-			val_send_wr[index].wr.ud.ah = remote_worker_qps[worker_i][VAL_UD_QP_ID].ah;
-
-			inv_send_wr[index].wr.ud.remote_qpn = (uint32) remote_worker_qps[worker_i][INV_UD_QP_ID].qpn;
-			val_send_wr[index].wr.ud.remote_qpn = (uint32) remote_worker_qps[worker_i][VAL_UD_QP_ID].qpn;
-
-			inv_send_wr[index].wr.ud.remote_qkey = HRD_DEFAULT_QKEY;
-			val_send_wr[index].wr.ud.remote_qkey = HRD_DEFAULT_QKEY;
-
-			inv_send_sgl[i].length = sizeof(spacetime_inv_t);
-			val_send_sgl[i].length = sizeof(spacetime_val_t);
-
-            inv_send_wr[index].opcode = IBV_WR_SEND; // Attention!! there is no immediate here
-			val_send_wr[index].opcode = IBV_WR_SEND; // Attention!! there is no immediate here
-
-            inv_send_wr[index].num_sge = 1;
-			val_send_wr[index].num_sge = 1;
-
-            inv_send_wr[index].sg_list = &inv_send_sgl[j];
-			val_send_wr[index].sg_list = &val_send_sgl[j];
-
-			///if (CLIENT_ENABLE_INLINING == 1) coh_send_wr[index].send_flags = IBV_SEND_INLINE;
-			inv_send_wr[index].send_flags = IBV_SEND_INLINE;
-			val_send_wr[index].send_flags = IBV_SEND_INLINE;
-
-            inv_send_wr[index].next = (i == MAX_MESSAGES_IN_BCAST - 1) ? NULL : &inv_send_wr[index + 1];
-			val_send_wr[index].next = (i == MAX_MESSAGES_IN_BCAST - 1) ? NULL : &val_send_wr[index + 1];
-        }
+    for (j = 0; j < MAX_PCIE_BCAST_BATCH; j++) {
+        inv_send_sgl[j].length = sizeof(spacetime_inv_t);
+        val_send_sgl[j].length = sizeof(spacetime_val_t);
     }
+
+    //Broadcast (INV / VAL) WRs
+    for (j = 0; j < MESSAGES_IN_BCAST_BATCH; j++) {
+        int i = j % MAX_MESSAGES_IN_BCAST;
+        int index = j / MAX_MESSAGES_IN_BCAST;
+        uint16_t rm_id;
+        if (i < machine_id) rm_id = (uint16_t) i;
+        else rm_id = (uint16_t) ((i + 1) % MACHINE_NUM);
+        uint16_t worker_i = (uint16_t) (rm_id * WORKERS_PER_MACHINE + local_worker_id);
+//        uint16_t index = (uint16_t) ((j * MAX_MESSAGES_IN_BCAST) + i);
+        printf("index: %d, rm machine: %d, worker_i %d, sgl_index %d\n",j, rm_id, worker_i, index);
+        ///assert (index < MESSAGES_IN_BCAST_BATCH);
+//        inv_send_wr[j].wr.ud.ah = remote_worker_qps[worker_i][INV_UD_QP_ID].ah;
+//        inv_send_wr[j].wr.ud.remote_qpn = (uint32) remote_worker_qps[worker_i][INV_UD_QP_ID].qpn;
+//        inv_send_wr[j].wr.ud.remote_qkey = HRD_DEFAULT_QKEY;
+//        inv_send_wr[j].opcode = IBV_WR_SEND; // Attention!! there is no immediate here
+//        inv_send_wr[j].send_flags = IBV_SEND_INLINE;
+//        inv_send_wr[j].num_sge = 1;
+//        inv_send_wr[j].sg_list = &inv_send_sgl[index];
+//        ///if (CLIENT_ENABLE_INLINING == 1) coh_send_wr[index].send_flags = IBV_SEND_INLINE;
+//        inv_send_wr[j].next = (i == MAX_MESSAGES_IN_BCAST - 1) ? NULL : &inv_send_wr[j + 1];
+
+        inv_send_wr[j].wr.ud.ah = remote_worker_qps[worker_i][INV_UD_QP_ID].ah;
+        val_send_wr[j].wr.ud.ah = remote_worker_qps[worker_i][VAL_UD_QP_ID].ah;
+
+        inv_send_wr[j].wr.ud.remote_qpn = (uint32) remote_worker_qps[worker_i][INV_UD_QP_ID].qpn;
+        val_send_wr[j].wr.ud.remote_qpn = (uint32) remote_worker_qps[worker_i][VAL_UD_QP_ID].qpn;
+
+        inv_send_wr[j].wr.ud.remote_qkey = HRD_DEFAULT_QKEY;
+        val_send_wr[j].wr.ud.remote_qkey = HRD_DEFAULT_QKEY;
+
+
+        inv_send_wr[j].opcode = IBV_WR_SEND; // Attention!! there is no immediate here
+        val_send_wr[j].opcode = IBV_WR_SEND; // Attention!! there is no immediate here
+
+        inv_send_wr[j].num_sge = 1;
+        val_send_wr[j].num_sge = 1;
+
+        inv_send_wr[j].sg_list = &inv_send_sgl[index];
+        val_send_wr[j].sg_list = &val_send_sgl[index];
+
+        ///if (CLIENT_ENABLE_INLINING == 1) coh_send_wr[index].send_flags = IBV_SEND_INLINE;
+        inv_send_wr[j].send_flags = IBV_SEND_INLINE;
+        val_send_wr[j].send_flags = IBV_SEND_INLINE;
+
+        inv_send_wr[j].next = (i == MAX_MESSAGES_IN_BCAST - 1) ? NULL : &inv_send_wr[j + 1];
+        val_send_wr[j].next = (i == MAX_MESSAGES_IN_BCAST - 1) ? NULL : &val_send_wr[j + 1];
+    }
+//    exit(1);
+//    for (j = 0; j < MAX_PCIE_BCAST_BATCH; j++) {
+//        //coh_send_sgl[j].addr = (uint64_t) (uintptr_t) (coh_buf + j);
+//        ///if (CLIENT_ENABLE_INLINING == 0) coh_send_sgl[j].lkey = coh_mr->lkey;
+//		///do broadcasts (inv / vals)
+//        for (i = 0; i < MAX_MESSAGES_IN_BCAST; i++) {
+//            uint16_t rm_id;
+//            if (i < machine_id) rm_id = (uint16_t) i;
+//            else rm_id = (uint16_t) ((i + 1) % MACHINE_NUM);
+//            uint16_t worker_i = (uint16_t) (rm_id * WORKERS_PER_MACHINE + local_worker_id);
+//            uint16_t index = (uint16_t) ((j * MAX_MESSAGES_IN_BCAST) + i);
+//            ///assert (index < MESSAGES_IN_BCAST_BATCH);
+//			inv_send_wr[index].wr.ud.ah = remote_worker_qps[worker_i][INV_UD_QP_ID].ah;
+//			val_send_wr[index].wr.ud.ah = remote_worker_qps[worker_i][VAL_UD_QP_ID].ah;
+//
+//			inv_send_wr[index].wr.ud.remote_qpn = (uint32) remote_worker_qps[worker_i][INV_UD_QP_ID].qpn;
+//			val_send_wr[index].wr.ud.remote_qpn = (uint32) remote_worker_qps[worker_i][VAL_UD_QP_ID].qpn;
+//
+//			inv_send_wr[index].wr.ud.remote_qkey = HRD_DEFAULT_QKEY;
+//			val_send_wr[index].wr.ud.remote_qkey = HRD_DEFAULT_QKEY;
+//
+//			inv_send_sgl[i].length = sizeof(spacetime_inv_t);
+//			val_send_sgl[i].length = sizeof(spacetime_val_t);
+//
+//            inv_send_wr[index].opcode = IBV_WR_SEND; // Attention!! there is no immediate here
+//			val_send_wr[index].opcode = IBV_WR_SEND; // Attention!! there is no immediate here
+//
+//            inv_send_wr[index].num_sge = 1;
+//			val_send_wr[index].num_sge = 1;
+//
+//            inv_send_wr[index].sg_list = &inv_send_sgl[j];
+//			val_send_wr[index].sg_list = &val_send_sgl[j];
+//
+//			///if (CLIENT_ENABLE_INLINING == 1) coh_send_wr[index].send_flags = IBV_SEND_INLINE;
+//			inv_send_wr[index].send_flags = IBV_SEND_INLINE;
+//			val_send_wr[index].send_flags = IBV_SEND_INLINE;
+//
+//            inv_send_wr[index].next = (i == MAX_MESSAGES_IN_BCAST - 1) ? NULL : &inv_send_wr[index + 1];
+//			val_send_wr[index].next = (i == MAX_MESSAGES_IN_BCAST - 1) ? NULL : &val_send_wr[index + 1];
+//        }
+//    }
 
     //Send ACK  WRs
     for(i = 0; i < SEND_ACK_Q_DEPTH; i++){
