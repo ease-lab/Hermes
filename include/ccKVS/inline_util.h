@@ -174,10 +174,10 @@ static inline void poll_credits_SC(struct ibv_cq* credit_recv_cq, struct ibv_wc*
 		}
 		for (j = 0; j < credits_found; j++) {
 			if (credit_wc[j].imm_data >= (2* MACHINE_NUM))
-				credits[UPD_VC][credit_wc[j].imm_data - (2* MACHINE_NUM)] += CREDITS_IN_MESSAGE;
+				credits[UPD_VC][credit_wc[j].imm_data - (2* MACHINE_NUM)] += CRDS_IN_MESSAGE;
 			else if (credit_wc[j].imm_data >= MACHINE_NUM)
-				credits[INV_VC][credit_wc[j].imm_data - MACHINE_NUM] += CREDITS_IN_MESSAGE;
-			else credits[ACK_VC][credit_wc[j].imm_data] += CREDITS_IN_MESSAGE;
+				credits[INV_VC][credit_wc[j].imm_data - MACHINE_NUM] += CRDS_IN_MESSAGE;
+			else credits[ACK_VC][credit_wc[j].imm_data] += CRDS_IN_MESSAGE;
 		}
 	}
 	else if(unlikely(credits_found < 0)) {
@@ -192,10 +192,10 @@ static inline void increment_credits_based_on_protocol(int credits_found, struct
 	if (protocol == STRONG_CONSISTENCY) {
 		for (j = 0; j < credits_found; j++) {
 			if (credit_wc[j].imm_data >= (2* MACHINE_NUM))
-				credits[UPD_VC][credit_wc[j].imm_data - (2* MACHINE_NUM)] += CREDITS_IN_MESSAGE;
+				credits[UPD_VC][credit_wc[j].imm_data - (2* MACHINE_NUM)] += CRDS_IN_MESSAGE;
 			else if (credit_wc[j].imm_data >= MACHINE_NUM)
-				credits[INV_VC][credit_wc[j].imm_data - MACHINE_NUM] += CREDITS_IN_MESSAGE;
-			else credits[ACK_VC][credit_wc[j].imm_data] += CREDITS_IN_MESSAGE;
+				credits[INV_VC][credit_wc[j].imm_data - MACHINE_NUM] += CRDS_IN_MESSAGE;
+			else credits[ACK_VC][credit_wc[j].imm_data] += CRDS_IN_MESSAGE;
 		}
 	}
 	///else if (protocol == EVENTUAL) {
@@ -1280,7 +1280,7 @@ static inline void perform_broadcasts_SC(uint16_t* ack_size, struct extended_cac
                        coh_message_count, coh_buf, coh_buf_i, br_tx, local_client_id, &updates_sent, br_i,
                        credits, vc);
 		for (j = 0; j < MACHINE_NUM; j++) { credits[vc][j]--; }
-		if ((*br_tx) % CREDITS_IN_MESSAGE == 0) credit_recv_counter++;
+		if ((*br_tx) % CRDS_IN_MESSAGE == 0) credit_recv_counter++;
 		br_i++;
 		op_i++;
 		if (br_i == MAX_BCAST_BATCH) {
@@ -1328,11 +1328,11 @@ static inline void send_acks(struct small_cache_op* inv_to_send_ops, uint8_t cre
 		ack_sgl[send_ack_count].addr = (uint64_t) (uintptr_t) (inv_to_send_ops + i);
 		if (send_ack_count > 0) ack_wr[send_ack_count - 1].next = &ack_wr[send_ack_count];
 		ack_wr[send_ack_count].send_flags = IBV_SEND_INLINE;
-		if ((*sent_ack_tx) % ACK_SS_BATCH == 0) {
+		if ((*sent_ack_tx) % ACK_SS_GRANULARITY == 0) {
 			ack_wr[send_ack_count].send_flags |= IBV_SEND_SIGNALED;
 			// if (local_client_id == 0) green_printf("Sending ack %llu signaled \n", *sent_ack_tx);
 		}
-		if((*sent_ack_tx) % ACK_SS_BATCH == ACK_SS_BATCH - 1) {
+		if((*sent_ack_tx) % ACK_SS_GRANULARITY == ACK_SS_GRANULARITY - 1) {
 			// if (local_client_id == 0) green_printf("Polling for ack  %llu \n", *sent_ack_tx);
 			hrd_poll_cq(cb->dgram_send_cq[BROADCAST_UD_QP_ID], 1, &signal_send_wc);
 		}
@@ -1341,8 +1341,8 @@ static inline void send_acks(struct small_cache_op* inv_to_send_ops, uint8_t cre
 
 		(*sent_ack_tx)++; // Selective signaling
 		w_stats[local_client_id].acks_per_client++;
-		// Post a receive for a credit every CREDITS_IN_MESSAGE acks
-		if ((*sent_ack_tx) % CREDITS_IN_MESSAGE == 0) (*ack_recv_counter)++;
+		// Post a receive for a credit every CRDS_IN_MESSAGE acks
+		if ((*sent_ack_tx) % CRDS_IN_MESSAGE == 0) (*ack_recv_counter)++;
 	}
 	// post receives for credits and then send the acks
 	post_recvs_and_send(*ack_recv_counter, send_ack_count, ack_wr, credit_recv_wr,
@@ -1375,7 +1375,7 @@ static inline uint16_t forge_credits_SC(uint16_t coh_message_count[][MACHINE_NUM
 					else if (i < coh_message_count[INV_VC][rm_id] + coh_message_count[ACK_VC][rm_id]) invs_seen[rm_id]++;
 					else upds_seen[rm_id]++;
 					// If we have seen enough broadcasts from a given machine send credits
-					if (acks_seen[rm_id] == CREDITS_IN_MESSAGE || invs_seen[rm_id] == CREDITS_IN_MESSAGE || upds_seen[rm_id] == CREDITS_IN_MESSAGE) {
+					if (acks_seen[rm_id] == CRDS_IN_MESSAGE || invs_seen[rm_id] == CRDS_IN_MESSAGE || upds_seen[rm_id] == CRDS_IN_MESSAGE) {
 						uint16_t clt_i = rm_id * CLIENTS_PER_MACHINE + local_client_id;
 						credit_wr[credit_wr_i].wr.ud.ah = remote_clt_qp[clt_i][FC_UD_QP_ID].ah;
 						credit_wr[credit_wr_i].wr.ud.remote_qpn = remote_clt_qp[clt_i][FC_UD_QP_ID].qpn;

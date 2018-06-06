@@ -788,7 +788,7 @@ void set_up_coh_WRs(struct ibv_send_wr *coh_send_wr, struct ibv_sge *coh_send_sg
             else rm_id = (uint16_t) ((i + 1) % MACHINE_NUM);
             uint16_t clt_i = (uint16_t) (rm_id * CLIENTS_PER_MACHINE + local_client_id);
             uint16_t index = (uint16_t) ((j * MESSAGES_IN_BCAST) + i);
-            assert (index < MESSAGES_IN_BCAST_BATCH);
+            assert (index < MAX_MSGS_IN_PCIE_BCAST_BATCH);
             if (ENABLE_MULTICAST == 1) {
                 coh_send_wr[index].wr.ud.ah = mcast->send_ah;
                 coh_send_wr[index].wr.ud.remote_qpn = mcast->qpn;

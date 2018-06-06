@@ -188,7 +188,7 @@
 // ------COMMON-------------------
 #define MAX_PCIE_BCAST_BATCH (ENABLE_MULTICAST == 1 ? 4 : 4) //8 //(128 / (MACHINE_NUM - 1)) // how many broadcasts can fit in a batch
 #define MESSAGES_IN_BCAST (ENABLE_MULTICAST == 1 ? 1 : (MACHINE_NUM - 1))
-#define MESSAGES_IN_BCAST_BATCH MAX_BCAST_BATCH * MESSAGES_IN_BCAST //must be smaller than the q_depth
+#define MAX_MSGS_IN_PCIE_BCAST_BATCH MAX_BCAST_BATCH * MESSAGES_IN_BCAST //must be smaller than the q_depth
 #define BCAST_TO_CACHE_BATCH 10 //90 //100 // helps to keep small //47 for EC
 
 //----------EC flow control-----------------
@@ -214,8 +214,8 @@
 #define INV_VC 1
 #define UPD_VC 2
 #define SC_CREDIT_DIVIDER 2 //1 /// this  has the potential to cause deadlocks //  =take care that this can be a big part of the network traffic
-#define CREDITS_IN_MESSAGE (CREDITS_FOR_EACH_CLIENT / SC_CREDIT_DIVIDER) /* How many credits exist in a single back-pressure message- seems to be working with / 3*/
-#define MAX_CREDIT_WRS (BROADCAST_CREDITS / CREDITS_IN_MESSAGE) * (MACHINE_NUM - 1)
+#define CRDS_IN_MESSAGE (CREDITS_FOR_EACH_CLIENT / SC_CREDIT_DIVIDER) /* How many credits exist in a single back-pressure message- seems to be working with / 3*/
+#define MAX_CREDIT_WRS (BROADCAST_CREDITS / CRDS_IN_MESSAGE) * (MACHINE_NUM - 1)
 #define MAX_COH_MESSAGES ((MACHINE_NUM - 1) * BROADCAST_CREDITS)
 #define MAX_COH_RECEIVES ((MACHINE_NUM - 1) * BROADCAST_CREDITS)
 
@@ -230,27 +230,27 @@
 #define COH_BUF_SIZE (CLIENT_ENABLE_INLINING == 1 ?	(MAX_BCAST_BATCH * MICA_OP_SIZE) : (BROADCAST_SS_BATCH * MICA_OP_SIZE))
 #define COH_BUF_SLOTS (CLIENT_ENABLE_INLINING == 1 ? MAX_BCAST_BATCH : BROADCAST_SS_BATCH)
 /* We post receives for credits after sending broadcasts or acks,
-	For Broadcasts the maximum number is: (MACHINE_NUM - 1) * (CEILING(MAX_BCAST_BATCH, CREDITS_IN_MESSAGE))
+	For Broadcasts the maximum number is: (MACHINE_NUM - 1) * (CEILING(MAX_BCAST_BATCH, CRDS_IN_MESSAGE))
 	For acks the maximum number is: CEILING(BCAST_TO_CACHE_BATCH, REDITS_IN_MESSAGE)   */
-#define MAX_CREDIT_RECVS_FOR_BCASTS (MACHINE_NUM - 1) * (CEILING(MAX_BCAST_BATCH, CREDITS_IN_MESSAGE))
-#define MAX_CREDIT_RECVS_FOR_ACKS (CEILING(BCAST_TO_CACHE_BATCH, CREDITS_IN_MESSAGE))
+#define MAX_CREDIT_RECVS_FOR_BCASTS (MACHINE_NUM - 1) * (CEILING(MAX_BCAST_BATCH, CRDS_IN_MESSAGE))
+#define MAX_CREDIT_RECVS_FOR_ACKS (CEILING(BCAST_TO_CACHE_BATCH, CRDS_IN_MESSAGE))
 #define MAX_CREDIT_RECVS (MAX(MAX_CREDIT_RECVS_FOR_BCASTS, MAX_CREDIT_RECVS_FOR_ACKS))
 
 /*-------------------------------------------------
 -----------------SELECTIVE SIGNALING-------------------------
 --------------------------------------------------*/
-#define MIN_SS_BATCH 127// THe minimum ss batch
-#define CREDIT_SS_BATCH MAX(MIN_SS_BATCH, (MAX_CREDIT_WRS + 1))
+#define MIN_SS_GRANULARITY 127// THe minimum ss batch
+#define CREDIT_SS_BATCH MAX(MIN_SS_GRANULARITY, (MAX_CREDIT_WRS + 1))
 #define CREDIT_SS_BATCH_ (CREDIT_SS_BATCH - 1)
-//#define EC_CREDIT_SS_BATCH MAX(MIN_SS_BATCH, (EC_MAX_CREDIT_WRS + 1))
+//#define EC_CREDIT_SS_BATCH MAX(MIN_SS_GRANULARITY, (EC_MAX_CREDIT_WRS + 1))
 //#define EC_CREDIT_SS_BATCH_ (EC_CREDIT_SS_BATCH - 1)
-//#define WORKER_SS_BATCH MAX(MIN_SS_BATCH, (WORKER_MAX_BATCH + 1))
+//#define WORKER_SS_BATCH MAX(MIN_SS_GRANULARITY, (WORKER_MAX_BATCH + 1))
 //#define WORKER_SS_BATCH_ (WORKER_SS_BATCH - 1)
-#define CLIENT_SS_BATCH MAX(MIN_SS_BATCH, (WINDOW_SIZE + 1))
+#define CLIENT_SS_BATCH MAX(MIN_SS_GRANULARITY, (WINDOW_SIZE + 1))
 #define CLIENT_SS_BATCH_ (CLIENT_SS_BATCH - 1)
 // if this is smaller than MAX_BCAST_BATCH + 2 it will deadlock because the signaling messaged is polled before actually posted
-#define BROADCAST_SS_BATCH MAX((MIN_SS_BATCH / (MACHINE_NUM - 1)), (MAX_BCAST_BATCH + 2))
-#define ACK_SS_BATCH MAX(MIN_SS_BATCH, (BCAST_TO_CACHE_BATCH + 2)) //* (MACHINE_NUM - 1)
+#define BROADCAST_SS_BATCH MAX((MIN_SS_GRANULARITY / (MACHINE_NUM - 1)), (MAX_BCAST_BATCH + 2))
+#define ACK_SS_GRANULARITY MAX(MIN_SS_GRANULARITY, (BCAST_TO_CACHE_BATCH + 2)) //* (MACHINE_NUM - 1)
 
 
 /*-------------------------------------------------
@@ -272,7 +272,7 @@
 #define CLIENT_SEND_REM_Q_DEPTH  ((ENABLE_MULTI_BATCHES == 1  ? MAX_OUTSTANDING_REQS : CLIENT_SS_BATCH) + 3) // 60)
 
 //#define EC_CLIENT_SEND_BR_Q_DEPTH (MAX((MACHINE_NUM - 1) * BROADCAST_SS_BATCH, EC_MAX_COH_MESSAGES + 14) + 3)
-#define SC_CLIENT_SEND_BR_Q_DEPTH (MAX(MAX_COH_MESSAGES, (BROADCAST_SS_BATCH * (MACHINE_NUM - 1) + ACK_SS_BATCH)) + 13)
+#define SC_CLIENT_SEND_BR_Q_DEPTH (MAX(MAX_COH_MESSAGES, (BROADCAST_SS_BATCH * (MACHINE_NUM - 1) + ACK_SS_GRANULARITY)) + 13)
 
 //#define EC_CLIENT_SEND_CR_Q_DEPTH  (2 * EC_CREDIT_SS_BATCH + 3) // send credits EC
 #define SC_CLIENT_SEND_CR_Q_DEPTH (2 * CREDIT_SS_BATCH + 13)

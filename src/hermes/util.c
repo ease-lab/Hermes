@@ -50,7 +50,7 @@ void setup_qps(int worker_gid, struct hrd_ctrl_blk *cb){
         char worker_dgram_qp_name[HRD_QP_NAME_SIZE];
         sprintf(worker_dgram_qp_name, "worker-dgram-%d-%d", worker_gid, i);
         hrd_publish_dgram_qp(cb, i, worker_dgram_qp_name, WORKER_SL);
-        //printf("Worker %d (gid %d) published conn qp %s \n", worker_lid, worker_gid, worker_dgram_qp_name);
+//        printf("Worker %d (gid %d) published conn qp %s \n", worker_lid, worker_gid, worker_dgram_qp_name);
     }
 
     if (worker_lid == 0) {
@@ -61,7 +61,7 @@ void setup_qps(int worker_gid, struct hrd_ctrl_blk *cb){
             red_printf("Stats thread was not successfully spawned \n");
         worker_needed_ah_ready = 1;
     }else
-        while (worker_needed_ah_ready == 0) usleep(200000);
+        while (worker_needed_ah_ready == 0) usleep(20000);
 
     assert(worker_needed_ah_ready == 1);
 }
@@ -80,7 +80,7 @@ void create_AHs(struct hrd_ctrl_blk *cb){
         if (i / WORKERS_PER_MACHINE == machine_id) continue; // skip the local machine
         for (qp_i = 0; qp_i < TOTAL_WORKER_UD_QPs; qp_i++) {
             sprintf(worker_name, "worker-dgram-%d-%d", i, qp_i);
-
+//            printf("Trying to get qp %s \n", worker_name);
             /* Get the UD queue pair for the ith machine */
             worker_qp[i][qp_i] = NULL;
             // printf("CLIENT %d is Looking for client %s\n", clt_gid, clt_name );
@@ -255,9 +255,9 @@ void setup_credits(uint8_t credits[][MACHINE_NUM],     struct hrd_ctrl_blk *cb,
     crd_tmp.opcode = ST_OP_CRD;
     crd_tmp.sender = (uint8_t) machine_id;
     crd_tmp.val_credits = 1;
-//    crd_tmp.val_credits = CREDITS_IN_MESSAGE;
+//    crd_tmp.val_credits = CRDS_IN_MESSAGE;
     // Credit WRs
-    for (i = 0; i < SEND_CRD_Q_DEPTH; i++) {
+    for (i = 0; i < MAX_SEND_CRD_WRS; i++) {
         credit_send_sgl->length = 0;
         credit_send_wr[i].opcode = IBV_WR_SEND_WITH_IMM;
         credit_send_wr[i].num_sge = 0;
@@ -271,10 +271,10 @@ void setup_credits(uint8_t credits[][MACHINE_NUM],     struct hrd_ctrl_blk *cb,
     //Credit Receives
     credit_recv_sgl->length = 64;
     credit_recv_sgl->lkey = cb->dgram_buf_mr->lkey;
-    credit_recv_sgl->addr = (uintptr_t) &cb->dgram_buf[ sizeof(ud_req_inv_t) * RECV_INV_Q_DEPTH
-                                                        + sizeof(ud_req_ack_t) * RECV_ACK_Q_DEPTH
-                                                        + sizeof(ud_req_val_t) * RECV_VAL_Q_DEPTH];
-    for (i = 0; i < RECV_CRD_Q_DEPTH; i++) {
+    credit_recv_sgl->addr = (uintptr_t) &cb->dgram_buf[INV_RECV_REQ_SIZE * RECV_INV_Q_DEPTH +
+                                                       ACK_RECV_REQ_SIZE * RECV_ACK_Q_DEPTH +
+                                                       VAL_RECV_REQ_SIZE * RECV_VAL_Q_DEPTH];
+    for (i = 0; i < MAX_RECV_CRD_WRS; i++) {
         credit_recv_wr[i].sg_list = credit_recv_sgl;
         credit_recv_wr[i].num_sge = 1;
     }
@@ -285,7 +285,8 @@ void setup_credits(uint8_t credits[][MACHINE_NUM],     struct hrd_ctrl_blk *cb,
 void setup_ops(spacetime_op_t **ops, spacetime_op_resp_t **resp,
 			   spacetime_inv_t **inv_recv_ops, spacetime_ack_t **ack_recv_ops,
 			   spacetime_val_t **val_recv_ops, spacetime_inv_t **inv_send_ops,
-			   spacetime_ack_t **ack_send_ops, spacetime_val_t **val_send_ops){
+			   spacetime_ack_t **ack_send_ops, spacetime_val_t **val_send_ops)
+{
     int i;
     *ops = memalign(4096, MAX_BATCH_OPS_SIZE * (sizeof(spacetime_op_t)));
     memset(*ops, 0, MAX_BATCH_OPS_SIZE * (sizeof(spacetime_op_t)));
@@ -335,104 +336,55 @@ void setup_WRs(struct ibv_send_wr *inv_send_wr, struct ibv_sge *inv_send_sgl,
                     struct ibv_recv_wr *val_recv_wr, struct ibv_sge *val_recv_sgl,
 					struct hrd_ctrl_blk *cb, uint16_t local_worker_id)
 {
-    int i, j;
+    int i;
 
-    for (j = 0; j < MAX_PCIE_BCAST_BATCH; j++) {
-        inv_send_sgl[j].length = sizeof(spacetime_inv_t);
-        val_send_sgl[j].length = sizeof(spacetime_val_t);
+    //Broadcast (INV / VAL) sgls
+    for (i = 0; i < MAX_PCIE_BCAST_BATCH; i++) {
+        inv_send_sgl[i].length = sizeof(spacetime_inv_t);
+        val_send_sgl[i].length = sizeof(spacetime_val_t);
     }
 
     //Broadcast (INV / VAL) WRs
-    for (j = 0; j < MESSAGES_IN_BCAST_BATCH; j++) {
-        int i = j % MAX_MESSAGES_IN_BCAST;
-        int index = j / MAX_MESSAGES_IN_BCAST;
+    assert(MAX_MSGS_IN_PCIE_BCAST_BATCH == MAX_SEND_INV_WRS);
+    assert(MAX_MSGS_IN_PCIE_BCAST_BATCH == MAX_SEND_VAL_WRS);
+    for (i = 0; i < MAX_MSGS_IN_PCIE_BCAST_BATCH; i++) {
+        int i_mod_bcast = i % MAX_MESSAGES_IN_BCAST;
+        int sgl_index = i / MAX_MESSAGES_IN_BCAST;
         uint16_t rm_id;
-        if (i < machine_id) rm_id = (uint16_t) i;
-        else rm_id = (uint16_t) ((i + 1) % MACHINE_NUM);
-        uint16_t worker_i = (uint16_t) (rm_id * WORKERS_PER_MACHINE + local_worker_id);
-//        uint16_t index = (uint16_t) ((j * MAX_MESSAGES_IN_BCAST) + i);
-        printf("index: %d, rm machine: %d, worker_i %d, sgl_index %d\n",j, rm_id, worker_i, index);
-        ///assert (index < MESSAGES_IN_BCAST_BATCH);
-//        inv_send_wr[j].wr.ud.ah = remote_worker_qps[worker_i][INV_UD_QP_ID].ah;
-//        inv_send_wr[j].wr.ud.remote_qpn = (uint32) remote_worker_qps[worker_i][INV_UD_QP_ID].qpn;
-//        inv_send_wr[j].wr.ud.remote_qkey = HRD_DEFAULT_QKEY;
-//        inv_send_wr[j].opcode = IBV_WR_SEND; // Attention!! there is no immediate here
-//        inv_send_wr[j].send_flags = IBV_SEND_INLINE;
-//        inv_send_wr[j].num_sge = 1;
-//        inv_send_wr[j].sg_list = &inv_send_sgl[index];
-//        ///if (CLIENT_ENABLE_INLINING == 1) coh_send_wr[index].send_flags = IBV_SEND_INLINE;
-//        inv_send_wr[j].next = (i == MAX_MESSAGES_IN_BCAST - 1) ? NULL : &inv_send_wr[j + 1];
+        if (i_mod_bcast < machine_id) rm_id = (uint16_t) i_mod_bcast;
+        else rm_id = (uint16_t) ((i_mod_bcast + 1) % MACHINE_NUM);
+        uint16_t rm_worker_gid = (uint16_t) (rm_id * WORKERS_PER_MACHINE + local_worker_id);
+//        printf("index: %d, rm machine: %d, rm_worker_gid %d, sgl_index %d\n", i, rm_id, rm_worker_gid, sgl_index);
 
-        inv_send_wr[j].wr.ud.ah = remote_worker_qps[worker_i][INV_UD_QP_ID].ah;
-        val_send_wr[j].wr.ud.ah = remote_worker_qps[worker_i][VAL_UD_QP_ID].ah;
+        inv_send_wr[i].wr.ud.ah = remote_worker_qps[rm_worker_gid][INV_UD_QP_ID].ah;
+        val_send_wr[i].wr.ud.ah = remote_worker_qps[rm_worker_gid][VAL_UD_QP_ID].ah;
 
-        inv_send_wr[j].wr.ud.remote_qpn = (uint32) remote_worker_qps[worker_i][INV_UD_QP_ID].qpn;
-        val_send_wr[j].wr.ud.remote_qpn = (uint32) remote_worker_qps[worker_i][VAL_UD_QP_ID].qpn;
+        inv_send_wr[i].wr.ud.remote_qpn = (uint32) remote_worker_qps[rm_worker_gid][INV_UD_QP_ID].qpn;
+        val_send_wr[i].wr.ud.remote_qpn = (uint32) remote_worker_qps[rm_worker_gid][VAL_UD_QP_ID].qpn;
 
-        inv_send_wr[j].wr.ud.remote_qkey = HRD_DEFAULT_QKEY;
-        val_send_wr[j].wr.ud.remote_qkey = HRD_DEFAULT_QKEY;
+        inv_send_wr[i].wr.ud.remote_qkey = HRD_DEFAULT_QKEY;
+        val_send_wr[i].wr.ud.remote_qkey = HRD_DEFAULT_QKEY;
 
 
-        inv_send_wr[j].opcode = IBV_WR_SEND; // Attention!! there is no immediate here
-        val_send_wr[j].opcode = IBV_WR_SEND; // Attention!! there is no immediate here
+        inv_send_wr[i].opcode = IBV_WR_SEND; // Attention!! there is no immediate here
+        val_send_wr[i].opcode = IBV_WR_SEND; // Attention!! there is no immediate here
 
-        inv_send_wr[j].num_sge = 1;
-        val_send_wr[j].num_sge = 1;
+        inv_send_wr[i].num_sge = 1;
+        val_send_wr[i].num_sge = 1;
 
-        inv_send_wr[j].sg_list = &inv_send_sgl[index];
-        val_send_wr[j].sg_list = &val_send_sgl[index];
+        inv_send_wr[i].sg_list = &inv_send_sgl[sgl_index];
+        val_send_wr[i].sg_list = &val_send_sgl[sgl_index];
 
         ///if (CLIENT_ENABLE_INLINING == 1) coh_send_wr[index].send_flags = IBV_SEND_INLINE;
-        inv_send_wr[j].send_flags = IBV_SEND_INLINE;
-        val_send_wr[j].send_flags = IBV_SEND_INLINE;
+        inv_send_wr[i].send_flags = IBV_SEND_INLINE;
+        val_send_wr[i].send_flags = IBV_SEND_INLINE;
 
-        inv_send_wr[j].next = (i == MAX_MESSAGES_IN_BCAST - 1) ? NULL : &inv_send_wr[j + 1];
-        val_send_wr[j].next = (i == MAX_MESSAGES_IN_BCAST - 1) ? NULL : &val_send_wr[j + 1];
+        inv_send_wr[i].next = (i_mod_bcast == MAX_MESSAGES_IN_BCAST - 1) ? NULL : &inv_send_wr[i + 1];
+        val_send_wr[i].next = (i_mod_bcast == MAX_MESSAGES_IN_BCAST - 1) ? NULL : &val_send_wr[i + 1];
     }
-//    exit(1);
-//    for (j = 0; j < MAX_PCIE_BCAST_BATCH; j++) {
-//        //coh_send_sgl[j].addr = (uint64_t) (uintptr_t) (coh_buf + j);
-//        ///if (CLIENT_ENABLE_INLINING == 0) coh_send_sgl[j].lkey = coh_mr->lkey;
-//		///do broadcasts (inv / vals)
-//        for (i = 0; i < MAX_MESSAGES_IN_BCAST; i++) {
-//            uint16_t rm_id;
-//            if (i < machine_id) rm_id = (uint16_t) i;
-//            else rm_id = (uint16_t) ((i + 1) % MACHINE_NUM);
-//            uint16_t worker_i = (uint16_t) (rm_id * WORKERS_PER_MACHINE + local_worker_id);
-//            uint16_t index = (uint16_t) ((j * MAX_MESSAGES_IN_BCAST) + i);
-//            ///assert (index < MESSAGES_IN_BCAST_BATCH);
-//			inv_send_wr[index].wr.ud.ah = remote_worker_qps[worker_i][INV_UD_QP_ID].ah;
-//			val_send_wr[index].wr.ud.ah = remote_worker_qps[worker_i][VAL_UD_QP_ID].ah;
-//
-//			inv_send_wr[index].wr.ud.remote_qpn = (uint32) remote_worker_qps[worker_i][INV_UD_QP_ID].qpn;
-//			val_send_wr[index].wr.ud.remote_qpn = (uint32) remote_worker_qps[worker_i][VAL_UD_QP_ID].qpn;
-//
-//			inv_send_wr[index].wr.ud.remote_qkey = HRD_DEFAULT_QKEY;
-//			val_send_wr[index].wr.ud.remote_qkey = HRD_DEFAULT_QKEY;
-//
-//			inv_send_sgl[i].length = sizeof(spacetime_inv_t);
-//			val_send_sgl[i].length = sizeof(spacetime_val_t);
-//
-//            inv_send_wr[index].opcode = IBV_WR_SEND; // Attention!! there is no immediate here
-//			val_send_wr[index].opcode = IBV_WR_SEND; // Attention!! there is no immediate here
-//
-//            inv_send_wr[index].num_sge = 1;
-//			val_send_wr[index].num_sge = 1;
-//
-//            inv_send_wr[index].sg_list = &inv_send_sgl[j];
-//			val_send_wr[index].sg_list = &val_send_sgl[j];
-//
-//			///if (CLIENT_ENABLE_INLINING == 1) coh_send_wr[index].send_flags = IBV_SEND_INLINE;
-//			inv_send_wr[index].send_flags = IBV_SEND_INLINE;
-//			val_send_wr[index].send_flags = IBV_SEND_INLINE;
-//
-//            inv_send_wr[index].next = (i == MAX_MESSAGES_IN_BCAST - 1) ? NULL : &inv_send_wr[index + 1];
-//			val_send_wr[index].next = (i == MAX_MESSAGES_IN_BCAST - 1) ? NULL : &val_send_wr[index + 1];
-//        }
-//    }
 
     //Send ACK  WRs
-    for(i = 0; i < SEND_ACK_Q_DEPTH; i++){
+    for(i = 0; i < MAX_SEND_ACK_WRS; i++){
 		ack_send_wr[i].wr.ud.remote_qkey = HRD_DEFAULT_QKEY;
 		ack_send_sgl[i].length = sizeof(spacetime_ack_t);
 		ack_send_wr[i].opcode = IBV_WR_SEND; // Attention!! there is no immediate here, cids do the job!
@@ -443,19 +395,19 @@ void setup_WRs(struct ibv_send_wr *inv_send_wr, struct ibv_sge *inv_send_sgl,
 	}
 
     // Receives
-	for (i = 0; i < RECV_INV_Q_DEPTH; i++) {
+	for (i = 0; i < MAX_RECV_INV_WRS; i++) {
 		inv_recv_sgl[i].length = INV_RECV_REQ_SIZE;
         inv_recv_sgl[i].lkey = cb->dgram_buf_mr->lkey;
         inv_recv_wr[i].sg_list = &inv_recv_sgl[i];
         inv_recv_wr[i].num_sge = 1;
 	}
-    for (i = 0; i < RECV_ACK_Q_DEPTH; i++) {
+    for (i = 0; i < MAX_RECV_ACK_WRS; i++) {
 		ack_recv_sgl[i].length = ACK_RECV_REQ_SIZE;
         ack_recv_sgl[i].lkey = cb->dgram_buf_mr->lkey;
         ack_recv_wr[i].sg_list = &ack_recv_sgl[i];
         ack_recv_wr[i].num_sge = 1;
 	}
-    for (i = 0; i < RECV_VAL_Q_DEPTH; i++) {
+    for (i = 0; i < MAX_RECV_VAL_WRS; i++) {
 		val_recv_sgl[i].length = VAL_RECV_REQ_SIZE;
         val_recv_sgl[i].lkey = cb->dgram_buf_mr->lkey;
         val_recv_wr[i].sg_list = &val_recv_sgl[i];

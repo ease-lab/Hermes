@@ -59,7 +59,7 @@ void *run_client(void *arg)
     ---------------------------------------------------------*/
     int key_i, ret;
 
-    struct ibv_send_wr ack_wr[BCAST_TO_CACHE_BATCH], coh_send_wr[MESSAGES_IN_BCAST_BATCH], credit_wr[MAX_CREDIT_WRS], *bad_send_wr;
+    struct ibv_send_wr ack_wr[BCAST_TO_CACHE_BATCH], coh_send_wr[MAX_MSGS_IN_PCIE_BCAST_BATCH], credit_wr[MAX_CREDIT_WRS], *bad_send_wr;
     struct ibv_sge ack_sgl[BCAST_TO_CACHE_BATCH], coh_send_sgl[MAX_BCAST_BATCH], credit_sgl;
     struct ibv_wc coh_wc[MAX_COH_RECEIVES], signal_send_wc, credit_wc[MAX_CREDIT_WRS];
 
@@ -254,7 +254,7 @@ void *run_client(void *arg)
                                            credit_wr, &credit_tx, cb, coh_recv_cq, coh_wc);
             if (credit_wr_i > 0)
                 send_credits(credit_wr_i, coh_recv_sgl, cb, &push_ptr, coh_recv_wr, cb->dgram_qp[BROADCAST_UD_QP_ID],
-                             credit_wr, (uint16_t)CREDITS_IN_MESSAGE, (uint32_t)SC_CLT_BUF_SLOTS, (void*)incoming_reqs);
+                             credit_wr, (uint16_t)CRDS_IN_MESSAGE, (uint32_t)SC_CLT_BUF_SLOTS, (void*)incoming_reqs);
         }
         /* ---------------------------------------------------------------------------
         ------------------------------ REMOTE & LOCAL REQUESTS------------------------
