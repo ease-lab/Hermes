@@ -308,7 +308,7 @@ static inline void forge_bcast_inv_wrs(spacetime_op_t* op, spacetime_op_resp_t* 
 		send_inv_wr[0].send_flags = IBV_SEND_INLINE;
 	// Do a Signaled Send every INV_SS_GRANULARITY broadcasts (INV_SS_GRANULARITY * (MACHINE_NUM - 1) messages)
 	if ((*br_tx) % INV_SS_GRANULARITY == 0){
-        if(ENABLE_SS_PRINTS && ENABLE_INV_PRINTS)
+        if(ENABLE_SS_PRINTS && ENABLE_INV_PRINTS && worker_lid == 0)
 			red_printf("vvv Send SS : \033[31mINV\033[0m \n");
 		send_inv_wr[0].send_flags |= IBV_SEND_SIGNALED;
 	}
@@ -352,7 +352,7 @@ static inline void broadcasts_invs(spacetime_op_t* ops, spacetime_op_resp_t* res
 		// if not enough credits for a Broadcast
 		if (missing_credits == 1) break;
 
-		if(resp[i].resp_opcode== ST_PUT_SUCCESS){
+		if(resp[i].resp_opcode == ST_PUT_SUCCESS){
 			ops[i].state = ST_IN_PROGRESS_WRITE;
 		}else if(resp[i].resp_opcode == ST_BUFFERED_REPLAY){
 			ops[i].state = ST_BUFFERED_IN_PROGRESS_REPLAY;
@@ -370,15 +370,15 @@ static inline void broadcasts_invs(spacetime_op_t* ops, spacetime_op_resp_t* res
 		br_i++;
 		if (br_i == MAX_PCIE_BCAST_BATCH) {
 			send_inv_wr[(br_i * MAX_MESSAGES_IN_BCAST) - 1].next = NULL;
-			if(ENABLE_ASSERTIONS){
-				assert(send_inv_wr[0].next == NULL);
-				assert(send_inv_wr[0].num_sge== 1);
-				assert(send_inv_wr[0].opcode == IBV_SEND_INLINE | IBV_SEND_SIGNALED);
-				assert(send_inv_wr[0].sg_list == &send_inv_sgl[0]);
-				assert(send_inv_sgl[0].length == sizeof(spacetime_inv_t));
+//			if(ENABLE_ASSERTIONS){
+//				assert(send_inv_wr[0].next == NULL);
+//				assert(send_inv_wr[0].num_sge== 1);
+//				assert(send_inv_wr[0].opcode == IBV_SEND_INLINE | IBV_SEND_SIGNALED);
+//				assert(send_inv_wr[0].sg_list == &send_inv_sgl[0]);
+//				assert(send_inv_sgl[0].length == sizeof(spacetime_inv_t));
 //				assert(send_inv_wr[0].wr.ud.ah == remote_worker_qps[MACHINE_NUM - machine_id - 1][INV_UD_QP_ID].ah);
 //				assert(send_inv_wr[0].wr.ud.remote_qpn == remote_worker_qps[MACHINE_NUM - machine_id - 1][INV_UD_QP_ID].qpn);
-			}
+//			}
 			if(ENABLE_POST_RECV_PRINTS && ENABLE_ACK_PRINTS && worker_lid == 0)
 				yellow_printf("vvv Post Receives: \033[33mACKs\033[0m %d\n",br_i * (MACHINE_NUM - 1));
 			post_receives(cb, (uint16_t) (br_i * (MACHINE_NUM - 1)), ST_ACK_BUFF, incoming_acks, ack_push_ptr);
@@ -435,7 +435,7 @@ static inline void forge_ack_wr(spacetime_inv_t* inv_recv_op, spacetime_ack_t* a
 		send_ack_wr[send_ack_count - 1].next = &send_ack_wr[send_ack_count];
 	if ((*send_ack_tx) % ACK_SS_GRANULARITY == 0) {
 		send_ack_wr[send_ack_count].send_flags |= IBV_SEND_SIGNALED;
-		if(ENABLE_SS_PRINTS && ENABLE_ACK_PRINTS)
+		if(ENABLE_SS_PRINTS && ENABLE_ACK_PRINTS && worker_lid == 0)
 			red_printf("vvv Send SS : \033[33mACK\033[0m\n");
 	}
 	if(*send_ack_tx > 0 && (*send_ack_tx) % ACK_SS_GRANULARITY == ACK_SS_GRANULARITY - 1) {
@@ -545,11 +545,8 @@ static inline void post_credit_recvs_and_batch_bcasts_to_NIC(
 
 
 	if (*credit_recv_counter > 0) { // Must post receives for credits
-//		if (ENABLE_ASSERTIONS) assert ((*credit_recv_counter) * (MACHINE_NUM - 1) <= MAX_CREDIT_RECVS);
-		for (j = 0; j < (MACHINE_NUM - 1) * (*credit_recv_counter); j++) {
+		for (j = 0; j < (MACHINE_NUM - 1) * (*credit_recv_counter); j++)
 			credit_recv_wr[j].next = (j == ((MACHINE_NUM - 1) * (*credit_recv_counter)) - 1) ?	NULL : &credit_recv_wr[j + 1];
-		}
-//		printf("Credit_recv_counter %d\n",*credit_recv_counter);
 		ret = ibv_post_recv(cb->dgram_qp[CRD_UD_QP_ID], &credit_recv_wr[0], &bad_recv_wr);
 		CPE(ret, "ibv_post_recv error: posting recvs for credits before broadcasting", ret);
 		*credit_recv_counter = 0;
@@ -557,8 +554,7 @@ static inline void post_credit_recvs_and_batch_bcasts_to_NIC(
 
 	// Batch the broadcasts to the NIC
 	if (br_i > 0) {
-		///TODO we may need to change MESSAGES_IN_BCAST to machines in group
-//		send_wr[(br_i * MAX_MESSAGES_IN_BCAST) - 1].next = NULL;
+		send_wr[(br_i * MAX_MESSAGES_IN_BCAST) - 1].next = NULL;
 		ret = ibv_post_send(cb->dgram_qp[qp_id], &send_wr[0], &bad_send_wr);
 		CPE(ret, "VALs ibv_post_send error", ret);
 		///TODO send non-inline aswell
@@ -567,11 +563,28 @@ static inline void post_credit_recvs_and_batch_bcasts_to_NIC(
 	}
 }
 
+static inline void post_credit_recvs(struct hrd_ctrl_blk *cb,
+									 struct ibv_recv_wr *credit_recv_wr,
+									 uint16_t *credit_recv_counter)
+{
+	uint16_t j;
+	int ret;
+	struct ibv_recv_wr *bad_recv_wr;
+	if (*credit_recv_counter > 0) { // Must post receives for credits
+		for (j = 0; j < (MACHINE_NUM - 1) * (*credit_recv_counter); j++)
+			credit_recv_wr[j].next = (j == ((MACHINE_NUM - 1) * (*credit_recv_counter)) - 1) ?	NULL : &credit_recv_wr[j + 1];
+		ret = ibv_post_recv(cb->dgram_qp[CRD_UD_QP_ID], &credit_recv_wr[0], &bad_recv_wr);
+		CPE(ret, "ibv_post_recv error: posting recvs for credits before broadcasting", ret);
+		*credit_recv_counter = 0;
+	}
+}
+
 static inline void forge_bcast_val_wrs(spacetime_ack_t* ack_op, spacetime_val_t* val_send_ops,
 									   int* val_push_ptr, struct ibv_send_wr* send_val_wr,
 									   struct ibv_sge* send_val_sgl, struct hrd_ctrl_blk* cb,
 									   long long* br_tx, uint16_t br_i, uint16_t worker_lid)
 {
+	static int total_completions = 0;
 	struct ibv_wc signal_send_wc;
 
 	///TODO we need to empty the buffer space
@@ -589,11 +602,18 @@ static inline void forge_bcast_val_wrs(spacetime_ack_t* ack_op, spacetime_val_t*
 	if(br_i == 0) //reset possibly signaled wr from the prev round
 		send_val_wr[br_i].send_flags = IBV_SEND_INLINE;
 	// Do a Signaled Send every VAL_SS_GRANULARITY broadcasts (VAL_SS_GRANULARITY * (MACHINE_NUM - 1) messages)
-	if ((*br_tx) % VAL_SS_GRANULARITY == 0) send_val_wr[0].send_flags |= IBV_SEND_SIGNALED;
-	(*br_tx)++;
-	if((*br_tx) % VAL_SS_GRANULARITY == VAL_SS_GRANULARITY - 1)
-		hrd_poll_cq(cb->dgram_send_cq[VAL_UD_QP_ID], 1, &signal_send_wc);
+	if ((*br_tx) % VAL_SS_GRANULARITY == 0){
+		if(ENABLE_SS_PRINTS && ENABLE_VAL_PRINTS && worker_lid == 0)
+			red_printf("vvv Send SS : \033[1m\033[32mVAL\033[0m \n");
+		send_val_wr[0].send_flags |= IBV_SEND_SIGNALED;
+	}
 
+	if(*br_tx > 0 && (*br_tx) % VAL_SS_GRANULARITY == VAL_SS_GRANULARITY - 1){
+		hrd_poll_cq(cb->dgram_send_cq[VAL_UD_QP_ID], 1, &signal_send_wc);
+		if(ENABLE_SS_PRINTS && ENABLE_VAL_PRINTS && worker_lid == 0)
+			red_printf("^^^ Polled SS completion: \033[1m\033[32mVAL\033[0m %d (total %d)\n", 1, ++total_completions);
+	}
+	(*br_tx)++;
 	// SET THE LAST SEND_WR TO POINT TO NULL
 	if (br_i > 0)
 		send_val_wr[(br_i * MAX_MESSAGES_IN_BCAST) - 1].next = &send_val_wr[br_i * MAX_MESSAGES_IN_BCAST];
@@ -635,32 +655,31 @@ static inline void broadcasts_vals(spacetime_ack_t* ack_ops, spacetime_val_t* va
 		if ((*br_tx) % CRDS_IN_MESSAGE == 0) credit_recv_counter++;
 		br_i++;
 		if (br_i == MAX_PCIE_BCAST_BATCH) {
+			send_val_wr[(br_i * MAX_MESSAGES_IN_BCAST) - 1].next = NULL;
 			if(ENABLE_POST_RECV_PRINTS && ENABLE_CRD_PRINTS && worker_lid == 0)
 				yellow_printf("vvv Post Receives: \033[1m\033[36mCRDs\033[0m %d\n", credit_recv_counter);
-//	        post_receives(cb, (uint16_t) (br_i * (MACHINE_NUM - 1)), ST_CRD_BUFF, incoming_crds, crd_push_ptr);
-			post_credit_recvs_and_batch_bcasts_to_NIC(br_i, cb, send_val_wr, credit_recv_wr,
-													  &credit_recv_counter, VAL_UD_QP_ID);
-//			ret = ibv_post_send(cb->dgram_qp[VAL_UD_QP_ID], &send_val_wr[0], &bad_send_wr);
-//			CPE(ret, "Broadcast ibv_post_send error", ret);
+			post_credit_recvs(cb, credit_recv_wr, &credit_recv_counter);
 			total_vals_issued+=br_i;
 			if(ENABLE_SEND_PRINTS && ENABLE_VAL_PRINTS && worker_lid == 0)
 				cyan_printf(">>> Send: \033[1m\033[32mVALs\033[0m %d (Total %d)\n", br_i, total_vals_issued);
+			ret = ibv_post_send(cb->dgram_qp[VAL_UD_QP_ID], &send_val_wr[0], &bad_send_wr);
+			CPE(ret, "Broadcast VALs ibv_post_send error", ret);
 			br_i = 0;
 		}
 	}
 	if(br_i > 0){
+		send_val_wr[(br_i * MAX_MESSAGES_IN_BCAST) - 1].next = NULL;
 		if(ENABLE_POST_RECV_PRINTS && ENABLE_CRD_PRINTS && worker_lid == 0)
 			yellow_printf("vvv Post Receives: \033[1m\033[36mCRDs\033[0m %d\n", credit_recv_counter);
-//	        post_receives(cb, (uint16_t) (br_i * (MACHINE_NUM - 1)), ST_CRD_BUFF, incoming_crds, crd_push_ptr);
-		post_credit_recvs_and_batch_bcasts_to_NIC(br_i, cb, send_val_wr, credit_recv_wr,
-												  &credit_recv_counter, VAL_UD_QP_ID);
-//			ret = ibv_post_send(cb->dgram_qp[VAL_UD_QP_ID], &send_val_wr[0], &bad_send_wr);
-//			CPE(ret, "Broadcast ibv_post_send error", ret);
+		post_credit_recvs(cb,credit_recv_wr,&credit_recv_counter);
 		total_vals_issued+=br_i;
 		if(ENABLE_SEND_PRINTS && ENABLE_VAL_PRINTS && worker_lid == 0)
 			cyan_printf(">>> Send: \033[1m\033[32mVALs\033[0m %d (Total %d)\n", br_i, total_vals_issued);
+		ret = ibv_post_send(cb->dgram_qp[VAL_UD_QP_ID], &send_val_wr[0], &bad_send_wr);
+		CPE(ret, "Broadcast VALs ibv_post_send error", ret);
 	}
 }
+
 /* ---------------------------------------------------------------------------
 ------------------------------------CRDs--------------------------------------
 ---------------------------------------------------------------------------*/
@@ -694,4 +713,116 @@ static inline void send_credits(uint16_t credit_wr_i, struct ibv_sge* recv_val_s
 	CPE(ret, "ibv_post_send error in credits", ret);
 }
 
+
+static inline void forge_crd_wr(spacetime_val_t* val_recv_op, struct ibv_send_wr* send_crd_wr,
+								struct hrd_ctrl_blk* cb, long long* send_crd_tx,
+								uint16_t send_crd_count, uint16_t worker_lid)
+{
+	static int total_completions = 0;
+	struct ibv_wc signal_send_wc;
+	uint16_t dst_worker_gid = (uint16_t) (val_recv_op->sender * WORKERS_PER_MACHINE + worker_lid);
+
+    ///TODO may want to change / have variable CRDS in msg
+//	spacetime_crd_t crd_tmp;
+//	crd_tmp.opcode = ST_OP_CRD;
+//	crd_tmp.sender = (uint8_t) machine_id;
+//	crd_tmp.val_credits = CRDS_IN_MESSAGE;
+//	memcpy(&send_crd_wr[send_crd_count].imm_data, &crd_tmp, sizeof(spacetime_crd_t));
+
+	send_crd_wr[send_crd_count].wr.ud.ah = remote_worker_qps[dst_worker_gid][CRD_UD_QP_ID].ah;
+	send_crd_wr[send_crd_count].wr.ud.remote_qpn = (uint32) remote_worker_qps[dst_worker_gid][CRD_UD_QP_ID].qpn;
+	send_crd_wr[send_crd_count].send_flags = IBV_SEND_INLINE;
+
+
+	///TODO add code for non-inlining
+	w_stats[worker_lid].crds_per_worker++;
+
+	if (send_crd_count > 0)
+		send_crd_wr[send_crd_count - 1].next = &send_crd_wr[send_crd_count];
+	if ((*send_crd_tx) % CRD_SS_GRANULARITY == 0) {
+		send_crd_wr[send_crd_count].send_flags |= IBV_SEND_SIGNALED;
+		if(ENABLE_SS_PRINTS && ENABLE_CRD_PRINTS && worker_lid == 0)
+			red_printf("vvv Send SS : \033[1m\033[36mCRD\033[0m\n");
+	}
+	if(*send_crd_tx > 0 && (*send_crd_tx) % CRD_SS_GRANULARITY == CRD_SS_GRANULARITY - 1) {
+		hrd_poll_cq(cb->dgram_send_cq[CRD_UD_QP_ID], 1, &signal_send_wc);
+		if(ENABLE_SS_PRINTS && ENABLE_CRD_PRINTS && worker_lid == 0)
+			red_printf("^^^ Polled SS completion: \033[1m\033[36mCRD\033[0m %d (total %d)\n", 1, ++total_completions);
+	}
+	(*send_crd_tx)++; // Selective signaling
+}
+
+
+static inline void issue_credits(spacetime_val_t *val_recv_ops, long long int* send_crd_tx,
+								 struct ibv_send_wr *send_crd_wr, uint8_t credits[][MACHINE_NUM],
+								 struct hrd_ctrl_blk *cb, ud_req_val_t* incoming_vals,
+								 int* val_push_ptr, uint16_t worker_lid)
+{
+	static int total_crds_issued = 0; ///TODO just for debugging
+	int ret;
+	struct ibv_send_wr *bad_send_wr;
+	uint16_t i = 0, send_crd_count = 0;
+	for (i = 0; i < MAX_BATCH_OPS_SIZE; i++) {
+		if (val_recv_ops[i].opcode == ST_EMPTY)
+			continue;
+		if(credits[CRD_UD_QP_ID][val_recv_ops[i].sender] == 0)
+			continue; //TODO we may need to push this to the top of the stack + (seems ok to batch this again to the KVS)
+		//reduce credits
+		credits[CRD_UD_QP_ID][val_recv_ops[i].sender]--;
+		if(ENABLE_CREDIT_PRINTS && ENABLE_CRD_PRINTS && worker_lid == 0)
+			printf("$$$ Credits: \033[1m\033[36mCRDs\033[0m \033[31mdecremented\033[0m to %d (for machine %d)\n",
+					  credits[CRD_UD_QP_ID][val_recv_ops[i].sender],
+					  val_recv_ops[i].sender);
+		// Create the broadcast messages
+		forge_crd_wr(&val_recv_ops[i], send_crd_wr, cb,
+					 send_crd_tx, send_crd_count, worker_lid);
+
+        //empty inv buffer
+		if(val_recv_ops[i].opcode == ST_VAL_SUCCESS)
+			val_recv_ops[i].opcode = ST_EMPTY;
+		else{
+            printf("Unexpected Code: %s\n",code_to_str(val_recv_ops[i].opcode));
+			assert(0);
+		}
+		send_crd_count++;
+		if (send_crd_count == MAX_SEND_CRD_WRS) {
+			//before sending acks post receives for INVs
+			if(ENABLE_POST_RECV_PRINTS && ENABLE_VAL_PRINTS && worker_lid == 0)
+				yellow_printf("vvv Post Receives: \033[1m\033[32mVALs\033[0m %d\n", send_crd_count);
+			post_receives(cb, send_crd_count, ST_VAL_BUFF, incoming_vals, val_push_ptr);
+			send_crd_wr[send_crd_count - 1].next = NULL;
+			if(ENABLE_ASSERTIONS){
+				assert(send_crd_wr[0].opcode == IBV_WR_SEND_WITH_IMM);
+				assert(send_crd_wr[0].wr.ud.remote_qkey == HRD_DEFAULT_QKEY);
+				assert(send_crd_wr[0].sg_list->length == 0);
+				assert(send_crd_wr[0].num_sge == 0);
+			}
+			total_crds_issued += send_crd_count;
+			if(ENABLE_SEND_PRINTS && ENABLE_CRD_PRINTS && worker_lid == 0)
+				cyan_printf(">>> Send: \033[1m\033[36mCRDs\033[0m %d (Total %d)\n", send_crd_count, total_crds_issued);
+			ret = ibv_post_send(cb->dgram_qp[CRD_UD_QP_ID], &send_crd_wr[0], &bad_send_wr);
+			CPE(ret, "ibv_post_send error while sending CRDs", ret);
+			send_crd_count = 0;
+		}
+	}
+
+	if (send_crd_count > 0) {
+        //before sending acks post receives for INVs
+			if(ENABLE_POST_RECV_PRINTS && ENABLE_VAL_PRINTS && worker_lid == 0)
+				yellow_printf("vvv Post Receives: \033[1m\033[32mVALs\033[0m %d\n", send_crd_count);
+			post_receives(cb, send_crd_count, ST_VAL_BUFF, incoming_vals, val_push_ptr);
+			send_crd_wr[send_crd_count - 1].next = NULL;
+			if(ENABLE_ASSERTIONS){
+				assert(send_crd_wr[0].opcode == IBV_WR_SEND_WITH_IMM);
+				assert(send_crd_wr[0].wr.ud.remote_qkey == HRD_DEFAULT_QKEY);
+				assert(send_crd_wr[0].sg_list->length == 0);
+				assert(send_crd_wr[0].num_sge == 0);
+			}
+			total_crds_issued += send_crd_count;
+			if(ENABLE_SEND_PRINTS && ENABLE_CRD_PRINTS && worker_lid == 0)
+				cyan_printf(">>> Send: \033[1m\033[36mCRDs\033[0m %d (Total %d)\n", send_crd_count, total_crds_issued);
+			ret = ibv_post_send(cb->dgram_qp[CRD_UD_QP_ID], &send_crd_wr[0], &bad_send_wr);
+			CPE(ret, "ibv_post_send error while sending CRDs", ret);
+	}
+}
 #endif //HERMES_INLINE_UTIL_H

@@ -19,6 +19,7 @@ struct worker_stats { // 2 cache lines
     long long acks_per_worker;
     long long invs_per_worker;
     long long vals_per_worker;
+	long long crds_per_worker;
 
     long long received_acks_per_worker;
     long long received_invs_per_worker;
