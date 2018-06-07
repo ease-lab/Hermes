@@ -6,16 +6,16 @@
 #define SPACETIME_CONFIG_H
 #include "hrd.h"
 
-#define ENABLE_ASSERTIONS 1
+#define ENABLE_ASSERTIONS 0
 #define MACHINE_NUM 2
 #define REMOTE_MACHINES (MACHINE_NUM - 1)
 #define GROUP_MEMBERSHIP_ARRAY_SIZE  CEILING(MACHINE_NUM, 8) //assuming uint8_t
-#define WORKERS_PER_MACHINE 1
+#define WORKERS_PER_MACHINE 20
 #define ENABLE_HYPERTHREADING 1
 #define KV_SOCKET 0
 #define START_SPAWNING_THREADS_FROM_SOCKET 0
 #define WRITE_RATIO 50
-#define MAX_BATCH_OPS_SIZE 100 //200 //30 //5
+#define MAX_BATCH_OPS_SIZE 250 //200 //30 //5
 
 
 /*-------------------------------------------------

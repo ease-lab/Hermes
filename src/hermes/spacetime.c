@@ -158,7 +158,7 @@ void spacetime_batch_ops(int op_num, spacetime_op_t **op,
 	for(I = 0; I < op_num; I++) {
 		///if (ENABLE_WAKE_UP == 1)
 		///if (resp[I].type == CACHE_GET_STALL || resp[I].type == CACHE_PUT_STALL) continue;
-		if ((*op)[I].state != ST_NEW) continue;
+		if ((*op)[I].state == ST_IN_PROGRESS_WRITE) continue;
 		bkt[I] = (*op)[I].key.bkt & kv.hash_table.bkt_mask;
 		bkt_ptr[I] = &kv.hash_table.ht_index[bkt[I]];
 		__builtin_prefetch(bkt_ptr[I], 0, 0);
@@ -171,7 +171,7 @@ void spacetime_batch_ops(int op_num, spacetime_op_t **op,
 	for(I = 0; I < op_num; I++) {
 		///if (ENABLE_WAKE_UP == 1)
 		///	if (resp[I].type == CACHE_GET_STALL || resp[I].type == CACHE_PUT_STALL) continue;
-		if ((*op)[I].state != ST_NEW) continue;
+		if ((*op)[I].state == ST_IN_PROGRESS_WRITE) continue;
 		for(j = 0; j < 8; j++) {
 			if(bkt_ptr[I]->slots[j].in_use == 1 &&
 			   bkt_ptr[I]->slots[j].tag == tag[I]) {
@@ -201,7 +201,7 @@ void spacetime_batch_ops(int op_num, spacetime_op_t **op,
 	// the following variables used to validate atomicity between a lock-free read of an object
 	spacetime_object_meta prev_meta;
 	for(I = 0; I < op_num; I++) {
-		if ((*op)[I].state != ST_NEW) continue;
+		if ((*op)[I].state == ST_IN_PROGRESS_WRITE) continue;
 		if(kv_ptr[I] != NULL) {
 			/* We had a tag match earlier. Now compare log entry. */
 			long long *key_ptr_log = (long long *) kv_ptr[I];
@@ -682,6 +682,8 @@ void spacetime_batch_acks(int op_num, spacetime_ack_t **op,
 						(*op)[I].opcode == ST_LAST_ACK_PREV_WRITE_SUCCESS) &&
 					    complete_buff_write >= 0 && complete_buff_write < 255){
 						///completed write --> remove it from the ops buffer
+						if(!(read_write_op[complete_buff_write].state == ST_IN_PROGRESS_WRITE))
+							printf("Opcode: %s State %s\n",code_to_str(read_write_op[complete_buff_write].opcode), code_to_str(read_write_op[complete_buff_write].state));
 						assert(read_write_op[complete_buff_write].state == ST_IN_PROGRESS_WRITE);
 						read_write_op[complete_buff_write].state = ST_COMPLETE; // or ST_COMPLETE
 					}
@@ -801,10 +803,9 @@ void spacetime_batch_vals(int op_num, spacetime_val_t **op,
 											  (*op)[I].version + 1,   (*op)[I].tie_breaker_id)){
 //							printf("VAL with TS == local.TS\n");
 							switch(curr_meta->state) {
-
 								case WRITE_STATE:
 								case WRITE_BUFF_STATE:
-									assert(0); ///WARNING: this should not happer w/o failure suspicion of this node
+									assert(0); ///WARNING: this should not happen w/o failure suspicion of this node
 								case INVALID_WRITE_STATE:
 								case INVALID_WRITE_BUFF_STATE:
 								case REPLAY_WRITE_STATE:

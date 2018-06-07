@@ -10,6 +10,9 @@
 #include "config.h"
 #include "util.h"
 
+
+static inline void poll_credits(struct ibv_cq* credit_recv_cq,
+								struct ibv_wc* credit_wc, uint8_t credits[][MACHINE_NUM]);
 /* ---------------------------------------------------------------------------
 ------------------------------------GENERIC-----------------------------------
 ---------------------------------------------------------------------------*/
@@ -217,32 +220,6 @@ static inline void poll_buff(void* incoming_buff, uint8_t buff_type, int* buf_pu
 	}
 }
 
-// Poll for credits and increment the credits
-///TODO I don't need to pass the whole credit array just the VAL_UD_QP_ID
-static inline void poll_credits(struct ibv_cq* credit_recv_cq,
-								struct ibv_wc* credit_wc, uint8_t credits[][MACHINE_NUM])
-{
-	int j = 0, credits_found = 0;
-    spacetime_crd_t crd_tmp;
-	credits_found = ibv_poll_cq(credit_recv_cq, SEND_CRD_Q_DEPTH, credit_wc);
-	if(credits_found > 0) {
-		if(unlikely(credit_wc[credits_found -1].status != 0)) {
-			fprintf(stderr, "Bad wc status when polling for credits to send a broadcast %d\n", credit_wc[credits_found -1].status);
-			exit(0);
-		}
-
-		///TODO change imm_data to machine num+ virtual channel it should increment
-		for (j = 0; j < credits_found; j++){
-			memcpy(&crd_tmp, &credit_wc[j].imm_data, sizeof(spacetime_crd_t));
-			assert(crd_tmp.opcode == ST_OP_CRD);
-			credits[VAL_UD_QP_ID][crd_tmp.sender] += crd_tmp.val_credits;
-		}
-		///increment_credits(credits_found, credit_wc, credits);
-	}
-	else if(unlikely(credits_found < 0)) {
-		printf("ERROR In the credit CQ\n"); exit(0);
-	}
-}
 
 static inline bool check_broadcast_credits(
 		uint8_t credits[][MACHINE_NUM], struct hrd_ctrl_blk* cb,
@@ -713,6 +690,32 @@ static inline void send_credits(uint16_t credit_wr_i, struct ibv_sge* recv_val_s
 	CPE(ret, "ibv_post_send error in credits", ret);
 }
 
+// Poll for credits and increment the credits
+///TODO I don't need to pass the whole credit array just the VAL_UD_QP_ID
+static inline void poll_credits(struct ibv_cq* credit_recv_cq,
+								struct ibv_wc* credit_wc, uint8_t credits[][MACHINE_NUM])
+{
+	int j = 0, credits_found = 0;
+    spacetime_crd_t crd_tmp;
+	credits_found = ibv_poll_cq(credit_recv_cq, SEND_CRD_Q_DEPTH, credit_wc);
+	if(credits_found > 0) {
+		if(unlikely(credit_wc[credits_found -1].status != 0)) {
+			fprintf(stderr, "Bad wc status when polling for credits to send a broadcast %d\n", credit_wc[credits_found -1].status);
+			exit(0);
+		}
+
+		///TODO change imm_data to machine num+ virtual channel it should increment
+		for (j = 0; j < credits_found; j++){
+			memcpy(&crd_tmp, &credit_wc[j].imm_data, sizeof(spacetime_crd_t));
+			assert(crd_tmp.opcode == ST_OP_CRD);
+			credits[VAL_UD_QP_ID][crd_tmp.sender] += crd_tmp.val_credits;
+		}
+		///increment_credits(credits_found, credit_wc, credits);
+	}
+	else if(unlikely(credits_found < 0)) {
+		printf("ERROR In the credit CQ\n"); exit(0);
+	}
+}
 
 static inline void forge_crd_wr(spacetime_val_t* val_recv_op, struct ibv_send_wr* send_crd_wr,
 								struct hrd_ctrl_blk* cb, long long* send_crd_tx,

@@ -121,10 +121,10 @@ void *run_worker(void *arg){
 		for (j = 0; j < MAX_BATCH_OPS_SIZE; j++) {
 			///uint32 key_i = hrd_fastrand(&seed) % NUM_KEYS; /* Choose a key */
 			///uint32 key_i = rand() % NUM_KEYS; /* Choose a key */
-			if (ops[j].state != ST_EMPTY) continue;
+			if (ops[j].opcode != ST_EMPTY) continue;
 			ops[j].state = ST_NEW;
-			uint32_t key_i = (uint32_t) worker_lid * MAX_BATCH_OPS_SIZE + j;
-//			uint32_t key_i = (uint32_t) worker_gid * MAX_BATCH_OPS_SIZE + j;
+//			uint32_t key_i = (uint32_t) worker_lid * MAX_BATCH_OPS_SIZE + j;
+			uint32_t key_i = (uint32_t) worker_gid * MAX_BATCH_OPS_SIZE + j;
 //			uint32_t key_i = (uint32_t) j;
 			uint128 key_hash = CityHash128((char *) &key_i, 4);
 
@@ -143,7 +143,9 @@ void *run_worker(void *arg){
 				red_printf("Key id: %d, op: %s, hash:%" PRIu64 "\n", key_i,
 						   code_to_str(ops[j].opcode), ((uint64_t *) &ops[j].key)[1]);
 		}
-
+		if(ENABLE_ASSERTIONS)
+			for(j = 0; j < MAX_BATCH_OPS_SIZE; j++)
+				assert(ops[j].opcode == ST_OP_PUT || ops[j].opcode == ST_OP_GET);
 		spacetime_batch_ops(MAX_BATCH_OPS_SIZE, &ops, ops_resp, worker_lid);
 
 		if (WRITE_RATIO > 0) {
@@ -224,6 +226,7 @@ void *run_worker(void *arg){
 								 code_to_str(ops_resp[j].resp_opcode), ops_resp[j].version,
 								 ops_resp[j].tie_breaker_id, ops_resp[j].val_len, ops_resp[j].val_ptr);
 				ops[j].state = ST_EMPTY;
+				ops[j].opcode = ST_EMPTY;
 				tmp_only_for_dbg++;
 				w_stats[worker_lid].cache_hits_per_worker++;
 			}
