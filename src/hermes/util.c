@@ -3,8 +3,8 @@
 //
 #define _GNU_SOURCE
 
-#include <spacetime.h>
-#include <inline-util.h>
+#include "spacetime.h"
+#include "inline-util.h"
 #include "hrd.h"
 #include "util.h"
 
@@ -213,6 +213,8 @@ char* code_to_str(uint8_t code){
             return "ST_VAL_BUFF";
         case ST_CRD_BUFF:
             return "ST_CRD_BUFF";
+        case NOP:
+            return "NOP";
 //        case BUFFERED_READ:
 //            return "BUFFERED_READ";
 //        case BUFFERED_WRITE:
@@ -237,6 +239,61 @@ char* code_to_str(uint8_t code){
 	}
 }
 
+
+// Manufactures a trace with a uniform distrbution without a backing file
+void manufacture_trace(struct spacetime_trace_command **cmds, int worker_gid)
+{
+    srand(time(NULL) + worker_gid);
+    *cmds = (struct spacetime_trace_command *)malloc((TRACE_SIZE + 1) * sizeof(struct spacetime_trace_command));
+    uint32_t i, writes = 0;
+    //parse file line by line and insert trace to cmd.
+    for (i = 0; i < TRACE_SIZE; i++) {
+        //Before reading the request deside if it's gone be read or write
+        (*cmds)[i].opcode = (uint8_t) ((rand() % 1000 < WRITE_RATIO) ? ST_OP_PUT :  ST_OP_GET);
+
+        //--- KEY ID----------
+        uint32 key_id = (uint32) rand() % SPACETIME_NUM_KEYS;
+        if(USE_A_SINGLE_KEY == 1) key_id =  0;
+        uint128 key_hash = CityHash128((char *) &(key_id), 4);
+        memcpy(&(*cmds)[i].key_hash, &key_hash, 16);
+        if ((*cmds)[i].opcode == ST_OP_PUT) writes++;
+    }
+
+    if (worker_gid % WORKERS_PER_MACHINE == 0)
+        printf("Write Ratio: %.2f%% \nTrace w_size %d \n", (double) (writes * 100) / TRACE_SIZE, TRACE_SIZE);
+    (*cmds)[TRACE_SIZE].opcode = NOP;
+    // printf("CLient %d Trace w_size: %d, debug counter %d hot keys %d, cold keys %d \n",l_id, cmd_count, debug_cnt,
+    //         t_stats[l_id].hot_keys_per_trace, t_stats[l_id].cold_keys_per_trace );
+}
+
+void trace_init(struct spacetime_trace_command** trace, uint16_t worker_gid)
+{
+    //create the trace path path
+    if (FEED_FROM_TRACE == 1) {
+        char local_client_id[3];
+        char machine_num[4];
+        //get / creat path for the trace
+        sprintf(local_client_id, "%d", worker_gid % WORKERS_PER_MACHINE);
+        sprintf(machine_num, "%d", machine_id);
+        char path[2048];
+        char cwd[1024];
+        char *was_successful = getcwd(cwd, sizeof(cwd));
+
+        if (!was_successful) {
+            printf("ERROR: getcwd failed!\n");
+            exit(EXIT_FAILURE);
+        }
+
+        snprintf(path, sizeof(path), "%s%s%s%s%s%s", cwd,
+                 "/../../traces/current-splited-traces/s_",
+                 machine_num, "_c_", local_client_id, ".txt");
+        //TODO need to implement "parse_trace"
+        //initialize the command array from the trace file
+//        parse_trace(path, (struct trace_command **)cmds, g_id % LEADERS_PER_MACHINE);
+        assert(0);
+    }else
+        manufacture_trace(trace, worker_gid);
+}
 
 void setup_credits(uint8_t credits[][MACHINE_NUM],     struct hrd_ctrl_blk *cb,
                    struct ibv_send_wr* credit_send_wr, struct ibv_sge* credit_send_sgl,

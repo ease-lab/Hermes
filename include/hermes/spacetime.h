@@ -19,9 +19,9 @@
 
 ///#define NUM_KEYS (250 * 1000)
 ///#define NUM_BKTS (64 * 1024) //64K buckets seems to be enough to store most of our keys
-//#define NUM_KEYS (1 * 1000 * 1000)
-#define NUM_KEYS (500 * 1000)
-#define NUM_BKTS (16 * 1024 * 1024)
+//#define SPACETIME_NUM_KEYS (1 * 1000 * 1000)
+#define SPACETIME_NUM_KEYS (500 * 1000)
+#define SPACETIME_NUM_BKTS (16 * 1024 * 1024)
 
 ///WARNING the monotonically increasing assigned numbers to States are used for comparisons (do not reorder / change numbers)
 //States
@@ -79,6 +79,9 @@
 #define ST_IN_PROGRESS_WRITE 145
 #define ST_BUFFERED_IN_PROGRESS_REPLAY 146
 
+// trace opcodes
+#define NOP 147
+
 //#define BUFFERED_READ 142
 //#define BUFFERED_WRITE 143
 //#define BUFFERED_READ_REPLAYED_WRITE 144
@@ -132,7 +135,6 @@ typedef struct{
     spacetime_key_t key;	/* This must be the 1st field and 16B aligned */
     uint8_t sender;
     uint8_t opcode; //both recv / batch_op resp
-    uint8_t resp_write_ops_ptr; ///TODO may remove this (currently not in use)
     uint8_t tie_breaker_id;
     uint32_t version; ///timestamp{version+tie_braker_id}
 }spacetime_ack_t;
@@ -150,7 +152,7 @@ typedef struct{
     spacetime_key_t key;	/* This must be the 1st field and 16B aligned */
     uint8_t state;
     uint8_t opcode; //both recv / resp
-    uint8_t session_id;
+//    uint8_t session_id;
     uint8_t val_len;
     uint8_t value[ST_VALUE_SIZE];
 }spacetime_op_t;
@@ -235,12 +237,17 @@ struct spacetime_kv {
     struct extended_spacetime_meta_stats aggregated_meta;
 };
 
+struct spacetime_trace_command {
+    spacetime_key_t key_hash;
+    uint8_t opcode;
+};
+
 void spacetime_init(int spacetime_id, int num_threads);
 void spacetime_populate_fixed_len(struct spacetime_kv* kv,  int n,  int val_len);
 void spacetime_batch_ops(int op_num, spacetime_op_t **ops, spacetime_op_resp_t *resp, int thread_id);
 void spacetime_batch_invs(int op_num, spacetime_inv_t **op, int thread_id);
 void spacetime_batch_acks(int op_num, spacetime_ack_t **op, spacetime_op_t* read_write_op, int thread_id);
-void spacetime_batch_vals(int op_num, spacetime_val_t **op, spacetime_op_t* read_write_op, int thread_id);
+void spacetime_batch_vals(int op_num, spacetime_val_t **op, int thread_id);
 void group_membership_init(void);
 //uint8_t is_last_ack(uint8_t const * gathered_acks);
 

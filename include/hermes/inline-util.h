@@ -316,7 +316,7 @@ static inline void broadcasts_invs(spacetime_op_t* ops, spacetime_op_resp_t* res
 
 	// traverse all of the ops to find invs
 	for (i = 0; i < MAX_BATCH_OPS_SIZE; i++) {
-		if (resp[i].resp_opcode != ST_PUT_SUCCESS && resp[i].resp_opcode!= ST_BUFFERED_REPLAY)
+		if (resp[i].resp_opcode != ST_PUT_SUCCESS && resp[i].resp_opcode != ST_BUFFERED_REPLAY)
 			continue;
 
 		for (j = 0; j < MACHINE_NUM; j++) {
@@ -331,8 +331,10 @@ static inline void broadcasts_invs(spacetime_op_t* ops, spacetime_op_resp_t* res
 
 		if(resp[i].resp_opcode == ST_PUT_SUCCESS){
 			ops[i].state = ST_IN_PROGRESS_WRITE;
+			resp[i].resp_opcode = ST_IN_PROGRESS_WRITE;
 		}else if(resp[i].resp_opcode == ST_BUFFERED_REPLAY){
 			ops[i].state = ST_BUFFERED_IN_PROGRESS_REPLAY;
+			resp[i].resp_opcode = ST_BUFFERED_IN_PROGRESS_REPLAY;
 		} else assert(0);
 
 		// Create the broadcast messages
@@ -514,7 +516,8 @@ static inline void post_credit_recvs_and_batch_bcasts_to_NIC(
 		uint16_t br_i, struct hrd_ctrl_blk *cb, struct ibv_send_wr *send_wr,
 		struct ibv_recv_wr *credit_recv_wr, uint16_t *credit_recv_counter, uint8_t qp_id)
 {
-	assert(qp_id < TOTAL_WORKER_UD_QPs);
+	if(ENABLE_ASSERTIONS)
+		assert(qp_id < TOTAL_WORKER_UD_QPs);
 	uint16_t j;
 	int ret;
 	struct ibv_send_wr *bad_send_wr;
@@ -660,60 +663,30 @@ static inline void broadcasts_vals(spacetime_ack_t* ack_ops, spacetime_val_t* va
 /* ---------------------------------------------------------------------------
 ------------------------------------CRDs--------------------------------------
 ---------------------------------------------------------------------------*/
-// Post Receives for VALs and then Send out the credits
-static inline void send_credits(uint16_t credit_wr_i, struct ibv_sge* recv_val_sgl, struct hrd_ctrl_blk* cb,
-								int* push_ptr, struct ibv_recv_wr* recv_val_wr, struct ibv_qp* coh_recv_qp,
-								struct ibv_send_wr* credit_send_wr, uint16_t credits_in_message, uint32_t clt_buf_slots,
-								void* buf)
-{
-	// For every credit message we send back, prepare x receives for the broadcasts
-	uint16_t i, j, recv_iter = 0;
-	struct ibv_recv_wr *bad_recv_wr;
-	struct ibv_send_wr *bad_send_wr;
-	for(i = 0; i < credit_wr_i; i++) {
-		for (j = 0; j < credits_in_message; j++) {
-			recv_iter = i * credits_in_message + j;
-			recv_val_sgl[recv_iter].addr = (uintptr_t) buf + ((*push_ptr) * VAL_RECV_REQ_SIZE);
-			HRD_MOD_ADD(*push_ptr, clt_buf_slots);
-//			if (*push_ptr == 0) *push_ptr = 1;
-			recv_val_wr[recv_iter].next = (recv_iter == (credit_wr_i * credits_in_message) - 1) ?
-										  NULL : &recv_val_wr[recv_iter + 1];
-		}
-	}
-	int ret = ibv_post_recv(cb->dgram_qp[VAL_UD_QP_ID], &recv_val_wr[0], &bad_recv_wr);
-	CPE(ret, "ibv_post_recv error", ret);
-
-	credit_send_wr[credit_wr_i - 1].next = NULL;
-	// yellow_printf("I am sending %d credit message(s)\n", credit_wr_i);
-//	cyan_printf(">>> Send: CRDs %d (Total %d)\n", br_i, total_vals_issued);
-	ret = ibv_post_send(cb->dgram_qp[CRD_UD_QP_ID], &credit_send_wr[0], &bad_send_wr);
-	CPE(ret, "ibv_post_send error in credits", ret);
-}
-
-// Poll for credits and increment the credits
+// Poll and increment credits
 ///TODO I don't need to pass the whole credit array just the VAL_UD_QP_ID
-static inline void poll_credits(struct ibv_cq* credit_recv_cq,
-								struct ibv_wc* credit_wc, uint8_t credits[][MACHINE_NUM])
+static inline void poll_credits(struct ibv_cq* credit_recv_cq, struct ibv_wc* credit_wc,
+								uint8_t credits[][MACHINE_NUM])
 {
-	int j = 0, credits_found = 0;
-    spacetime_crd_t crd_tmp;
-	credits_found = ibv_poll_cq(credit_recv_cq, SEND_CRD_Q_DEPTH, credit_wc);
+	spacetime_crd_t crd_tmp;
+	int i = 0, credits_found = 0;
+
+	credits_found = ibv_poll_cq(credit_recv_cq, RECV_CRD_Q_DEPTH, credit_wc);
 	if(credits_found > 0) {
 		if(unlikely(credit_wc[credits_found -1].status != 0)) {
 			fprintf(stderr, "Bad wc status when polling for credits to send a broadcast %d\n", credit_wc[credits_found -1].status);
 			exit(0);
 		}
 
-		///TODO change imm_data to machine num+ virtual channel it should increment
-		for (j = 0; j < credits_found; j++){
-			memcpy(&crd_tmp, &credit_wc[j].imm_data, sizeof(spacetime_crd_t));
-			assert(crd_tmp.opcode == ST_OP_CRD);
+		for (i = 0; i < credits_found; i++){
+			memcpy(&crd_tmp, &credit_wc[i].imm_data, sizeof(spacetime_crd_t));
+            if(ENABLE_ASSERTIONS)
+				assert(crd_tmp.opcode == ST_OP_CRD);
 			credits[VAL_UD_QP_ID][crd_tmp.sender] += crd_tmp.val_credits;
 		}
-		///increment_credits(credits_found, credit_wc, credits);
-	}
-	else if(unlikely(credits_found < 0)) {
-		printf("ERROR In the credit CQ\n"); exit(0);
+	} else if(unlikely(credits_found < 0)) {
+		printf("ERROR In the credit CQ\n");
+		exit(0);
 	}
 }
 
@@ -826,6 +799,33 @@ static inline void issue_credits(spacetime_val_t *val_recv_ops, long long int* s
 				cyan_printf(">>> Send: \033[1m\033[36mCRDs\033[0m %d (Total %d)\n", send_crd_count, total_crds_issued);
 			ret = ibv_post_send(cb->dgram_qp[CRD_UD_QP_ID], &send_crd_wr[0], &bad_send_wr);
 			CPE(ret, "ibv_post_send error while sending CRDs", ret);
+	}
+}
+
+
+/* ---------------------------------------------------------------------------
+------------------------------------OTHERS------------------------------------
+---------------------------------------------------------------------------*/
+static inline uint32_t refill_ops(uint32_t* trace_iter, uint16_t worker_lid,
+								  struct spacetime_trace_command *trace,
+								  spacetime_op_t *ops)
+{
+    int i = 0;
+	for (i = 0; i < MAX_BATCH_OPS_SIZE; i++) {
+		if (ops[i].opcode != ST_EMPTY) continue;
+		ops[i].state = ST_NEW;
+		if(ENABLE_ASSERTIONS)
+			assert(trace[*trace_iter].opcode == ST_OP_PUT || trace[*trace_iter].opcode == ST_OP_GET);
+
+		memcpy(&ops[i].key, &trace[*trace_iter], sizeof(spacetime_key_t));
+		ops[i].opcode = trace[*trace_iter].opcode;
+
+		if (ops[i].opcode == ST_OP_PUT)
+			memset(ops[i].value, ((uint8_t) machine_id % 2 == 0 ? 'x' : 'y'), ST_VALUE_SIZE);
+		ops[i].val_len = (uint8) (ops[i].opcode == ST_OP_PUT ? ST_VALUE_SIZE : 0);
+		if(ENABLE_REQ_PRINTS && worker_lid == 0 && machine_id == 0)
+			red_printf("Op: %s, hash(1st 8B):%" PRIu64 "\n", code_to_str(ops[i].opcode), ((uint64_t *) &ops[i].key)[1]);
+		HRD_MOD_ADD(*trace_iter, TRACE_SIZE);
 	}
 }
 #endif //HERMES_INLINE_UTIL_H

@@ -16,7 +16,6 @@ void *run_worker(void *arg){
 												TOTAL_WORKER_UD_QPs, DGRAM_BUFF_SIZE,	/* num_dgram_qps, dgram_buf_size */
 												BASE_SHM_KEY + worker_lid, /* key */
 												recv_q_depths, send_q_depths); /* Depth of the dgram RECV, SEND Q*/
-	///printf("Worker(%d): Connection is up\n", worker_lid);
 
 	/* -----------------------------------------------------
 	--------------DECLARATIONS------------------------------
@@ -72,11 +71,14 @@ void *run_worker(void *arg){
 		incoming_vals[i].req.opcode = ST_EMPTY;
 
 	/* Post receives, we need to do this early */
-	if (WRITE_RATIO > 0)
-		for(i = 0; i < REMOTE_MACHINES; i++) {
-			post_receives(cb, INV_CREDITS * REMOTE_MACHINES, ST_INV_BUFF, incoming_invs, &inv_push_recv_ptr);
-			post_receives(cb, VAL_CREDITS * REMOTE_MACHINES, ST_VAL_BUFF, incoming_vals, &val_push_recv_ptr);
-		}
+	if (WRITE_RATIO > 0){
+		if(ENABLE_POST_RECV_PRINTS && ENABLE_INV_PRINTS && worker_lid == 0)
+			yellow_printf("vvv Post Initial Receives: \033[31mINVs\033[0m %d\n", MAX_RECV_INV_WRS);
+		post_receives(cb, MAX_RECV_INV_WRS, ST_INV_BUFF, incoming_invs, &inv_push_recv_ptr);
+		if(ENABLE_POST_RECV_PRINTS && ENABLE_VAL_PRINTS && worker_lid == 0)
+			yellow_printf("vvv Post Initial Receives: \033[1m\033[32mVALs\033[0m %d\n", MAX_RECV_VAL_WRS);
+		post_receives(cb, MAX_RECV_VAL_WRS, ST_VAL_BUFF, incoming_vals, &val_push_recv_ptr);
+	}
 	setup_qps(worker_gid, cb);
 
 	int inv_ops_i = 0, ack_ops_i = 0, val_ops_i = 0;
@@ -101,13 +103,15 @@ void *run_worker(void *arg){
 
 	int j, is_update;
 	long long rolling_iter = 0; /* For throughput measurement */
-	uint32_t credit_debug_cnt = 0;
+	uint32_t trace_iter = 0, credit_debug_cnt = 0;
 	long long int inv_br_tx = 0, val_br_tx = 0, send_ack_tx = 0, send_crd_tx = 0;
 
+	int issued_ops = 0;
+    struct spacetime_trace_command *trace;
+	trace_init(&trace, worker_gid);
 	/* -----------------------------------------------------
 	--------------Start the main Loop-----------------------
 	---------------------------------------------------------*/
-	int tmp_only_for_dbg = 0, tmp = 0;
 	while (true) {
 		if (unlikely(credit_debug_cnt > M_1)) {
 			red_printf("Worker %d misses credits \n", worker_gid);
@@ -118,13 +122,15 @@ void *run_worker(void *arg){
 					   credits[CRD_UD_QP_ID][(machine_id + 1) % MACHINE_NUM]);
 			credit_debug_cnt = 0;
 		}
+//       	refill_ops(&trace_iter, worker_lid, trace, ops);
+
 		for (j = 0; j < MAX_BATCH_OPS_SIZE; j++) {
-			///uint32 key_i = hrd_fastrand(&seed) % NUM_KEYS; /* Choose a key */
-			///uint32 key_i = rand() % NUM_KEYS; /* Choose a key */
+			///uint32 key_i = hrd_fastrand(&seed) % NUM_KEYS; // Choose a key
+			///uint32 key_i = rand() % NUM_KEYS; //Choose a key
 			if (ops[j].opcode != ST_EMPTY) continue;
 			ops[j].state = ST_NEW;
-//			uint32_t key_i = (uint32_t) worker_lid * MAX_BATCH_OPS_SIZE + j;
-			uint32_t key_i = (uint32_t) worker_gid * MAX_BATCH_OPS_SIZE + j;
+			uint32_t key_i = (uint32_t) worker_lid * MAX_BATCH_OPS_SIZE + j;
+//			uint32_t key_i = (uint32_t) worker_gid * MAX_BATCH_OPS_SIZE + j;
 //			uint32_t key_i = (uint32_t) j;
 			uint128 key_hash = CityHash128((char *) &key_i, 4);
 
@@ -132,8 +138,8 @@ void *run_worker(void *arg){
 			///is_update = (hrd_fastrand(&seed) % 100 < WRITE_RATIO) ? 1 : 0;
 //			is_update = (rand() % 100 < WRITE_RATIO) ? 1 : 0;
 //			is_update = rolling_iter == 0 ? 1 : 0 ;
-//			if(tmp == MAX_BATCH_OPS_SIZE * 300) exit(0);
-			is_update = (tmp++ / MAX_BATCH_OPS_SIZE) % 2 == 0 ? 1 : 0;
+//			if(issued_ops == MAX_BATCH_OPS_SIZE * 300) exit(0);
+			is_update = (issued_ops++ / MAX_BATCH_OPS_SIZE) % 2 == 0 ? 1 : 0;
 //				is_update =  1; //write-only
 			ops[j].opcode = (uint8) (is_update == 1 ? ST_OP_PUT : ST_OP_GET);
 			if (is_update == 1)
@@ -143,6 +149,8 @@ void *run_worker(void *arg){
 				red_printf("Key id: %d, op: %s, hash:%" PRIu64 "\n", key_i,
 						   code_to_str(ops[j].opcode), ((uint64_t *) &ops[j].key)[1]);
 		}
+
+
 		if(ENABLE_ASSERTIONS)
 			for(j = 0; j < MAX_BATCH_OPS_SIZE; j++)
 				assert(ops[j].opcode == ST_OP_PUT || ops[j].opcode == ST_OP_GET);
@@ -154,6 +162,10 @@ void *run_worker(void *arg){
 			broadcasts_invs(ops, ops_resp, inv_send_ops, &inv_push_send_ptr,
 							send_inv_wr, send_inv_sgl, credits, cb, &inv_br_tx,
 							incoming_acks, &ack_push_recv_ptr, worker_lid);
+
+			if(ENABLE_ASSERTIONS)
+				for(j = 0; j < MAX_BATCH_OPS_SIZE; j++)
+					assert(ops_resp[j].resp_opcode == ST_IN_PROGRESS_WRITE || ops[j].opcode == ST_OP_GET);
 			///Poll for INVs
 			poll_buff(incoming_invs, ST_INV_BUFF, &inv_pull_recv_ptr, inv_recv_ops,
 					  &inv_ops_i, outstanding_invs, cb->dgram_recv_cq[INV_UD_QP_ID],
@@ -177,10 +189,10 @@ void *run_worker(void *arg){
 					  &ack_ops_i, outstanding_acks, cb->dgram_recv_cq[ACK_UD_QP_ID],
 					  recv_ack_wc, credits, worker_lid);
 			if(ack_ops_i > 0){
-
 				spacetime_batch_acks(ack_ops_i, &ack_recv_ops, ops, worker_lid);
 
 				///~~~~~~~~~~~~~~~~~~~~~~VALS~~~~~~~~~~~~~~~~~~~~~~~~~~~
+				///BC vals and poll for credits
 				broadcasts_vals(ack_recv_ops, val_send_ops, &val_push_send_ptr,
 								send_val_wr, send_val_sgl, credits, cb, recv_crd_wc,
 								&credit_debug_cnt, &val_br_tx, recv_crd_wr, worker_lid);
@@ -194,31 +206,24 @@ void *run_worker(void *arg){
 					  recv_val_wc, credits, worker_lid);
 
             if(val_ops_i > 0){
-                spacetime_batch_vals(val_ops_i, &val_recv_ops, ops, worker_lid);
+                spacetime_batch_vals(val_ops_i, &val_recv_ops, worker_lid);
 
                 ///~~~~~~~~~~~~~~~~~~~~~~CREDITS~~~~~~~~~~~~~~~~~~~~~~~~~~~
                 issue_credits(val_recv_ops, &send_crd_tx, send_crd_wr, credits,
 							  cb, incoming_vals, &val_push_recv_ptr, worker_lid);
-
-
-//                send_credits(crd_o)
                 val_ops_i = 0;
             }
-
-            ///poll_credits
 		}
+
 		for(j = 0; j < MAX_BATCH_OPS_SIZE; j++) {
-			if (val_recv_ops[j].opcode == ST_VAL_SUCCESS)
-				val_recv_ops[j].opcode = ST_EMPTY;
-			if(!(ops[j].state == ST_COMPLETE ||
-				   ops[j].state == ST_IN_PROGRESS_WRITE ||
-				   ops[j].state == ST_BUFFERED))
-				printf("Op[%d].state: %s\n", j, code_to_str(ops[j].state));
-			assert(ops[j].state == ST_COMPLETE ||
+			///TODO Add reordering / moving of uncompleted requests to first buckets of ops
+            if(ENABLE_ASSERTIONS)
+				assert(ops[j].state == ST_COMPLETE ||
 				   ops[j].state == ST_IN_PROGRESS_WRITE ||
 				   ops[j].state == ST_BUFFERED);
 
-			assert(ops[j].opcode == ST_OP_PUT || ops[j].opcode == ST_OP_GET);
+			if(ENABLE_ASSERTIONS)
+				assert(ops[j].opcode == ST_OP_PUT || ops[j].opcode == ST_OP_GET);
 			if (ops[j].state == ST_COMPLETE) {
 				if(ENABLE_REQ_PRINTS && machine_id == 0)
 					green_printf("Key Hash:%" PRIu64 "\n\t\tType: %s, version %d, tie-b: %d, value(len-%d): %s\n",
@@ -227,7 +232,6 @@ void *run_worker(void *arg){
 								 ops_resp[j].tie_breaker_id, ops_resp[j].val_len, ops_resp[j].val_ptr);
 				ops[j].state = ST_EMPTY;
 				ops[j].opcode = ST_EMPTY;
-				tmp_only_for_dbg++;
 				w_stats[worker_lid].cache_hits_per_worker++;
 			}
 		}

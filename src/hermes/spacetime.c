@@ -54,8 +54,8 @@ void spacetime_init(int instance_id, int num_threads) {
 	kv.meta = malloc(num_threads * sizeof(struct spacetime_meta_stats));
 	for(i = 0; i < num_threads; i++)
 		meta_reset(&kv.meta[i]);
-	mica_init(&kv.hash_table, instance_id, KV_SOCKET, NUM_BKTS, HERD_LOG_CAP);
-	spacetime_populate_fixed_len(&kv, NUM_KEYS, HERD_VALUE_SIZE);
+	mica_init(&kv.hash_table, instance_id, KV_SOCKET, SPACETIME_NUM_BKTS, HERD_LOG_CAP);
+	spacetime_populate_fixed_len(&kv, SPACETIME_NUM_KEYS, HERD_VALUE_SIZE);
 }
 
 void meta_reset(struct spacetime_meta_stats* meta){
@@ -156,8 +156,6 @@ void spacetime_batch_ops(int op_num, spacetime_op_t **op,
 	 * for both GETs and PUTs.
 	 */
 	for(I = 0; I < op_num; I++) {
-		///if (ENABLE_WAKE_UP == 1)
-		///if (resp[I].type == CACHE_GET_STALL || resp[I].type == CACHE_PUT_STALL) continue;
 		if ((*op)[I].state == ST_IN_PROGRESS_WRITE) continue;
 		bkt[I] = (*op)[I].key.bkt & kv.hash_table.bkt_mask;
 		bkt_ptr[I] = &kv.hash_table.ht_index[bkt[I]];
@@ -169,8 +167,6 @@ void spacetime_batch_ops(int op_num, spacetime_op_t **op,
 	}
 
 	for(I = 0; I < op_num; I++) {
-		///if (ENABLE_WAKE_UP == 1)
-		///	if (resp[I].type == CACHE_GET_STALL || resp[I].type == CACHE_PUT_STALL) continue;
 		if ((*op)[I].state == ST_IN_PROGRESS_WRITE) continue;
 		for(j = 0; j < 8; j++) {
 			if(bkt_ptr[I]->slots[j].in_use == 1 &&
@@ -201,7 +197,7 @@ void spacetime_batch_ops(int op_num, spacetime_op_t **op,
 	// the following variables used to validate atomicity between a lock-free read of an object
 	spacetime_object_meta prev_meta;
 	for(I = 0; I < op_num; I++) {
-		if ((*op)[I].state == ST_IN_PROGRESS_WRITE) continue;
+	    if ((*op)[I].state == ST_IN_PROGRESS_WRITE) continue;
 		if(kv_ptr[I] != NULL) {
 			/* We had a tag match earlier. Now compare log entry. */
 			long long *key_ptr_log = (long long *) kv_ptr[I];
@@ -534,8 +530,6 @@ void spacetime_batch_acks(int op_num, spacetime_ack_t **op,
 	 * for both GETs and PUTs.
 	 */
 	for(I = 0; I < op_num; I++) {
-		///if (ENABLE_WAKE_UP == 1)
-		///	if (resp[I].type == CACHE_GET_STALL || resp[I].type == CACHE_PUT_STALL) continue;
 		bkt[I] = (*op)[I].key.bkt & kv.hash_table.bkt_mask;
 		bkt_ptr[I] = &kv.hash_table.ht_index[bkt[I]];
 		__builtin_prefetch(bkt_ptr[I], 0, 0);
@@ -546,8 +540,6 @@ void spacetime_batch_acks(int op_num, spacetime_ack_t **op,
 	}
 
 	for(I = 0; I < op_num; I++) {
-		///if (ENABLE_WAKE_UP == 1)
-		///	if (resp[I].type == CACHE_GET_STALL || resp[I].type == CACHE_PUT_STALL) continue;
 		for(j = 0; j < 8; j++) {
 			if(bkt_ptr[I]->slots[j].in_use == 1 &&
 			   bkt_ptr[I]->slots[j].tag == tag[I]) {
@@ -682,6 +674,7 @@ void spacetime_batch_acks(int op_num, spacetime_ack_t **op,
 						(*op)[I].opcode == ST_LAST_ACK_PREV_WRITE_SUCCESS) &&
 					    complete_buff_write >= 0 && complete_buff_write < 255){
 						///completed write --> remove it from the ops buffer
+//                        printf("Last_write ack!\n");
 						if(!(read_write_op[complete_buff_write].state == ST_IN_PROGRESS_WRITE))
 							printf("Opcode: %s State %s\n",code_to_str(read_write_op[complete_buff_write].opcode), code_to_str(read_write_op[complete_buff_write].state));
 						assert(read_write_op[complete_buff_write].state == ST_IN_PROGRESS_WRITE);
@@ -698,8 +691,8 @@ void spacetime_batch_acks(int op_num, spacetime_ack_t **op,
 }
 
 
-void spacetime_batch_vals(int op_num, spacetime_val_t **op,
-						  spacetime_op_t* read_write_op, int thread_id){
+void spacetime_batch_vals(int op_num, spacetime_val_t **op, int thread_id)
+{
 	int I, j;	/* I is batch index */
 	long long stalled_brces = 0;
 #if SPACETIME_DEBUG == 1
@@ -775,7 +768,6 @@ void spacetime_batch_vals(int op_num, spacetime_val_t **op,
 	// the following variables used to validate atomicity between a lock-free read of an object
 	spacetime_object_meta lock_free_read_meta;
 	for(I = 0; I < op_num; I++) {
-		int complete_buff_write = -1;
 		if(kv_ptr[I] != NULL) {
 			/* We had a tag match earlier. Now compare log entry. */
 			long long *key_ptr_log = (long long *) kv_ptr[I];
@@ -810,8 +802,6 @@ void spacetime_batch_vals(int op_num, spacetime_val_t **op,
 								case INVALID_WRITE_BUFF_STATE:
 								case REPLAY_WRITE_STATE:
 								case REPLAY_WRITE_BUFF_STATE:
-									complete_buff_write = curr_meta->write_buffer_index;
-									///WARNING! do not use break here
 								case VALID_STATE:
 								case INVALID_STATE:
 								case INVALID_BUFF_STATE:
@@ -823,11 +813,6 @@ void spacetime_batch_vals(int op_num, spacetime_val_t **op,
 							}
 						}
 						optik_unlock_decrement_version((spacetime_object_meta*) curr_meta);
-					}
-					if(complete_buff_write >= 0 && complete_buff_write < 255){
-						///completed write --> remove it from the ops buffer
-						assert(read_write_op[complete_buff_write].state == ST_IN_PROGRESS_WRITE);
-						read_write_op[complete_buff_write].state = ST_COMPLETE; // or ST_COMPLETE
 					}
 				}
 			}

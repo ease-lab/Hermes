@@ -61,7 +61,7 @@ struct stats {
 };
 
 void dump_stats_2_file(struct stats* st);
-
+void trace_init(struct spacetime_trace_command ** trace, uint16_t worker_lid);
 void create_AHs(struct hrd_ctrl_blk *cb);
 void *run_worker(void *arg);
 void *print_stats(void* no_arg);
