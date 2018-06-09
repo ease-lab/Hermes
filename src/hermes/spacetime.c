@@ -16,29 +16,36 @@ volatile spacetime_group_membership group_membership;
 void meta_reset(struct spacetime_meta_stats* meta);
 void extended_meta_reset(struct extended_spacetime_meta_stats* meta);
 
-static inline uint8_t is_last_ack(uint8_t const * gathered_acks){
+static inline uint8_t is_last_ack(uint8_t const * gathered_acks, int worker_lid){
 	//lock_free read of group membership & comparison with gathered acks
 	int i = 0;
 	spacetime_group_membership curr_membership;
-	do {
-		memcpy((void *) &curr_membership, (void *) &group_membership,
-			    sizeof(spacetime_group_membership));
+	uint32_t debug_cntr = 0;
+	do { //Lock free read of keys meta
+		if (ENABLE_ASSERTIONS) {
+			debug_cntr++;
+			if (debug_cntr == M_4) {
+				printf("Worker %u stuck on a local read \n", worker_lid);
+				debug_cntr = 0;
+			}
+		}
+		curr_membership = *((spacetime_group_membership*) &group_membership);
 	} while (!(group_mem_timestamp_is_same_and_valid(
-            curr_membership.optik_lock.version,
-            group_membership.optik_lock.version)));
+			curr_membership.optik_lock.version,
+			group_membership.optik_lock.version)));
 	for(i = 0; i < GROUP_MEMBERSHIP_ARRAY_SIZE; i++)
 		if((gathered_acks[i] & curr_membership.group_membership[i]) !=
-							  curr_membership.group_membership[i])
+		   curr_membership.group_membership[i])
 			return 0;
 	return 1;
 }
 
 void spacetime_object_meta_init(spacetime_object_meta* ol){
-    ol->tie_breaker_id = 255;
-    ol->last_writer_id = 255;
+    ol->tie_breaker_id = TIE_BREAKER_ID_EMPTY;
+    ol->last_writer_id = LAST_WRITER_ID_EMPTY;
     ol->version = 0;
     ol->state = VALID_STATE;
-    ol->write_buffer_index = 255;
+    ol->write_buffer_index = WRITE_BUFF_EMPTY;
     ol->lock = OPTIK_FREE;
 }
 
@@ -124,8 +131,8 @@ void spacetime_populate_fixed_len(struct spacetime_kv* kv, int n, int val_len) {
 
 
 //TODO may merge all the batch_* func
-void spacetime_batch_ops(int op_num, spacetime_op_t **op,
-						 spacetime_op_resp_t* resp, int thread_id){
+void spacetime_batch_ops(int op_num, spacetime_ops_t **op, int thread_id)
+{
 	int I, j;	/* I is batch index */
 	long long stalled_brces = 0;
 #if SPACETIME_DEBUG == 1
@@ -212,20 +219,21 @@ void spacetime_batch_ops(int op_num, spacetime_op_t **op,
 				if ((*op)[I].opcode == ST_OP_GET) {
 					//Lock free reads through versioning (successful when version is even)
 					uint8_t was_locked_read = 0;
+					(*op)[I].state = ST_EMPTY;
 					do {
 						prev_meta = *((spacetime_object_meta*) curr_meta);
 						//switch template with all states
 						switch(curr_meta->state) {
 							case VALID_STATE:
 								memcpy((*op)[I].value, kv_value_ptr, ST_VALUE_SIZE);
-								resp[I].resp_opcode = ST_GET_SUCCESS;
+								(*op)[I].state = ST_GET_SUCCESS;
 								break;
 							case INVALID_BUFF_STATE:
 							case INVALID_WRITE_BUFF_STATE:
 							case WRITE_BUFF_STATE:
 							case REPLAY_BUFF_STATE:
 							case REPLAY_WRITE_BUFF_STATE:
-								resp[I].resp_opcode = ST_GET_STALL;
+								(*op)[I].state = ST_GET_STALL;
 								break;
 							default:
 								was_locked_read = 1;
@@ -233,7 +241,7 @@ void spacetime_batch_ops(int op_num, spacetime_op_t **op,
 								switch(curr_meta->state) {
                                     case VALID_STATE:
 										memcpy((*op)[I].value, kv_value_ptr, ST_VALUE_SIZE);
-										resp[I].resp_opcode = ST_GET_SUCCESS;
+										(*op)[I].state = ST_GET_SUCCESS;
 										break;
 									case INVALID_BUFF_STATE:
 									case INVALID_WRITE_BUFF_STATE:
@@ -261,36 +269,50 @@ void spacetime_batch_ops(int op_num, spacetime_op_t **op,
 										assert(0);
 								}
 								optik_unlock_decrement_version((spacetime_object_meta*) curr_meta);
-								if(resp[I].resp_opcode != ST_GET_SUCCESS)
-									resp[I].resp_opcode = ST_GET_STALL;
+								if((*op)[I].state != ST_GET_SUCCESS)
+									(*op)[I].state = ST_GET_STALL;
 								break;
 						}
 					} while (!is_same_version_and_valid(&prev_meta, curr_meta) && was_locked_read == 0);
 
-					if(resp[I].resp_opcode == ST_GET_SUCCESS){
-						(*op)[I].state = ST_COMPLETE;
-						resp[I].val_ptr = (*op)[I].value; //TODO make a memcpy here
-						resp[I].val_len = kv_ptr[I]->val_len - sizeof(spacetime_object_meta);
-					}else
-						(*op)[I].state = ST_BUFFERED;
+					///TODO may need to put this inside the above criticial section
+					if((*op)[I].state == ST_GET_SUCCESS) {
+						(*op)[I].val_len = kv_ptr[I]->val_len - sizeof(spacetime_object_meta);
+						if (ENABLE_ASSERTIONS)
+							assert((*op)[I].val_len == ST_VALUE_SIZE);
+					}
+
 
 				} else if ((*op)[I].opcode == ST_OP_PUT){
-					assert((*op)[I].val_len <= ST_VALUE_SIZE); //TODO add Debug defines to this assert
+					if(ENABLE_ASSERTIONS)
+						assert((*op)[I].val_len == ST_VALUE_SIZE);
 					///Warning: even if a write is in progress write we may need to update the value of write_buffer_index
-					resp[I].resp_opcode = ST_EMPTY;
+					(*op)[I].state = ST_EMPTY;
 					optik_lock((spacetime_object_meta*) curr_meta);
                     ///TODO update the write_buff_index when move things from batch op in order to preserve session order
 					switch(curr_meta->state) {
 						case VALID_STATE:
 						case INVALID_STATE:
-							curr_meta->state = WRITE_STATE;
-							memcpy(kv_value_ptr, (*op)[I].value, (*op)[I].val_len);
-							///update group membership mask
-							memcpy((void*) curr_meta->write_acks, (void*) group_membership.write_ack_init, GROUP_MEMBERSHIP_ARRAY_SIZE);
-							curr_meta->write_buffer_index =(uint8_t) I;
-							curr_meta->last_writer_version = curr_meta->version + 1;
-							optik_unlock_write((spacetime_object_meta*) curr_meta, (uint8) machine_id, &resp[I].version);
-							resp[I].resp_opcode = ST_PUT_SUCCESS;
+							if(curr_meta->write_buffer_index != WRITE_BUFF_EMPTY){
+								///stall write: until all acks from last write arrive
+//                                printf("[W%d]-->State:%s version:%d, tie: %d, buff index: %d, last_write-version: %d, last_write-id: %d !\n",
+//									   thread_id, code_to_str(curr_meta->state), curr_meta->version - 1, curr_meta->tie_breaker_id,
+//										curr_meta->write_buffer_index, curr_meta->last_writer_version, curr_meta->last_writer_id);
+								optik_unlock_decrement_version((spacetime_object_meta*) curr_meta);
+							} else {
+                                curr_meta->state = WRITE_STATE;
+								memcpy(kv_value_ptr, (*op)[I].value, (*op)[I].val_len);
+								kv_ptr[I]->val_len = (*op)[I].val_len + sizeof(spacetime_object_meta);
+								///update group membership mask
+								memcpy((void *) curr_meta->write_acks, (void *) group_membership.write_ack_init,
+									   GROUP_MEMBERSHIP_ARRAY_SIZE);
+								if(ENABLE_ASSERTIONS)
+									assert(I < WRITE_BUFF_EMPTY);
+								curr_meta->write_buffer_index = (uint8_t) I;
+								curr_meta->last_writer_version = curr_meta->version + 1;
+								optik_unlock_write((spacetime_object_meta*) curr_meta, (uint8) machine_id, &((*op)[I].version));
+								(*op)[I].state = ST_PUT_SUCCESS;
+							}
 							break;
 
 						case INVALID_BUFF_STATE:
@@ -319,29 +341,24 @@ void spacetime_batch_ops(int op_num, spacetime_op_t **op,
 							optik_unlock_decrement_version((spacetime_object_meta*) curr_meta);
 							break;
 					}
-
-                    if(resp[I].resp_opcode == ST_PUT_SUCCESS) {
-						resp[I].tie_breaker_id = (uint8_t) machine_id;
-						(*op)[I].state = ST_IN_PROGRESS_WRITE;
-						resp[I].val_len = (*op)[I].val_len;
-						resp[I].val_ptr = (uint8_t *) &(*op)[I].value;
-					}else{
-						resp[I].resp_opcode = ST_PUT_STALL;
-						(*op)[I].state = ST_BUFFERED;
-					}
+					if((*op)[I].state == ST_PUT_SUCCESS)
+						(*op)[I].tie_breaker_id = (uint8_t) machine_id;
+					else
+						(*op)[I].state = ST_PUT_STALL;
 				}else assert(0);
 			}
 		}
 
 		if(key_in_store[I] == 0) {  //KVS miss --> We get here if either tag or log key match failed
-			resp[I].val_len = 0;
-			resp[I].val_ptr = NULL;
-			resp[I].resp_opcode = ST_MISS;
+			(*op)[I].val_len = 0;
+			(*op)[I].state = ST_MISS;
+			assert(0);
 		}
 	}
 }
 
-void spacetime_batch_invs(int op_num, spacetime_inv_t **op, int thread_id){
+void spacetime_batch_invs(int op_num, spacetime_inv_t **op, int thread_id)
+{
 	int I, j;	/* I is batch index */
 	long long stalled_brces = 0;
 #if SPACETIME_DEBUG == 1
@@ -355,8 +372,8 @@ void spacetime_batch_invs(int op_num, spacetime_inv_t **op, int thread_id){
 	for(I = 0; I < op_num; I++)
 		mica_print_op(&(*op)[I]);
 #endif
-    if(ENABLE_BATCH_OP_PRINTS && ENABLE_INV_PRINTS)
-		red_printf("Batch INVs (op num: %d)!\n", op_num);
+    if(ENABLE_BATCH_OP_PRINTS && ENABLE_INV_PRINTS && thread_id < MAX_THREADS_TO_PRINT)
+		red_printf("[W%d] Batch INVs (op num: %d)!\n", thread_id, op_num);
 
 	unsigned int bkt[MAX_BATCH_OPS_SIZE];
 	struct mica_bkt *bkt_ptr[MAX_BATCH_OPS_SIZE];
@@ -430,9 +447,16 @@ void spacetime_batch_invs(int op_num, spacetime_inv_t **op, int thread_id){
 				uint8_t* kv_value_ptr = (uint8_t*) &curr_meta[1] ;
 				if ((*op)[I].opcode != ST_OP_INV) assert(0);
 				else{
+					uint32_t debug_cntr = 0;
 					do { //Lock free read of keys meta
-						memcpy((void *) &prev_meta, (void *) curr_meta,
-							   sizeof(spacetime_object_meta));
+						if (ENABLE_ASSERTIONS) {
+							debug_cntr++;
+							if (debug_cntr == M_4) {
+								printf("Worker %u stuck on a local read \n", thread_id);
+								debug_cntr = 0;
+							}
+						}
+						prev_meta = *((spacetime_object_meta*) curr_meta);
 					} while (!is_same_version_and_valid(&prev_meta, curr_meta));
 					//lock and proceed iff remote.TS >= local.TS
 					//if inv TS >= local timestamp
@@ -446,7 +470,11 @@ void spacetime_batch_invs(int op_num, spacetime_inv_t **op, int thread_id){
 //							printf("Received an invalidation with >= timestamp\n");
                             ///Update Value, TS and last_writer_id
                             curr_meta->last_writer_id = (*op)[I].sender;
-                            kv_ptr[I]->val_len = (*op)[I].val_len;
+							if(ENABLE_ASSERTIONS)
+								assert((*op)[I].val_len == ST_VALUE_SIZE);
+                            kv_ptr[I]->val_len = (*op)[I].val_len + sizeof(spacetime_object_meta);
+							if(ENABLE_ASSERTIONS)
+								assert(kv_ptr[I]->val_len == HERD_VALUE_SIZE);
                             memcpy(kv_value_ptr, (*op)[I].value, (*op)[I].val_len);
 							///Update state
 							switch(curr_meta->state) {
@@ -478,12 +506,16 @@ void spacetime_batch_invs(int op_num, spacetime_inv_t **op, int thread_id){
 									break;
 								default: assert(0);
 							}
+							curr_meta->last_writer_id = (*op)[I].sender;
+							optik_unlock((spacetime_object_meta*) curr_meta, (*op)[I].tie_breaker_id, (*op)[I].version);
 						} else if(timestamp_is_equal(curr_meta->version, curr_meta->tie_breaker_id,
-													 (*op)[I].version,   (*op)[I].tie_breaker_id))
-							if(curr_meta->state == WRITE_STATE || curr_meta->state == WRITE_BUFF_STATE)
+													 (*op)[I].version,   (*op)[I].tie_breaker_id)) {
+							if (curr_meta->state == WRITE_STATE || curr_meta->state == WRITE_BUFF_STATE)
 								(*op)[I].opcode = ST_INV_OUT_OF_GROUP;
-						curr_meta->last_writer_id = (*op)[I].sender;
-						optik_unlock((spacetime_object_meta*) curr_meta, (*op)[I].tie_breaker_id, (*op)[I].version);
+							curr_meta->last_writer_id = (*op)[I].sender;
+							optik_unlock((spacetime_object_meta*) curr_meta, (*op)[I].tie_breaker_id, (*op)[I].version);
+						}else
+							optik_unlock_decrement_version((spacetime_object_meta*) curr_meta);
 					}
 				}
 				if((*op)[I].opcode != ST_INV_OUT_OF_GROUP)
@@ -496,8 +528,8 @@ void spacetime_batch_invs(int op_num, spacetime_inv_t **op, int thread_id){
 }
 
 
-void spacetime_batch_acks(int op_num, spacetime_ack_t **op,
-						  spacetime_op_t* read_write_op, int thread_id){
+void spacetime_batch_acks(int op_num, spacetime_ack_t **op, spacetime_ops_t* read_write_op, int thread_id)
+{
 	int I, j;	/* I is batch index */
 	long long stalled_brces = 0;
 #if SPACETIME_DEBUG == 1
@@ -511,8 +543,8 @@ void spacetime_batch_acks(int op_num, spacetime_ack_t **op,
 	for(I = 0; I < op_num; I++)
 		mica_print_op(&(*op)[I]);
 #endif
-	if(ENABLE_BATCH_OP_PRINTS && ENABLE_ACK_PRINTS)
-		red_printf("Batch ACKs (op num: %d)!\n", op_num);
+	if(ENABLE_BATCH_OP_PRINTS && ENABLE_ACK_PRINTS && thread_id < MAX_THREADS_TO_PRINT)
+		red_printf("[W%d] Batch ACKs (op num: %d)!\n",thread_id, op_num);
 
 	unsigned int bkt[MAX_BATCH_OPS_SIZE];
 	struct mica_bkt *bkt_ptr[MAX_BATCH_OPS_SIZE];
@@ -583,16 +615,23 @@ void spacetime_batch_acks(int op_num, spacetime_ack_t **op,
 				uint8_t* kv_value_ptr = (uint8_t*) &curr_meta[1] ;
 				if ((*op)[I].opcode != ST_OP_ACK) assert(0);
 				else{
+					uint32_t debug_cntr = 0;
 					do { //Lock free read of keys meta
-						memcpy((void *) &lock_free_read_meta, (void *) curr_meta,
-							   sizeof(spacetime_object_meta));
+						if (ENABLE_ASSERTIONS) {
+							debug_cntr++;
+							if (debug_cntr == M_4) {
+								printf("Worker %u stuck on a local read \n", thread_id);
+								debug_cntr = 0;
+							}
+						}
+						lock_free_read_meta = *((spacetime_object_meta*) curr_meta);
 					} while (!is_same_version_and_valid(&lock_free_read_meta, curr_meta));
 					///lock and proceed iff remote.TS == local.TS or TS  == of local.last_write_TS
 					if(timestamp_is_equal(lock_free_read_meta.version, lock_free_read_meta.tie_breaker_id,
 										  (*op)[I].version, (*op)[I].tie_breaker_id) ||
 					   timestamp_is_equal(lock_free_read_meta.last_writer_version, (uint8_t) machine_id,
 										  (*op)[I].version,   (*op)[I].tie_breaker_id)){
-						///Lock and check again if inv TS == local timestamp
+						///Lock and check again if ack TS == local timestamp
 						optik_lock((spacetime_object_meta*) curr_meta);
 						///Warning: use op.version + 1 bellow since optik_lock() increases curr_meta->version by 1
 						if(timestamp_is_equal(curr_meta->version, curr_meta->tie_breaker_id,
@@ -605,41 +644,36 @@ void spacetime_batch_acks(int op_num, spacetime_ack_t **op,
 								case INVALID_WRITE_STATE:
 								case INVALID_WRITE_BUFF_STATE:
 									//assert(0);
-//									yellow_printf("ACK TS == local.TS and opcode: %s\n",code_to_str(curr_meta->state));
 									break;///Findout which states should have assert and which just break;
 								case WRITE_STATE:
 								case WRITE_BUFF_STATE:
 								case REPLAY_WRITE_STATE:
 								case REPLAY_WRITE_BUFF_STATE:
 									complete_buff_write = curr_meta->write_buffer_index;
+									curr_meta->write_buffer_index = WRITE_BUFF_EMPTY; //reset the write buff index
 									////WARNING! do not use break here
 								case REPLAY_STATE:
 								case REPLAY_BUFF_STATE:
 									update_ack_bit_vector((*op)[I].sender, (uint8_t*) curr_meta->write_acks);
-									if (is_last_ack((uint8*)curr_meta->write_acks)) { //if last Ack
+									if (is_last_ack((uint8*)curr_meta->write_acks, thread_id)) { //if last Ack
 										curr_meta->state = VALID_STATE;
 										(*op)[I].opcode = ST_LAST_ACK_SUCCESS;
 									}
 									break;
 								default: assert(0);
 							}
-							///(OPTIMIZATION) else if ACK is for the last local write --> check if able to complete local write
+							///else if ACK is for the last local write --> complete local write
 						} else if(timestamp_is_equal(curr_meta->last_writer_version, (uint8_t) machine_id,
 													 (*op)[I].version,   (*op)[I].tie_breaker_id)){
 							//ACK with TS == last local write TS
-//							if(ENABLE_ASSERTIONS == 1) ///Warning double check if the following assertion is correct
-//								assert(curr_meta->state == INVALID_WRITE_STATE      ||
-//									   curr_meta->state == INVALID_WRITE_BUFF_STATE ||
-//									   curr_meta->state == REPLAY_WRITE_STATE       ||
-//									   curr_meta->state == REPLAY_WRITE_BUFF_STATE);
-							if(curr_meta->state == INVALID_WRITE_STATE      ||
-							   curr_meta->state == INVALID_WRITE_BUFF_STATE ||
-							   curr_meta->state == REPLAY_WRITE_STATE       ||
-							   curr_meta->state == REPLAY_WRITE_BUFF_STATE){
-                                ////TooDoo
+//							if(curr_meta->state == INVALID_WRITE_STATE      ||
+//							   curr_meta->state == INVALID_WRITE_BUFF_STATE ||
+//							   curr_meta->state == REPLAY_WRITE_STATE       ||
+//							   curr_meta->state == REPLAY_WRITE_BUFF_STATE  ){
                                 update_ack_bit_vector((*op)[I].sender, (uint8_t*) curr_meta->write_acks);
-								if (is_last_ack((uint8_t*) curr_meta->write_acks)) { //if last local write completed
+								if (is_last_ack((uint8_t*) curr_meta->write_acks, thread_id)) { //if last local write completed
 									complete_buff_write = curr_meta->write_buffer_index;
+									curr_meta->write_buffer_index = WRITE_BUFF_EMPTY; //reset the write buff index
 									(*op)[I].opcode = ST_LAST_ACK_PREV_WRITE_SUCCESS;
 									switch (curr_meta->state) {
 										case VALID_STATE:
@@ -649,7 +683,8 @@ void spacetime_batch_acks(int op_num, spacetime_ack_t **op,
 										case WRITE_BUFF_STATE:
 										case REPLAY_STATE:
 										case REPLAY_BUFF_STATE:
-											assert(0);
+                                            ///TODO check what happens here
+											break;
 										case INVALID_WRITE_STATE:
 											curr_meta->state = INVALID_STATE;
 											break;
@@ -665,20 +700,25 @@ void spacetime_batch_acks(int op_num, spacetime_ack_t **op,
 										default:
 											assert(0);
 									}
-								}
-							}
+								}else
+									printf("Not last\n");
+//							}
 						}
 						optik_unlock_decrement_version((spacetime_object_meta*) curr_meta);
 					}
 					if(((*op)[I].opcode == ST_LAST_ACK_SUCCESS ||
 						(*op)[I].opcode == ST_LAST_ACK_PREV_WRITE_SUCCESS) &&
-					    complete_buff_write >= 0 && complete_buff_write < 255){
+							complete_buff_write != -1){
 						///completed write --> remove it from the ops buffer
-//                        printf("Last_write ack!\n");
-						if(!(read_write_op[complete_buff_write].state == ST_IN_PROGRESS_WRITE))
-							printf("Opcode: %s State %s\n",code_to_str(read_write_op[complete_buff_write].opcode), code_to_str(read_write_op[complete_buff_write].state));
-						assert(read_write_op[complete_buff_write].state == ST_IN_PROGRESS_WRITE);
-						read_write_op[complete_buff_write].state = ST_COMPLETE; // or ST_COMPLETE
+                        if(ENABLE_ASSERTIONS){
+							assert(complete_buff_write >= 0 && complete_buff_write < 255);
+							if(read_write_op[complete_buff_write].state != ST_IN_PROGRESS_WRITE)
+								printf("Opcode: %s State %s\n",
+									   code_to_str(read_write_op[complete_buff_write].opcode),
+									   code_to_str(read_write_op[complete_buff_write].state));
+							assert(read_write_op[complete_buff_write].state == ST_IN_PROGRESS_WRITE);
+						}
+						read_write_op[complete_buff_write].state = ST_PUT_SUCCESS; // or ST_COMPLETE
 					}
 				}
 			}
@@ -706,8 +746,8 @@ void spacetime_batch_vals(int op_num, spacetime_val_t **op, int thread_id)
 	for(I = 0; I < op_num; I++)
 		mica_print_op(&(*op)[I]);
 #endif
-    if(ENABLE_BATCH_OP_PRINTS && ENABLE_VAL_PRINTS)
-		red_printf("Batch VALs (op num: %d)!\n", op_num);
+    if(ENABLE_BATCH_OP_PRINTS && ENABLE_VAL_PRINTS && thread_id < MAX_THREADS_TO_PRINT)
+		red_printf("[W%d] Batch VALs (op num: %d)!\n", thread_id, op_num);
 
 	unsigned int bkt[MAX_BATCH_OPS_SIZE];
 	struct mica_bkt *bkt_ptr[MAX_BATCH_OPS_SIZE];
@@ -781,9 +821,16 @@ void spacetime_batch_vals(int op_num, spacetime_val_t **op, int thread_id)
 				uint8_t* kv_value_ptr = (uint8_t*) &curr_meta[1] ;
 				if ((*op)[I].opcode != ST_OP_VAL) assert(0);
 				else{
+					uint32_t debug_cntr = 0;
 					do { //Lock free read of keys meta
-						memcpy((void *) &lock_free_read_meta, (void *) curr_meta,
-							   sizeof(spacetime_object_meta));
+						if (ENABLE_ASSERTIONS) {
+							debug_cntr++;
+							if (debug_cntr == M_4) {
+								printf("Worker %u stuck on a local read \n", thread_id);
+								debug_cntr = 0;
+							}
+						}
+						lock_free_read_meta = *((spacetime_object_meta*) curr_meta);
 					} while (!is_same_version_and_valid(&lock_free_read_meta, curr_meta));
 					///lock and proceed iff remote.TS == local.TS
 					if(timestamp_is_equal(lock_free_read_meta.version, lock_free_read_meta.tie_breaker_id,
@@ -823,7 +870,8 @@ void spacetime_batch_vals(int op_num, spacetime_val_t **op, int thread_id)
 		(*op)[I].opcode = ST_MISS;
 }
 
-void group_membership_init(void){
+void group_membership_init(void)
+{
 	int i,j;
 	for(i = 0; i < GROUP_MEMBERSHIP_ARRAY_SIZE; i++) {
 		group_membership.group_membership[i] = 0;

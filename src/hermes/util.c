@@ -339,17 +339,16 @@ void setup_credits(uint8_t credits[][MACHINE_NUM],     struct hrd_ctrl_blk *cb,
 
 
 // set up the OPS buffers
-void setup_ops(spacetime_op_t **ops, spacetime_op_resp_t **resp,
+void setup_ops(spacetime_ops_t **ops,
 			   spacetime_inv_t **inv_recv_ops, spacetime_ack_t **ack_recv_ops,
 			   spacetime_val_t **val_recv_ops, spacetime_inv_t **inv_send_ops,
 			   spacetime_ack_t **ack_send_ops, spacetime_val_t **val_send_ops)
 {
     int i;
-    *ops = memalign(4096, MAX_BATCH_OPS_SIZE * (sizeof(spacetime_op_t)));
-    memset(*ops, 0, MAX_BATCH_OPS_SIZE * (sizeof(spacetime_op_t)));
+    *ops = memalign(4096, MAX_BATCH_OPS_SIZE * (sizeof(spacetime_ops_t)));
+    memset(*ops, 0, MAX_BATCH_OPS_SIZE * (sizeof(spacetime_ops_t)));
 
-    *resp = memalign(4096, MAX_BATCH_OPS_SIZE * sizeof(spacetime_op_resp_t));
-    assert(ops != NULL && resp != NULL);
+    assert(ops != NULL);
 
     ///Network ops
 	///TODO should we memalign aswell?
@@ -363,7 +362,6 @@ void setup_ops(spacetime_op_t **ops, spacetime_op_resp_t **resp,
 	*val_send_ops = (spacetime_val_t*) malloc(MAX_BATCH_OPS_SIZE * sizeof(spacetime_val_t)); /* Batch of incoming broadcasts for the Cache*/
 	assert(*inv_send_ops!= NULL && *ack_send_ops!= NULL && *val_send_ops!= NULL);
 
-	memset(*resp, 0, MAX_BATCH_OPS_SIZE * sizeof(spacetime_op_resp_t));
 	memset(*inv_recv_ops, 0, MAX_BATCH_OPS_SIZE * sizeof(spacetime_inv_t));
 	memset(*ack_recv_ops, 0, MAX_BATCH_OPS_SIZE * sizeof(spacetime_ack_t));
 	memset(*val_recv_ops, 0, MAX_BATCH_OPS_SIZE * sizeof(spacetime_val_t));
@@ -374,7 +372,6 @@ void setup_ops(spacetime_op_t **ops, spacetime_op_resp_t **resp,
 	for(i = 0; i < MAX_BATCH_OPS_SIZE; i++) {
 		(*ops)[i].opcode = ST_EMPTY;
 		(*ops)[i].state = ST_EMPTY;
-		(*resp)[i].resp_opcode = ST_EMPTY;
 		(*inv_recv_ops)[i].opcode = ST_EMPTY;
 		(*ack_recv_ops)[i].opcode = ST_EMPTY;
 		(*val_recv_ops)[i].opcode = ST_EMPTY;

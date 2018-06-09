@@ -69,7 +69,7 @@ void print_latency_stats(void);
 void setup_qps(int worker_lid, struct hrd_ctrl_blk *cb);
 void setup_q_depths(int** recv_q_depths, int** send_q_depths);
 char* code_to_str(uint8_t code);
-void setup_ops(spacetime_op_t **ops, spacetime_op_resp_t **resp,
+void setup_ops(spacetime_ops_t **ops,
 			   spacetime_inv_t **inv_recv_ops, spacetime_ack_t **ack_recv_ops,
 			   spacetime_val_t **val_recv_ops, spacetime_inv_t **inv_send_ops,
 			   spacetime_ack_t **ack_send_ops, spacetime_val_t **val_send_ops);

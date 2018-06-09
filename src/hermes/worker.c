@@ -84,13 +84,12 @@ void *run_worker(void *arg){
 	int inv_ops_i = 0, ack_ops_i = 0, val_ops_i = 0;
 	uint16_t outstanding_invs = 0, outstanding_acks = 0, outstanding_vals = 0;
 
-	spacetime_op_t *ops;
-	spacetime_op_resp_t *ops_resp;
+	spacetime_ops_t *ops;
 	spacetime_inv_t *inv_recv_ops, *inv_send_ops;
 	spacetime_ack_t *ack_recv_ops, *ack_send_ops;
 	spacetime_val_t *val_recv_ops, *val_send_ops;
 
-	setup_ops(&ops, &ops_resp, &inv_recv_ops, &ack_recv_ops,
+	setup_ops(&ops, &inv_recv_ops, &ack_recv_ops,
 			  &val_recv_ops, &inv_send_ops, &ack_send_ops, &val_send_ops);
 
 	///if no inlinig declare & set_up_mrs()
@@ -104,11 +103,17 @@ void *run_worker(void *arg){
 	int j, is_update;
 	long long rolling_iter = 0; /* For throughput measurement */
 	uint32_t trace_iter = 0, credit_debug_cnt = 0;
+//	in_progress_write_debug_cnt = 0;
 	long long int inv_br_tx = 0, val_br_tx = 0, send_ack_tx = 0, send_crd_tx = 0;
 
 	int issued_ops = 0;
     struct spacetime_trace_command *trace;
 	trace_init(&trace, worker_gid);
+	//ONLY for dbg
+//	spacetime_ack_t last_ack;
+//	spacetime_inv_t last_inv;
+//	spacetime_object_meta last_meta, last_meta2, last_meta3;
+//	spacetime_object_meta last_inv_meta, last_inv_meta2, last_inv_meta3;
 	/* -----------------------------------------------------
 	--------------Start the main Loop-----------------------
 	---------------------------------------------------------*/
@@ -122,25 +127,19 @@ void *run_worker(void *arg){
 					   credits[CRD_UD_QP_ID][(machine_id + 1) % MACHINE_NUM]);
 			credit_debug_cnt = 0;
 		}
-//       	refill_ops(&trace_iter, worker_lid, trace, ops);
 
+       	refill_ops(&trace_iter, worker_lid, trace, ops);
+        /*
 		for (j = 0; j < MAX_BATCH_OPS_SIZE; j++) {
-			///uint32 key_i = hrd_fastrand(&seed) % NUM_KEYS; // Choose a key
-			///uint32 key_i = rand() % NUM_KEYS; //Choose a key
 			if (ops[j].opcode != ST_EMPTY) continue;
 			ops[j].state = ST_NEW;
 			uint32_t key_i = (uint32_t) worker_lid * MAX_BATCH_OPS_SIZE + j;
 //			uint32_t key_i = (uint32_t) worker_gid * MAX_BATCH_OPS_SIZE + j;
-//			uint32_t key_i = (uint32_t) j;
 			uint128 key_hash = CityHash128((char *) &key_i, 4);
 
 			memcpy(&ops[j].key, &key_hash, sizeof(spacetime_key_t));
-			///is_update = (hrd_fastrand(&seed) % 100 < WRITE_RATIO) ? 1 : 0;
-//			is_update = (rand() % 100 < WRITE_RATIO) ? 1 : 0;
-//			is_update = rolling_iter == 0 ? 1 : 0 ;
 //			if(issued_ops == MAX_BATCH_OPS_SIZE * 300) exit(0);
 			is_update = (issued_ops++ / MAX_BATCH_OPS_SIZE) % 2 == 0 ? 1 : 0;
-//				is_update =  1; //write-only
 			ops[j].opcode = (uint8) (is_update == 1 ? ST_OP_PUT : ST_OP_GET);
 			if (is_update == 1)
 				memset(ops[j].value, ((uint8_t) machine_id % 2 == 0 ? 'x' : 'y'), ST_VALUE_SIZE);
@@ -149,23 +148,33 @@ void *run_worker(void *arg){
 				red_printf("Key id: %d, op: %s, hash:%" PRIu64 "\n", key_i,
 						   code_to_str(ops[j].opcode), ((uint64_t *) &ops[j].key)[1]);
 		}
-
+         */
 
 		if(ENABLE_ASSERTIONS)
 			for(j = 0; j < MAX_BATCH_OPS_SIZE; j++)
 				assert(ops[j].opcode == ST_OP_PUT || ops[j].opcode == ST_OP_GET);
-		spacetime_batch_ops(MAX_BATCH_OPS_SIZE, &ops, ops_resp, worker_lid);
+		spacetime_batch_ops(MAX_BATCH_OPS_SIZE, &ops, worker_lid);
 
 		if (WRITE_RATIO > 0) {
 			///~~~~~~~~~~~~~~~~~~~~~~INVS~~~~~~~~~~~~~~~~~~~~~~~~~~~
 			///TODO remove credits recv etc from bcst_invs
-			broadcasts_invs(ops, ops_resp, inv_send_ops, &inv_push_send_ptr,
+			broadcasts_invs(ops, inv_send_ops, &inv_push_send_ptr,
 							send_inv_wr, send_inv_sgl, credits, cb, &inv_br_tx,
-							incoming_acks, &ack_push_recv_ptr, worker_lid);
+							incoming_acks, &ack_push_recv_ptr, worker_lid, &credit_debug_cnt);
 
 			if(ENABLE_ASSERTIONS)
-				for(j = 0; j < MAX_BATCH_OPS_SIZE; j++)
-					assert(ops_resp[j].resp_opcode == ST_IN_PROGRESS_WRITE || ops[j].opcode == ST_OP_GET);
+				for(j = 0; j < MAX_BATCH_OPS_SIZE; j++){
+					if(!(ops[j].state == ST_BUFFERED_IN_PROGRESS_REPLAY ||
+						   ops[j].state == ST_IN_PROGRESS_WRITE ||
+						   ops[j].state == ST_PUT_STALL ||
+						   ops[j].opcode == ST_OP_GET))
+						printf("Opcode: %s, State: %s\n",code_to_str(ops[j].opcode), code_to_str(ops[j].state));
+					assert(ops[j].state == ST_BUFFERED_IN_PROGRESS_REPLAY ||
+						   ops[j].state == ST_IN_PROGRESS_WRITE ||
+						   ops[j].state == ST_PUT_STALL ||
+						   ops[j].opcode == ST_OP_GET);
+				}
+
 			///Poll for INVs
 			poll_buff(incoming_invs, ST_INV_BUFF, &inv_pull_recv_ptr, inv_recv_ops,
 					  &inv_ops_i, outstanding_invs, cb->dgram_recv_cq[INV_UD_QP_ID],
@@ -180,7 +189,7 @@ void *run_worker(void *arg){
 				///~~~~~~~~~~~~~~~~~~~~~~ACKS~~~~~~~~~~~~~~~~~~~~~~~~~~~
 				issue_acks(inv_recv_ops, ack_send_ops, &ack_push_send_ptr,
 						   &send_ack_tx, send_ack_wr, send_ack_sgl, credits,
-						   cb, incoming_invs, &inv_push_recv_ptr, worker_lid);
+						   cb, incoming_invs, &inv_push_recv_ptr, worker_lid, &credit_debug_cnt);
 				inv_ops_i = 0;
 			}
 
@@ -210,7 +219,7 @@ void *run_worker(void *arg){
 
                 ///~~~~~~~~~~~~~~~~~~~~~~CREDITS~~~~~~~~~~~~~~~~~~~~~~~~~~~
                 issue_credits(val_recv_ops, &send_crd_tx, send_crd_wr, credits,
-							  cb, incoming_vals, &val_push_recv_ptr, worker_lid);
+							  cb, incoming_vals, &val_push_recv_ptr, worker_lid, &credit_debug_cnt);
                 val_ops_i = 0;
             }
 		}
@@ -218,25 +227,27 @@ void *run_worker(void *arg){
 		for(j = 0; j < MAX_BATCH_OPS_SIZE; j++) {
 			///TODO Add reordering / moving of uncompleted requests to first buckets of ops
             if(ENABLE_ASSERTIONS)
-				assert(ops[j].state == ST_COMPLETE ||
-				   ops[j].state == ST_IN_PROGRESS_WRITE ||
-				   ops[j].state == ST_BUFFERED);
+				assert(ops[j].state == ST_PUT_SUCCESS ||
+					   ops[j].state == ST_GET_SUCCESS ||
+				       ops[j].state == ST_IN_PROGRESS_WRITE ||
+					   ops[j].state == ST_PUT_STALL ||
+				       ops[j].state == ST_GET_STALL);
+//				printf("State[%d]: %s\n", j, code_to_str(ops[j].state));
 
 			if(ENABLE_ASSERTIONS)
 				assert(ops[j].opcode == ST_OP_PUT || ops[j].opcode == ST_OP_GET);
-			if (ops[j].state == ST_COMPLETE) {
-				if(ENABLE_REQ_PRINTS && machine_id == 0)
-					green_printf("Key Hash:%" PRIu64 "\n\t\tType: %s, version %d, tie-b: %d, value(len-%d): %s\n",
-								 ((uint64_t *) &ops[j].key)[1],
-								 code_to_str(ops_resp[j].resp_opcode), ops_resp[j].version,
-								 ops_resp[j].tie_breaker_id, ops_resp[j].val_len, ops_resp[j].val_ptr);
+			if (ops[j].state == ST_PUT_SUCCESS || ops[j].state == ST_GET_SUCCESS) {
+				if(ENABLE_REQ_PRINTS && worker_lid < MAX_THREADS_TO_PRINT)
+					green_printf("W%d--> Key Hash:%" PRIu64 "\n\t\tType: %s, version %d, tie-b: %d, value(len-%d): %c\n",
+								 worker_lid, ((uint64_t *) &ops[j].key)[1],
+								 code_to_str(ops[j].state), ops[j].version,
+								 ops[j].tie_breaker_id, ops[j].val_len, ops[j].value[0]);
 				ops[j].state = ST_EMPTY;
 				ops[j].opcode = ST_EMPTY;
 				w_stats[worker_lid].cache_hits_per_worker++;
 			}
 		}
 
-		///w_stats[worker_lid].cache_hits_per_client += MAX_BATCH_OPS_SIZE;
 		rolling_iter++;
 	}
 	return NULL;

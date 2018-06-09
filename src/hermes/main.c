@@ -19,36 +19,23 @@ int main(int argc, char *argv[]){
 	int i, c;
 	is_roce = -1; machine_id = -1;
 	remote_IP = (char *) malloc(16 * sizeof(char));
+
     assert(MICA_MAX_VALUE >= ST_VALUE_SIZE);
     assert(MACHINE_NUM <= 8); //TODO haven't test bit vectors with more than 8 nodes
 	assert(sizeof(ud_req_inv_t) == sizeof(struct ibv_grh) + sizeof(spacetime_inv_t));
 	assert(sizeof(ud_req_ack_t) == sizeof(struct ibv_grh) + sizeof(spacetime_ack_t));
 	assert(sizeof(ud_req_val_t) == sizeof(struct ibv_grh) + sizeof(spacetime_val_t));
-	assert(MAX_BATCH_OPS_SIZE < 255); /// 1B write_buffer_index and 255 is used as "empty" value
     assert(MACHINE_NUM <= GROUP_MEMBERSHIP_ARRAY_SIZE * 8);//bit vector for acks / group membership
-//	assert(MACHINE_NUM <= sizeof(((spacetime_object_meta*)0)->write_acks) * 8);
     assert(sizeof(spacetime_crd_t) < sizeof(((struct ibv_send_wr*)0)->imm_data)); //for inlined credits
 
     assert(MAX_PCIE_BCAST_BATCH <= INV_CREDITS);
 	assert(MAX_PCIE_BCAST_BATCH <= VAL_CREDITS);
-//	assert(INV_CREDITS < SEND_INV_Q_DEPTH);
-//	assert(ACK_CREDITS < SEND_ACK_Q_DEPTH);
-//	assert(VAL_CREDITS < SEND_VAL_Q_DEPTH);
-//	assert(CRD_CREDITS < SEND_CRD_Q_DEPTH);
-
-//	assert(INV_SS_GRANULARITY < INV_CREDITS);
-//	assert(ACK_SS_GRANULARITY < ACK_CREDITS);
-//	assert(VAL_SS_GRANULARITY < VAL_CREDITS);
-//	assert(CRD_SS_GRANULARITY < CRD_CREDITS);
 
 	assert(MAX_MESSAGES_IN_BCAST * MAX_PCIE_BCAST_BATCH < INV_SS_GRANULARITY);
 	assert(MAX_MESSAGES_IN_BCAST * MAX_PCIE_BCAST_BATCH < VAL_SS_GRANULARITY);
-
-	printf("CREDITS %d\n",CREDITS_PER_REMOTE_WORKER);
-	printf("INV_SS_GRANULARITY %d \t\t SEND_INV_Q_DEPTH %d\n",INV_SS_GRANULARITY,SEND_INV_Q_DEPTH);
-	printf("ACK_SS_GRANULARITY %d \t\t SEND_ACK_Q_DEPTH %d\n",ACK_SS_GRANULARITY,SEND_ACK_Q_DEPTH);
-	printf("VAL_SS_GRANULARITY %d \t\t SEND_VAL_Q_DEPTH %d\n",VAL_SS_GRANULARITY,SEND_VAL_Q_DEPTH);
-	printf("CRD_SS_GRANULARITY %d \t\t SEND_CRD_Q_DEPTH %d\n",CRD_SS_GRANULARITY,SEND_CRD_Q_DEPTH);
+	assert(MACHINE_NUM < TIE_BREAKER_ID_EMPTY);
+	assert(MACHINE_NUM < LAST_WRITER_ID_EMPTY);
+	assert(MAX_BATCH_OPS_SIZE < WRITE_BUFF_EMPTY); /// 1B write_buffer_index and 255 is used as "empty" value
 
     ///Make sure that assigned numbers to States are monotonically increasing with the following order
 	assert(VALID_STATE < INVALID_STATE);
@@ -63,6 +50,12 @@ int main(int argc, char *argv[]){
 	assert(REPLAY_WRITE_STATE < REPLAY_WRITE_BUFF_STATE);
 //	green_printf("UD size: %d ibv_grh + crd size: %d \n", sizeof(ud_req_crd_t), sizeof(struct ibv_grh) + sizeof(spacetime_crd_t));
 //	assert(sizeof(ud_req_crd_t) == sizeof(struct ibv_grh) + sizeof(spacetime_crd_t)); ///CRD --> 48 Bytes instead of 43
+
+	printf("CREDITS %d\n",CREDITS_PER_REMOTE_WORKER);
+	printf("INV_SS_GRANULARITY %d \t\t SEND_INV_Q_DEPTH %d\n",INV_SS_GRANULARITY,SEND_INV_Q_DEPTH);
+	printf("ACK_SS_GRANULARITY %d \t\t SEND_ACK_Q_DEPTH %d\n",ACK_SS_GRANULARITY,SEND_ACK_Q_DEPTH);
+	printf("VAL_SS_GRANULARITY %d \t\t SEND_VAL_Q_DEPTH %d\n",VAL_SS_GRANULARITY,SEND_VAL_Q_DEPTH);
+	printf("CRD_SS_GRANULARITY %d \t\t SEND_CRD_Q_DEPTH %d\n",CRD_SS_GRANULARITY,SEND_CRD_Q_DEPTH);
 
 	struct thread_params *param_arr;
 	pthread_t *thread_arr;
@@ -113,8 +106,10 @@ int main(int argc, char *argv[]){
 		pthread_attr_setaffinity_np(&attr, sizeof(cpu_set_t), &cpus_w);
 		pthread_create(&thread_arr[i], &attr, run_worker, &param_arr[i]);
 	}
-	green_printf("{Sizes} ops: %d, ops_resp %d, meta %d, value %d \n", sizeof(spacetime_op_t),
-				 sizeof(spacetime_op_resp_t), sizeof(spacetime_object_meta), ST_VALUE_SIZE);
+	green_printf("{Sizes} Op: %d, Meta %d, Value %d,\n",
+				 sizeof(spacetime_ops_t), sizeof(spacetime_object_meta), ST_VALUE_SIZE);
+	green_printf("{Sizes} Inv: %d, Ack: %d, Val: %d, Crd: %d\n",
+				 sizeof(spacetime_inv_t), sizeof(spacetime_ack_t), sizeof(spacetime_val_t), sizeof(spacetime_crd_t));
 
 	for(i = 0; i < WORKERS_PER_MACHINE; i++)
 		pthread_join(thread_arr[i], NULL);

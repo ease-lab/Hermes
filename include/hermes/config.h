@@ -6,16 +6,16 @@
 #define SPACETIME_CONFIG_H
 #include "hrd.h"
 
-#define ENABLE_ASSERTIONS 0
+#define ENABLE_ASSERTIONS 1
 #define MACHINE_NUM 2
 #define REMOTE_MACHINES (MACHINE_NUM - 1)
 #define GROUP_MEMBERSHIP_ARRAY_SIZE  CEILING(MACHINE_NUM, 8) //assuming uint8_t
-#define WORKERS_PER_MACHINE 1
+#define WORKERS_PER_MACHINE 2
 #define ENABLE_HYPERTHREADING 1
 #define KV_SOCKET 0
 #define START_SPAWNING_THREADS_FROM_SOCKET 0
-#define WRITE_RATIO 50
-#define MAX_BATCH_OPS_SIZE 10 //10 //200 //30 //5
+#define WRITE_RATIO 500
+#define MAX_BATCH_OPS_SIZE 10 //30 //5
 
 //TRACE
 #define FEED_FROM_TRACE 0
@@ -26,7 +26,7 @@
 /*-------------------------------------------------
 -----------------PCIe BATCHING---------------------
 --------------------------------------------------*/
-#define MAX_PCIE_BCAST_BATCH (6 / REMOTE_MACHINES) //(128 / (MACHINE_NUM - 1)) // how many broadcasts can fit in a batch
+#define MAX_PCIE_BCAST_BATCH (1 / REMOTE_MACHINES) //(128 / (MACHINE_NUM - 1)) // how many broadcasts can fit in a batch
 #define MAX_MESSAGES_IN_BCAST REMOTE_MACHINES
 #define MAX_MSGS_IN_PCIE_BCAST_BATCH (MAX_PCIE_BCAST_BATCH * MAX_MESSAGES_IN_BCAST) //must be smaller than the q_depth
 
@@ -100,12 +100,13 @@
 /*-------------------------------------------------
 -----------------PRINTS (DBG)---------------------
 --------------------------------------------------*/
+#define MAX_THREADS_TO_PRINT 2
 #define ENABLE_REQ_PRINTS 0
 #define ENABLE_BATCH_OP_PRINTS 0
 #define ENABLE_CREDIT_PRINTS 0
 #define ENABLE_SEND_PRINTS 1
 #define ENABLE_POST_RECV_PRINTS 0
-#define ENABLE_RECV_PRINTS 0
+#define ENABLE_RECV_PRINTS 1
 #define ENABLE_SS_PRINTS 0
 #define ENABLE_INV_PRINTS 0
 #define ENABLE_ACK_PRINTS 0
