@@ -131,7 +131,7 @@ void spacetime_populate_fixed_len(struct spacetime_kv* kv, int n, int val_len) {
 
 
 //TODO may merge all the batch_* func
-void spacetime_batch_ops(int op_num, spacetime_ops_t **op, int thread_id, uint32_t refilled_ops_debug_cnt)
+void spacetime_batch_ops(int op_num, spacetime_op_t **op, int thread_id, uint32_t refilled_ops_debug_cnt)
 {
 	int I, j;	/* I is batch index */
 	long long stalled_brces = 0;
@@ -541,7 +541,7 @@ void spacetime_batch_invs(int op_num, spacetime_inv_t **op, int thread_id)
 }
 
 
-void spacetime_batch_acks(int op_num, spacetime_ack_t **op, spacetime_ops_t* read_write_op, int thread_id)
+void spacetime_batch_acks(int op_num, spacetime_ack_t **op, spacetime_op_t* read_write_op, int thread_id)
 {
 	int I, j;	/* I is batch index */
 	long long stalled_brces = 0;

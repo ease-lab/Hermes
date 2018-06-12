@@ -347,14 +347,14 @@ void setup_credits(uint8_t credits[][MACHINE_NUM],     struct hrd_ctrl_blk *cb,
 
 
 // set up the OPS buffers
-void setup_ops(spacetime_ops_t **ops,
+void setup_ops(spacetime_op_t **ops,
 			   spacetime_inv_t **inv_recv_ops, spacetime_ack_t **ack_recv_ops,
 			   spacetime_val_t **val_recv_ops, spacetime_inv_t **inv_send_ops,
 			   spacetime_ack_t **ack_send_ops, spacetime_val_t **val_send_ops)
 {
     int i;
-    *ops = memalign(4096, MAX_BATCH_OPS_SIZE * (sizeof(spacetime_ops_t)));
-    memset(*ops, 0, MAX_BATCH_OPS_SIZE * (sizeof(spacetime_ops_t)));
+    *ops = memalign(4096, MAX_BATCH_OPS_SIZE * (sizeof(spacetime_op_t)));
+    memset(*ops, 0, MAX_BATCH_OPS_SIZE * (sizeof(spacetime_op_t)));
 
     assert(ops != NULL);
 

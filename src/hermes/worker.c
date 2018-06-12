@@ -87,7 +87,7 @@ void *run_worker(void *arg){
 	int inv_ops_i = 0, ack_ops_i = 0, val_ops_i = 0;
 	uint16_t outstanding_invs = 0, outstanding_acks = 0, outstanding_vals = 0;
 
-	spacetime_ops_t *ops;
+	spacetime_op_t *ops;
 	spacetime_inv_t *inv_recv_ops, *inv_send_ops;
 	spacetime_ack_t *ack_recv_ops, *ack_send_ops;
 	spacetime_val_t *val_recv_ops, *val_send_ops;

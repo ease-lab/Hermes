@@ -118,6 +118,13 @@
   (byte & 0x02 ? '1' : '0'), \
   (byte & 0x01 ? '1' : '0')
 
+typedef struct {
+    uint8_t opcode; //both recv / resp
+    uint8_t state_or_sender;
+    uint8_t val_len;
+    uint8_t tie_breaker_id;
+    uint32_t version; ///timestamp{version+tie_braker_id}
+}spacetime_op_meta_t;
 /* Fixed-size 16 byte keys */
 typedef struct {
     uint64 __unused; // This should be 8B
@@ -126,10 +133,20 @@ typedef struct {
     unsigned int tag			:16;
 }spacetime_key_t;
 
+typedef struct{ ///May add    uint8_t session_id;
+    spacetime_key_t key;	/* This must be the 1st field and 16B aligned */
+    uint8_t opcode; //both recv / resp
+    uint8_t state;
+    uint8_t val_len;
+    uint8_t tie_breaker_id;
+    uint32_t version; ///timestamp{version+tie_braker_id}
+    uint8_t value[ST_VALUE_SIZE];
+}spacetime_op_t;
+
 typedef struct{
     spacetime_key_t key;	/* This must be the 1st field and 16B aligned */
-    uint8_t sender;
     uint8_t opcode; //both recv / batch_op resp
+    uint8_t sender;
     uint8_t val_len;
     uint8_t tie_breaker_id;
     uint32_t version; ///timestamp{version+tie_braker_id}
@@ -138,50 +155,18 @@ typedef struct{
 
 typedef struct{
     spacetime_key_t key;	/* This must be the 1st field and 16B aligned */
-    uint8_t sender;
     uint8_t opcode; //both recv / batch_op resp
+    uint8_t sender;
+    uint8_t __unused; //align for using a single memcopy
     uint8_t tie_breaker_id;
     uint32_t version; ///timestamp{version+tie_braker_id}
-}spacetime_ack_t;
-
-typedef spacetime_ack_t spacetime_val_t;
+}spacetime_ack_t, spacetime_val_t;
 
 typedef struct{
     uint8_t opcode; //we do not really need this
     uint8_t sender;
     uint8_t val_credits;
 }spacetime_crd_t;
-
-typedef struct{ ///May add    uint8_t session_id;
-    spacetime_key_t key;	/* This must be the 1st field and 16B aligned */
-    uint8_t state;
-    uint8_t opcode; //both recv / resp
-    uint8_t val_len;
-    uint8_t tie_breaker_id;
-    uint32_t version; ///timestamp{version+tie_braker_id}
-    uint8_t value[ST_VALUE_SIZE];
-}spacetime_ops_t;
-
-/*
-typedef struct{
-    spacetime_key_t key;	// This must be the 1st field and 16B aligned
-    uint8_t state;
-    uint8_t opcode; //both recv / resp
-//    uint8_t session_id;
-    uint8_t val_len;
-    uint8_t value[ST_VALUE_SIZE];
-}spacetime_op_t;
-
-
-typedef struct {
-    uint8_t resp_opcode;
-    uint8_t val_len;
-    uint8_t __unused;    // Make val_ptr 8-byte aligned
-    uint8_t *val_ptr;
-    uint8_t tie_breaker_id;
-    uint32_t version; ///timestamp{version+tie_braker_id}
-}spacetime_op_resp_t;
-*/
 
 
 typedef struct {
@@ -261,9 +246,9 @@ struct spacetime_trace_command {
 
 void spacetime_init(int spacetime_id, int num_threads);
 void spacetime_populate_fixed_len(struct spacetime_kv* kv,  int n,  int val_len);
-void spacetime_batch_ops(int op_num, spacetime_ops_t **ops, int thread_id, uint32_t refilled_ops_debug_cnt);
+void spacetime_batch_ops(int op_num, spacetime_op_t **ops, int thread_id, uint32_t refilled_ops_debug_cnt);
 void spacetime_batch_invs(int op_num, spacetime_inv_t **op, int thread_id);
-void spacetime_batch_acks(int op_num, spacetime_ack_t **op, spacetime_ops_t* read_write_op, int thread_id);
+void spacetime_batch_acks(int op_num, spacetime_ack_t **op, spacetime_op_t* read_write_op, int thread_id);
 void spacetime_batch_vals(int op_num, spacetime_val_t **op, int thread_id);
 void group_membership_init(void);
 //uint8_t is_last_ack(uint8_t const * gathered_acks);

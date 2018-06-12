@@ -245,7 +245,7 @@ static inline bool check_broadcast_credits(uint8_t credits[][MACHINE_NUM], struc
 /* ---------------------------------------------------------------------------
 ------------------------------------INVS--------------------------------------
 ---------------------------------------------------------------------------*/
-static inline void forge_bcast_inv_wrs(spacetime_ops_t* op, spacetime_inv_t* inv_send_ops,
+static inline void forge_bcast_inv_wrs(spacetime_op_t* op, spacetime_inv_t* inv_send_ops,
 									   int* inv_push_ops_ptr, struct ibv_send_wr* send_inv_wr,
 									   struct ibv_sge* send_inv_sgl, struct hrd_ctrl_blk* cb,
 									   long long* br_tx, uint16_t br_i, uint16_t worker_lid)
@@ -253,15 +253,13 @@ static inline void forge_bcast_inv_wrs(spacetime_ops_t* op, spacetime_inv_t* inv
 	static int total_completions = 0;
 	struct ibv_wc signal_send_wc;
 
+	if(ENABLE_ASSERTIONS)
+		assert(sizeof(spacetime_inv_t) == sizeof(spacetime_op_t));
+
+    memcpy(&inv_send_ops[*inv_push_ops_ptr], op, sizeof(spacetime_inv_t));
 	inv_send_ops[*inv_push_ops_ptr].opcode = ST_OP_INV;
 	inv_send_ops[*inv_push_ops_ptr].sender = (uint8_t) machine_id;
-    inv_send_ops[*inv_push_ops_ptr].version = op->version;
-	inv_send_ops[*inv_push_ops_ptr].tie_breaker_id = op->tie_breaker_id;
-	inv_send_ops[*inv_push_ops_ptr].val_len = op->val_len;
-	if(ENABLE_ASSERTIONS)
-		assert(op->val_len == ST_VALUE_SIZE);
-	memcpy(&inv_send_ops[*inv_push_ops_ptr].value, op->value, op->val_len);
-	memcpy(&inv_send_ops[*inv_push_ops_ptr].key, &op->key, KEY_SIZE);
+
 	send_inv_sgl[br_i].addr = (uint64_t) (uintptr_t) (inv_send_ops + (*inv_push_ops_ptr));
 
 	///TODO add code for non-inlining
@@ -289,7 +287,7 @@ static inline void forge_bcast_inv_wrs(spacetime_ops_t* op, spacetime_inv_t* inv
 }
 
 
-static inline void broadcasts_invs(spacetime_ops_t* ops, spacetime_inv_t* inv_send_ops, int* inv_push_ptr,
+static inline void broadcasts_invs(spacetime_op_t* ops, spacetime_inv_t* inv_send_ops, int* inv_push_ptr,
 								   struct ibv_send_wr* send_inv_wr, struct ibv_sge* send_inv_sgl,
 								   uint8_t credits[][MACHINE_NUM], struct hrd_ctrl_blk* cb,
                                    long long* br_tx, ud_req_ack_t* incoming_acks, int* ack_push_ptr,
@@ -397,11 +395,9 @@ static inline void forge_ack_wr(spacetime_inv_t* inv_recv_op, spacetime_ack_t* a
     if(ENABLE_ASSERTIONS)
 		assert(REMOTE_MACHINES != 1 || inv_recv_op->sender == REMOTE_MACHINES - machine_id);
 
+	memcpy(ack_send_ops, inv_recv_op, sizeof(spacetime_ack_t));
 	ack_send_ops->opcode = ST_OP_ACK;
 	ack_send_ops->sender = (uint8_t) machine_id;
-	ack_send_ops->version =  inv_recv_op->version;
-	ack_send_ops->tie_breaker_id = inv_recv_op->tie_breaker_id;
-	memcpy(&ack_send_ops->key, &inv_recv_op->key, KEY_SIZE);
 
 	send_ack_sgl[send_ack_count].addr = (uint64_t) ack_send_ops;
 	send_ack_wr[send_ack_count].wr.ud.ah = remote_worker_qps[dst_worker_gid][ACK_UD_QP_ID].ah;
@@ -589,12 +585,13 @@ static inline void forge_bcast_val_wrs(spacetime_ack_t* ack_op, spacetime_val_t*
 {
 	static int total_completions = 0;
 	struct ibv_wc signal_send_wc;
+    if(ENABLE_ASSERTIONS)
+		assert(sizeof(spacetime_ack_t) == sizeof(spacetime_val_t));
 
-	///TODO we need to empty the buffer space
-	///coh_message_count[ACK_VC][ack_bcast_ops[*ack_pop_ptr].key.meta.cid]++; // we are emptying that buffer space
 	memcpy(&val_send_ops[*val_push_ptr], ack_op, sizeof(spacetime_val_t));
 	val_send_ops[*val_push_ptr].opcode = ST_OP_VAL;
 	val_send_ops[*val_push_ptr].sender = (uint8_t) machine_id;
+
 	send_val_sgl[br_i].addr = (uint64_t) (uintptr_t) (val_send_ops + (*val_push_ptr));
 
 
@@ -859,7 +856,7 @@ static inline void issue_credits(spacetime_val_t *val_recv_ops, long long int* s
 ---------------------------------------------------------------------------*/
 static inline uint32_t refill_ops(uint32_t* trace_iter, uint16_t worker_lid,
 								  struct spacetime_trace_command *trace,
-								  spacetime_ops_t *ops, uint32_t* refill_ops_debug_cnt)
+								  spacetime_op_t *ops, uint32_t* refill_ops_debug_cnt)
 {
     int i = 0, refilled_ops = 0;
 	for (i = 0; i < MAX_BATCH_OPS_SIZE; i++) {

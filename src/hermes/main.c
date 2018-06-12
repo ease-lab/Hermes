@@ -108,7 +108,7 @@ int main(int argc, char *argv[]){
 		pthread_create(&thread_arr[i], &attr, run_worker, &param_arr[i]);
 	}
 	green_printf("{Sizes} Op: %d, Meta %d, Value %d,\n",
-				 sizeof(spacetime_ops_t), sizeof(spacetime_object_meta), ST_VALUE_SIZE);
+				 sizeof(spacetime_op_t), sizeof(spacetime_object_meta), ST_VALUE_SIZE);
 	green_printf("{Sizes} Inv: %d, Ack: %d, Val: %d, Crd: %d\n",
 				 sizeof(spacetime_inv_t), sizeof(spacetime_ack_t), sizeof(spacetime_val_t), sizeof(spacetime_crd_t));
 
