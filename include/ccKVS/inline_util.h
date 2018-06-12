@@ -965,7 +965,7 @@ static inline void send_credits(uint16_t credit_wr_i, struct ibv_sge* coh_recv_s
 //                                      uint16_t local_client_id, uint16_t br_i)
 //{
 //  struct ibv_wc signal_send_wc;
-//  w_stats[local_client_id].vals_per_worker++;
+//  w_stats[local_client_id].issued_vals_per_worker++;
 //  // Do a Signaled Send every BROADCAST_SS_BATCH broadcasts (BROADCAST_SS_BATCH * (MACHINE_NUM - 1) messages)
 //  if ((*br_tx) % BROADCAST_SS_BATCH == 0) {
 //    coh_send_wr[0].send_flags |= IBV_SEND_SIGNALED;

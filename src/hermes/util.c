@@ -8,7 +8,8 @@
 #include "hrd.h"
 #include "util.h"
 
-int spawn_stats_thread() {
+int spawn_stats_thread(void)
+{
     pthread_t *thread_arr = malloc(sizeof(pthread_t));
     pthread_attr_t attr;
     cpu_set_t cpus_stats;
@@ -22,7 +23,8 @@ int spawn_stats_thread() {
     return pthread_create(&thread_arr[0], &attr, print_stats, NULL);
 }
 
-void setup_q_depths(int** recv_q_depths, int** send_q_depths){
+void setup_q_depths(int** recv_q_depths, int** send_q_depths)
+{
     assert(SEND_INV_Q_DEPTH != 0 && RECV_INV_Q_DEPTH != 0);
     assert(SEND_ACK_Q_DEPTH != 0 && RECV_ACK_Q_DEPTH != 0);
     assert(SEND_VAL_Q_DEPTH != 0 && RECV_VAL_Q_DEPTH != 0);
@@ -43,7 +45,8 @@ void setup_q_depths(int** recv_q_depths, int** send_q_depths){
 }
 
 
-void setup_qps(int worker_gid, struct hrd_ctrl_blk *cb){
+void setup_qps(int worker_gid, struct hrd_ctrl_blk *cb)
+{
     int i;
     int worker_lid = worker_gid % WORKERS_PER_MACHINE;
     for(i = 0; i < TOTAL_WORKER_UD_QPs; i++){
@@ -67,7 +70,8 @@ void setup_qps(int worker_gid, struct hrd_ctrl_blk *cb){
 }
 
 
-void create_AHs(struct hrd_ctrl_blk *cb){
+void create_AHs(struct hrd_ctrl_blk *cb)
+{
     int i, qp_i;
     int ib_port_index = 0;
     struct ibv_ah *worker_ah[WORKER_NUM][TOTAL_WORKER_UD_QPs];
@@ -117,7 +121,8 @@ void create_AHs(struct hrd_ctrl_blk *cb){
     }
 }
 
-char* code_to_str(uint8_t code){
+char* code_to_str(uint8_t code)
+{
 	switch (code){
         //Object States
         case VALID_STATE:
@@ -160,6 +165,8 @@ char* code_to_str(uint8_t code){
             return "ST_GET_SUCCESS";
         case ST_PUT_SUCCESS:
             return "ST_PUT_SUCCESS";
+        case ST_PUT_COMPLETE:
+            return "ST_PUT_COMPLETE";
         case ST_BUFFERED_REPLAY:
             return "ST_BUFFERED_REPLAY";
         case ST_INV_SUCCESS:
@@ -297,7 +304,8 @@ void trace_init(struct spacetime_trace_command** trace, uint16_t worker_gid)
 
 void setup_credits(uint8_t credits[][MACHINE_NUM],     struct hrd_ctrl_blk *cb,
                    struct ibv_send_wr* credit_send_wr, struct ibv_sge* credit_send_sgl,
-                   struct ibv_recv_wr* credit_recv_wr, struct ibv_sge* credit_recv_sgl){
+                   struct ibv_recv_wr* credit_recv_wr, struct ibv_sge* credit_recv_sgl)
+{
     int i = 0;
     spacetime_crd_t crd_tmp;
 
@@ -402,8 +410,8 @@ void setup_WRs(struct ibv_send_wr *inv_send_wr, struct ibv_sge *inv_send_sgl,
     assert(MAX_MSGS_IN_PCIE_BCAST_BATCH == MAX_SEND_INV_WRS);
     assert(MAX_MSGS_IN_PCIE_BCAST_BATCH == MAX_SEND_VAL_WRS);
     for (i = 0; i < MAX_MSGS_IN_PCIE_BCAST_BATCH; i++) {
-        int i_mod_bcast = i % MAX_MESSAGES_IN_BCAST;
-        int sgl_index = i / MAX_MESSAGES_IN_BCAST;
+        int i_mod_bcast = i % REMOTE_MACHINES;
+        int sgl_index = i / REMOTE_MACHINES;
         uint16_t rm_id;
         if (i_mod_bcast < machine_id) rm_id = (uint16_t) i_mod_bcast;
         else rm_id = (uint16_t) ((i_mod_bcast + 1) % MACHINE_NUM);
@@ -433,8 +441,8 @@ void setup_WRs(struct ibv_send_wr *inv_send_wr, struct ibv_sge *inv_send_sgl,
         inv_send_wr[i].send_flags = IBV_SEND_INLINE;
         val_send_wr[i].send_flags = IBV_SEND_INLINE;
 
-        inv_send_wr[i].next = (i_mod_bcast == MAX_MESSAGES_IN_BCAST - 1) ? NULL : &inv_send_wr[i + 1];
-        val_send_wr[i].next = (i_mod_bcast == MAX_MESSAGES_IN_BCAST - 1) ? NULL : &val_send_wr[i + 1];
+        inv_send_wr[i].next = (i_mod_bcast == REMOTE_MACHINES - 1) ? NULL : &inv_send_wr[i + 1];
+        val_send_wr[i].next = (i_mod_bcast == REMOTE_MACHINES - 1) ? NULL : &val_send_wr[i + 1];
     }
 
     //Send ACK  WRs

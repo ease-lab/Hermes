@@ -54,6 +54,7 @@
 #define ST_ACK_SUCCESS 125
 #define ST_LAST_ACK_SUCCESS 126        //complete local write
 #define ST_LAST_ACK_PREV_WRITE_SUCCESS 127        //complete local write
+#define ST_PUT_COMPLETE 128 //broadcast invs
 //#define ST_LAST_ACK_WRITE_SUCCESS  127 //broadcast vals + complete local write (can be returned from Replay_w states too)
 //#define ST_LAST_ACK_REPLAY_SUCCESS 128 //broadcast vals
 #define ST_VAL_SUCCESS 129
@@ -260,7 +261,7 @@ struct spacetime_trace_command {
 
 void spacetime_init(int spacetime_id, int num_threads);
 void spacetime_populate_fixed_len(struct spacetime_kv* kv,  int n,  int val_len);
-void spacetime_batch_ops(int op_num, spacetime_ops_t **ops, int thread_id);
+void spacetime_batch_ops(int op_num, spacetime_ops_t **ops, int thread_id, uint32_t refilled_ops_debug_cnt);
 void spacetime_batch_invs(int op_num, spacetime_inv_t **op, int thread_id);
 void spacetime_batch_acks(int op_num, spacetime_ack_t **op, spacetime_ops_t* read_write_op, int thread_id);
 void spacetime_batch_vals(int op_num, spacetime_val_t **op, int thread_id);

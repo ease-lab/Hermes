@@ -78,6 +78,9 @@ void *run_worker(void *arg){
 		if(ENABLE_POST_RECV_PRINTS && ENABLE_VAL_PRINTS && worker_lid == 0)
 			yellow_printf("vvv Post Initial Receives: \033[1m\033[32mVALs\033[0m %d\n", MAX_RECV_VAL_WRS);
 		post_receives(cb, MAX_RECV_VAL_WRS, ST_VAL_BUFF, incoming_vals, &val_push_recv_ptr);
+        //TODO it seems like we need to post more WR
+		post_receives(cb, 3, ST_ACK_BUFF, incoming_acks, &ack_push_recv_ptr);
+//		post_credit_recvs(cb, recv_crd_wr,3);
 	}
 	setup_qps(worker_gid, cb);
 
@@ -100,20 +103,13 @@ void *run_worker(void *arg){
 			  send_ack_wr, send_ack_sgl, recv_ack_wr, recv_ack_sgl,
 			  send_val_wr, send_val_sgl, recv_val_wr, recv_val_sgl, cb, worker_lid);
 
-	int j, is_update;
+	int j;
 	long long rolling_iter = 0; /* For throughput measurement */
-	uint32_t trace_iter = 0, credit_debug_cnt = 0;
-//	in_progress_write_debug_cnt = 0;
+	uint32_t trace_iter = 0, credit_debug_cnt = 0, refill_ops_debug_cnt = 0;
 	long long int inv_br_tx = 0, val_br_tx = 0, send_ack_tx = 0, send_crd_tx = 0;
-
-	int issued_ops = 0;
     struct spacetime_trace_command *trace;
 	trace_init(&trace, worker_gid);
-	//ONLY for dbg
-//	spacetime_ack_t last_ack;
-//	spacetime_inv_t last_inv;
-//	spacetime_object_meta last_meta, last_meta2, last_meta3;
-//	spacetime_object_meta last_inv_meta, last_inv_meta2, last_inv_meta3;
+
 	/* -----------------------------------------------------
 	--------------Start the main Loop-----------------------
 	---------------------------------------------------------*/
@@ -127,33 +123,24 @@ void *run_worker(void *arg){
 					   credits[CRD_UD_QP_ID][(machine_id + 1) % MACHINE_NUM]);
 			credit_debug_cnt = 0;
 		}
+		if (unlikely(refill_ops_debug_cnt > M_4)) {
+			red_printf("Worker %d is stacked \n", worker_lid);
+            if(w_stats[worker_lid].issued_invs_per_worker != w_stats[worker_lid].received_acks_per_worker)
+				red_printf("\tCoordinator: issued_invs: %d received acks: %d (last_inv_batch: %d)\n",
+					   w_stats[worker_lid].issued_invs_per_worker,w_stats[worker_lid].received_acks_per_worker);
+            if(w_stats[worker_lid].received_invs_per_worker != w_stats[worker_lid].issued_acks_per_worker)
+				red_printf("\tFollower:    received invs: %d issued acks: %d\n",
+					   w_stats[worker_lid].received_invs_per_worker,w_stats[worker_lid].issued_acks_per_worker);
 
-       	refill_ops(&trace_iter, worker_lid, trace, ops);
-        /*
-		for (j = 0; j < MAX_BATCH_OPS_SIZE; j++) {
-			if (ops[j].opcode != ST_EMPTY) continue;
-			ops[j].state = ST_NEW;
-			uint32_t key_i = (uint32_t) worker_lid * MAX_BATCH_OPS_SIZE + j;
-//			uint32_t key_i = (uint32_t) worker_gid * MAX_BATCH_OPS_SIZE + j;
-			uint128 key_hash = CityHash128((char *) &key_i, 4);
-
-			memcpy(&ops[j].key, &key_hash, sizeof(spacetime_key_t));
-//			if(issued_ops == MAX_BATCH_OPS_SIZE * 300) exit(0);
-			is_update = (issued_ops++ / MAX_BATCH_OPS_SIZE) % 2 == 0 ? 1 : 0;
-			ops[j].opcode = (uint8) (is_update == 1 ? ST_OP_PUT : ST_OP_GET);
-			if (is_update == 1)
-				memset(ops[j].value, ((uint8_t) machine_id % 2 == 0 ? 'x' : 'y'), ST_VALUE_SIZE);
-			ops[j].val_len = (uint8) (is_update == 1 ? ST_VALUE_SIZE : -1);
-			if(ENABLE_REQ_PRINTS && machine_id == 0)
-				red_printf("Key id: %d, op: %s, hash:%" PRIu64 "\n", key_i,
-						   code_to_str(ops[j].opcode), ((uint64_t *) &ops[j].key)[1]);
+			refill_ops_debug_cnt = 0;
 		}
-         */
+
+       	refill_ops(&trace_iter, worker_lid, trace, ops, &refill_ops_debug_cnt);
 
 		if(ENABLE_ASSERTIONS)
 			for(j = 0; j < MAX_BATCH_OPS_SIZE; j++)
 				assert(ops[j].opcode == ST_OP_PUT || ops[j].opcode == ST_OP_GET);
-		spacetime_batch_ops(MAX_BATCH_OPS_SIZE, &ops, worker_lid);
+		spacetime_batch_ops(MAX_BATCH_OPS_SIZE, &ops, worker_lid, refill_ops_debug_cnt);
 
 		if (WRITE_RATIO > 0) {
 			///~~~~~~~~~~~~~~~~~~~~~~INVS~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -166,11 +153,13 @@ void *run_worker(void *arg){
 				for(j = 0; j < MAX_BATCH_OPS_SIZE; j++){
 					if(!(ops[j].state == ST_BUFFERED_IN_PROGRESS_REPLAY ||
 						   ops[j].state == ST_IN_PROGRESS_WRITE ||
+							ops[j].state == ST_PUT_SUCCESS ||
 						   ops[j].state == ST_PUT_STALL ||
 						   ops[j].opcode == ST_OP_GET))
 						printf("Opcode: %s, State: %s\n",code_to_str(ops[j].opcode), code_to_str(ops[j].state));
 					assert(ops[j].state == ST_BUFFERED_IN_PROGRESS_REPLAY ||
 						   ops[j].state == ST_IN_PROGRESS_WRITE ||
+						   ops[j].state == ST_PUT_SUCCESS ||
 						   ops[j].state == ST_PUT_STALL ||
 						   ops[j].opcode == ST_OP_GET);
 				}
@@ -227,8 +216,9 @@ void *run_worker(void *arg){
 		for(j = 0; j < MAX_BATCH_OPS_SIZE; j++) {
 			///TODO Add reordering / moving of uncompleted requests to first buckets of ops
             if(ENABLE_ASSERTIONS)
-				assert(ops[j].state == ST_PUT_SUCCESS ||
+				assert(ops[j].state == ST_PUT_COMPLETE ||
 					   ops[j].state == ST_GET_SUCCESS ||
+					   ops[j].state == ST_PUT_SUCCESS ||
 				       ops[j].state == ST_IN_PROGRESS_WRITE ||
 					   ops[j].state == ST_PUT_STALL ||
 				       ops[j].state == ST_GET_STALL);
@@ -236,7 +226,7 @@ void *run_worker(void *arg){
 
 			if(ENABLE_ASSERTIONS)
 				assert(ops[j].opcode == ST_OP_PUT || ops[j].opcode == ST_OP_GET);
-			if (ops[j].state == ST_PUT_SUCCESS || ops[j].state == ST_GET_SUCCESS) {
+			if (ops[j].state == ST_PUT_COMPLETE || ops[j].state == ST_GET_SUCCESS) {
 				if(ENABLE_REQ_PRINTS && worker_lid < MAX_THREADS_TO_PRINT)
 					green_printf("W%d--> Key Hash:%" PRIu64 "\n\t\tType: %s, version %d, tie-b: %d, value(len-%d): %c\n",
 								 worker_lid, ((uint64_t *) &ops[j].key)[1],

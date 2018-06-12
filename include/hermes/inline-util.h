@@ -81,6 +81,7 @@ static inline void poll_buff(void* incoming_buff, uint8_t buff_type, int* buf_pu
 							 struct ibv_cq* completion_q, struct ibv_wc* work_completions,
 							 uint8_t credits[][MACHINE_NUM], uint16_t worker_lid)
 {
+
 	uint8_t* next_opcode_ptr;
 	void* next_req_ptr;
 	int index = 0, recv_q_depth = 0, max_credits = 0, i = 0, reqs_polled = 0;
@@ -91,19 +92,22 @@ static inline void poll_buff(void* incoming_buff, uint8_t buff_type, int* buf_pu
 			qp_credits_to_inc = ACK_UD_QP_ID;
 			recv_q_depth = RECV_INV_Q_DEPTH;
 			req_size = sizeof(spacetime_inv_t);
-			if(ENABLE_ASSERTIONS) max_credits = ACK_CREDITS;
+			if(ENABLE_ASSERTIONS)
+				max_credits = ACK_CREDITS;
 			break;
 		case ST_ACK_BUFF:
 			qp_credits_to_inc = INV_UD_QP_ID;
 			recv_q_depth = RECV_ACK_Q_DEPTH;
 			req_size = sizeof(spacetime_ack_t);
-			if(ENABLE_ASSERTIONS) max_credits = INV_CREDITS;
+			if(ENABLE_ASSERTIONS)
+				max_credits = INV_CREDITS;
 			break;
 		case ST_VAL_BUFF:
 			qp_credits_to_inc = CRD_UD_QP_ID;
 			recv_q_depth = RECV_VAL_Q_DEPTH;
 			req_size = sizeof(spacetime_val_t);
-			if(ENABLE_ASSERTIONS) max_credits = CRD_CREDITS;
+			if(ENABLE_ASSERTIONS)
+				max_credits = CRD_CREDITS;
 			break;
 		case ST_CRD_BUFF:
 			qp_credits_to_inc = VAL_UD_QP_ID;
@@ -114,9 +118,9 @@ static inline void poll_buff(void* incoming_buff, uint8_t buff_type, int* buf_pu
 		default: assert(0);
 	}
 
+	//poll completion q
 	reqs_polled = ibv_poll_cq(completion_q, MAX_BATCH_OPS_SIZE - outstanding_ops - *ops_push_ptr, work_completions);
-//	if(reqs_polled > 0)
-//		printf("FOUND %d completions pull_ptr %d\n",reqs_polled, *buf_pull_ptr);
+
 	for(i = 0; i < reqs_polled; i++){
 		index = (*buf_pull_ptr + 1) % recv_q_depth;
 		switch (buff_type) {
@@ -124,35 +128,34 @@ static inline void poll_buff(void* incoming_buff, uint8_t buff_type, int* buf_pu
 				sender = ((ud_req_inv_t *) incoming_buff)[index].req.sender;
 				next_req_ptr = &((ud_req_inv_t *) incoming_buff)[index].req;
 				next_opcode_ptr = &((ud_req_inv_t *) incoming_buff)[index].req.opcode;
-//                printf("Op Ptr: %d Code: %s sender %d\n", next_opcode_ptr, code_to_str(*next_opcode_ptr), sender);
-                spacetime_inv_t* tmp = next_req_ptr;
+				if(ENABLE_ASSERTIONS)
+					assert(*next_opcode_ptr == ST_OP_INV || *next_opcode_ptr == ST_EMPTY);
+
 //				green_printf("Key Hash:%" PRIu64 "\n\t\tType: %s, version %d, tie-b: %d, sender: %d, value: %s\n",
 //						 ((uint64_t *) &tmp->key)[1],
 //						 code_to_str(tmp->opcode),tmp->version,
 //						 tmp->tie_breaker_id, tmp->sender,
 //						 tmp->value);
-				if (ENABLE_ASSERTIONS)
-					assert(*next_opcode_ptr == ST_OP_INV || *next_opcode_ptr == ST_EMPTY);
 				break;
 			case ST_ACK_BUFF:
 				sender = ((ud_req_ack_t *) incoming_buff)[index].req.sender;
 				next_req_ptr = &((ud_req_ack_t *) incoming_buff)[index].req;
 				next_opcode_ptr = &((ud_req_ack_t *) incoming_buff)[index].req.opcode;
-				if (ENABLE_ASSERTIONS)
+				if(ENABLE_ASSERTIONS)
 					assert(*next_opcode_ptr == ST_OP_ACK || *next_opcode_ptr == ST_EMPTY);
 				break;
 			case ST_VAL_BUFF:
 				sender = ((ud_req_val_t *) incoming_buff)[index].req.sender;
 				next_req_ptr = &((ud_req_val_t *) incoming_buff)[index].req;
 				next_opcode_ptr = &((ud_req_val_t *) incoming_buff)[index].req.opcode;
-				if (ENABLE_ASSERTIONS)
+				if(ENABLE_ASSERTIONS)
 					assert(*next_opcode_ptr == ST_OP_VAL || *next_opcode_ptr == ST_EMPTY);
 				break;
 			case ST_CRD_BUFF:
 				sender = ((ud_req_crd_t *) incoming_buff)[index].req.sender;
 				next_req_ptr = &((ud_req_crd_t *) incoming_buff)[index].req;
 				next_opcode_ptr = &((ud_req_crd_t *) incoming_buff)[index].req.opcode;
-				if (ENABLE_ASSERTIONS)
+				if(ENABLE_ASSERTIONS)
 					assert(*next_opcode_ptr == ST_OP_CRD || *next_opcode_ptr == ST_EMPTY);
 				break;
 			default:
@@ -161,7 +164,6 @@ static inline void poll_buff(void* incoming_buff, uint8_t buff_type, int* buf_pu
 		if (*next_opcode_ptr == ST_EMPTY) {
             assert(0);
 		} else {
-//			if (outstanding_ops + *ops_push_ptr == MAX_BATCH_OPS_SIZE) break; // Back pressure if no empty slots
 			void *recv_op_ptr = ((uint8_t *) recv_ops) + (*ops_push_ptr * req_size);
 			memcpy(recv_op_ptr, next_req_ptr, req_size);
 			*next_opcode_ptr = ST_EMPTY;
@@ -171,14 +173,11 @@ static inline void poll_buff(void* incoming_buff, uint8_t buff_type, int* buf_pu
 			(*ops_push_ptr)++;
 			//increment credits
 			credits[qp_credits_to_inc][sender]++;
-//			reqs_polled++;
             if(ENABLE_ASSERTIONS)
 				assert(credits[qp_credits_to_inc][sender] <= max_credits);
 		}
 	}
 	if(reqs_polled > 0){
-		//poll completion q
-//		poll_completions(reqs_polled, completion_q, work_completions);
 		if (ENABLE_STAT_COUNTING)
 			switch(buff_type){
 				case ST_INV_BUFF:
@@ -187,11 +186,6 @@ static inline void poll_buff(void* incoming_buff, uint8_t buff_type, int* buf_pu
 						green_printf("^^^ Polled reqs[W%d]: \033[31mINVs\033[0m %d, (total: %d)!\n", worker_lid, reqs_polled, w_stats[worker_lid].received_invs_per_worker);
 					if(ENABLE_CREDIT_PRINTS && ENABLE_ACK_PRINTS && worker_lid < MAX_THREADS_TO_PRINT)
 						printf("$$$ Credits[W%d]: \033[33mACKs\033[0m \033[1m\033[32mincremented\033[0m to %d (for machine %d)\n",worker_lid, credits[qp_credits_to_inc][sender], sender);
-//			            green_printf("Key Hash:%" PRIu64 "\n\t\tType: %s, version %d, tie-b: %d, sender: %d, value: %s\n",
-//						 ((uint64_t *) &inv_ops[*inv_ops_i - 1].key)[1],
-//						 code_to_str(inv_ops[*inv_ops_i - 1].opcode),inv_ops[*inv_ops_i - 1].version,
-//						 inv_ops[*inv_ops_i - 1].tie_breaker_id, inv_ops[*inv_ops_i - 1].sender,
-//						 inv_ops[*inv_ops_i - 1].value);
 					break;
 				case ST_ACK_BUFF:
 					w_stats[worker_lid].received_acks_per_worker += reqs_polled;
@@ -220,10 +214,9 @@ static inline void poll_buff(void* incoming_buff, uint8_t buff_type, int* buf_pu
 }
 
 
-static inline bool check_broadcast_credits(
-		uint8_t credits[][MACHINE_NUM], struct hrd_ctrl_blk* cb,
-		struct ibv_wc* credit_wc, uint32_t* credit_debug_cnt,
-		uint16_t qp_id)
+static inline bool check_broadcast_credits(uint8_t credits[][MACHINE_NUM], struct hrd_ctrl_blk* cb,
+										   struct ibv_wc* credit_wc, uint32_t* credit_debug_cnt,
+										   uint16_t qp_id)
 {
 	uint16_t poll_for_credits = 0, j;
 	for (j = 0; j < MACHINE_NUM; j++) {
@@ -268,16 +261,11 @@ static inline void forge_bcast_inv_wrs(spacetime_ops_t* op, spacetime_inv_t* inv
 	if(ENABLE_ASSERTIONS)
 		assert(op->val_len == ST_VALUE_SIZE);
 	memcpy(&inv_send_ops[*inv_push_ops_ptr].value, op->value, op->val_len);
-
-//	inv_send_ops[*inv_push_ops_ptr].version = resp->version;
-//	inv_send_ops[*inv_push_ops_ptr].tie_breaker_id = resp->tie_breaker_id;
-//	inv_send_ops[*inv_push_ops_ptr].val_len = resp->val_len;
-//	memcpy(&inv_send_ops[*inv_push_ops_ptr].value, resp->val_ptr, resp->val_len);
 	memcpy(&inv_send_ops[*inv_push_ops_ptr].key, &op->key, KEY_SIZE);
 	send_inv_sgl[br_i].addr = (uint64_t) (uintptr_t) (inv_send_ops + (*inv_push_ops_ptr));
 
 	///TODO add code for non-inlining
-	w_stats[worker_lid].invs_per_worker++;
+	w_stats[worker_lid].issued_invs_per_worker++;
 	HRD_MOD_ADD(*inv_push_ops_ptr, MAX_BATCH_OPS_SIZE);
 
 
@@ -297,7 +285,7 @@ static inline void forge_bcast_inv_wrs(spacetime_ops_t* op, spacetime_inv_t* inv
 	(*br_tx)++;
 	// SET THE LAST SEND_WR TO POINT TO NULL
 	if (br_i > 0)
-		send_inv_wr[(br_i * MAX_MESSAGES_IN_BCAST) - 1].next = &send_inv_wr[br_i * MAX_MESSAGES_IN_BCAST];
+		send_inv_wr[br_i * REMOTE_MACHINES - 1].next = &send_inv_wr[br_i * REMOTE_MACHINES];
 }
 
 
@@ -347,37 +335,50 @@ static inline void broadcasts_invs(spacetime_ops_t* ops, spacetime_inv_t* inv_se
 					  (machine_id + 1) % MACHINE_NUM);
 		br_i++;
 		if (br_i == MAX_PCIE_BCAST_BATCH) {
-			send_inv_wr[(br_i * MAX_MESSAGES_IN_BCAST) - 1].next = NULL;
-//			if(ENABLE_ASSERTIONS){
-//				assert(send_inv_wr[0].next == NULL);
-//				assert(send_inv_wr[0].num_sge== 1);
-//				assert(send_inv_wr[0].opcode == IBV_SEND_INLINE | IBV_SEND_SIGNALED);
-//				assert(send_inv_wr[0].sg_list == &send_inv_sgl[0]);
-//				assert(send_inv_sgl[0].length == sizeof(spacetime_inv_t));
-//				assert(send_inv_wr[0].wr.ud.ah == remote_worker_qps[MACHINE_NUM - machine_id - 1][INV_UD_QP_ID].ah);
-//				assert(send_inv_wr[0].wr.ud.remote_qpn == remote_worker_qps[MACHINE_NUM - machine_id - 1][INV_UD_QP_ID].qpn);
-//			}
+			send_inv_wr[br_i * REMOTE_MACHINES - 1].next = NULL;
+			if(ENABLE_ASSERTIONS){
+				for(i = 0; i < br_i * REMOTE_MACHINES - 1; i++){
+					assert(send_inv_wr[i].next == &send_inv_wr[i+1]);
+					assert(send_inv_wr[i].num_sge== 1);
+					assert(send_inv_wr[i].opcode == IBV_SEND_INLINE | IBV_SEND_SIGNALED);
+					assert(send_inv_wr[i].sg_list == &send_inv_sgl[i / REMOTE_MACHINES]);
+					assert(send_inv_sgl[i].length == sizeof(spacetime_inv_t));
+				}
+				assert(send_inv_wr[i].next == NULL);
+			}
 			if(ENABLE_POST_RECV_PRINTS && ENABLE_ACK_PRINTS && worker_lid < MAX_THREADS_TO_PRINT)
-				yellow_printf("vvv Post Receives[W%d]: \033[33mACKs\033[0m %d\n", worker_lid, br_i * (MACHINE_NUM - 1));
-			post_receives(cb, (uint16_t) (br_i * (MACHINE_NUM - 1)), ST_ACK_BUFF, incoming_acks, ack_push_ptr);
-			total_invs_issued[worker_lid]+=br_i;
+				yellow_printf("vvv Post Receives[W%d]: \033[33mACKs\033[0m %d\n", worker_lid, br_i * REMOTE_MACHINES);
+			post_receives(cb, (uint16_t) (br_i * REMOTE_MACHINES), ST_ACK_BUFF, incoming_acks, ack_push_ptr);
+			total_invs_issued[worker_lid] += br_i * REMOTE_MACHINES;
 			if(ENABLE_SEND_PRINTS && ENABLE_INV_PRINTS && worker_lid < MAX_THREADS_TO_PRINT)
 				cyan_printf(">>> Send[W%d]: \033[31mINVs\033[0m %d (Total %d)\n", worker_lid, br_i, total_invs_issued[worker_lid]);
 			ret = ibv_post_send(cb->dgram_qp[INV_UD_QP_ID], &send_inv_wr[0], &bad_send_wr);
-			CPE(ret, "INVs ibv_post_send error", ret);
+			if(ret)
+				printf("Total invs issued:%d\n", total_invs_issued[worker_lid]);
+			CPE(ret, "1st: INVs ibv_post_send error", ret);
 			br_i = 0;
 		}
 	}
    	if(br_i > 0){
-		send_inv_wr[(br_i * MAX_MESSAGES_IN_BCAST) - 1].next = NULL;
+		send_inv_wr[(br_i * REMOTE_MACHINES) - 1].next = NULL;
+		if(ENABLE_ASSERTIONS){
+			for(i = 0; i < br_i * REMOTE_MACHINES - 1; i++){
+				assert(send_inv_wr[i].next ==  &send_inv_wr[i+1]);
+				assert(send_inv_wr[i].num_sge== 1);
+				assert(send_inv_wr[i].opcode == IBV_SEND_INLINE | IBV_SEND_SIGNALED);
+				assert(send_inv_wr[i].sg_list == &send_inv_sgl[i / REMOTE_MACHINES]);
+				assert(send_inv_sgl[i].length == sizeof(spacetime_inv_t));
+			}
+			assert(send_inv_wr[i].next == NULL);
+		}
 		if(ENABLE_POST_RECV_PRINTS && ENABLE_ACK_PRINTS && worker_lid < MAX_THREADS_TO_PRINT)
-			yellow_printf("vvv Post Receives[W%d]: \033[33mACKs\033[0m %d\n", worker_lid, br_i * (MACHINE_NUM - 1));
-		post_receives(cb, (uint16_t) (br_i * (MACHINE_NUM - 1)), ST_ACK_BUFF, incoming_acks, ack_push_ptr);
-		total_invs_issued[worker_lid]+=br_i;
+			yellow_printf("vvv Post Receives[W%d]: \033[33mACKs\033[0m %d\n", worker_lid, br_i * REMOTE_MACHINES);
+		post_receives(cb, (uint16_t) (br_i * REMOTE_MACHINES), ST_ACK_BUFF, incoming_acks, ack_push_ptr);
+		total_invs_issued[worker_lid] += br_i * REMOTE_MACHINES;
 		if(ENABLE_SEND_PRINTS && ENABLE_INV_PRINTS && worker_lid < MAX_THREADS_TO_PRINT)
 			cyan_printf(">>> Send[W%d]: \033[31mINVs\033[0m %d (Total %d)\n", worker_lid, br_i, total_invs_issued[worker_lid]);
 		ret = ibv_post_send(cb->dgram_qp[INV_UD_QP_ID], &send_inv_wr[0], &bad_send_wr);
-		CPE(ret, "INVs ibv_post_send error", ret);
+		CPE(ret, "2nd: INVs ibv_post_send error", ret);
 	}
 }
 
@@ -393,6 +394,8 @@ static inline void forge_ack_wr(spacetime_inv_t* inv_recv_op, spacetime_ack_t* a
 	static int total_completions = 0;
 	struct ibv_wc signal_send_wc;
 	uint16_t dst_worker_gid = (uint16_t) (inv_recv_op->sender * WORKERS_PER_MACHINE + worker_lid);
+    if(ENABLE_ASSERTIONS)
+		assert(REMOTE_MACHINES != 1 || inv_recv_op->sender == REMOTE_MACHINES - machine_id);
 
 	ack_send_ops->opcode = ST_OP_ACK;
 	ack_send_ops->sender = (uint8_t) machine_id;
@@ -404,13 +407,13 @@ static inline void forge_ack_wr(spacetime_inv_t* inv_recv_op, spacetime_ack_t* a
 	send_ack_wr[send_ack_count].wr.ud.ah = remote_worker_qps[dst_worker_gid][ACK_UD_QP_ID].ah;
 	send_ack_wr[send_ack_count].wr.ud.remote_qpn = (uint32) remote_worker_qps[dst_worker_gid][ACK_UD_QP_ID].qpn;
 	send_ack_wr[send_ack_count].send_flags = IBV_SEND_INLINE;
-
-	///TODO add code for non-inlining
-	w_stats[worker_lid].acks_per_worker++;
-//	HRD_MOD_ADD(*ack_push_ptr, MAX_BATCH_OPS_SIZE);
-
 	if (send_ack_count > 0)
 		send_ack_wr[send_ack_count - 1].next = &send_ack_wr[send_ack_count];
+
+	///TODO add code for non-inlining
+	w_stats[worker_lid].issued_acks_per_worker++;
+//	HRD_MOD_ADD(*ack_push_ptr, MAX_BATCH_OPS_SIZE);
+
 	if ((*send_ack_tx) % ACK_SS_GRANULARITY == 0) {
 		send_ack_wr[send_ack_count].send_flags |= IBV_SEND_SIGNALED;
 		if(ENABLE_SS_PRINTS && ENABLE_ACK_PRINTS && worker_lid < MAX_THREADS_TO_PRINT)
@@ -431,6 +434,7 @@ static inline void issue_acks(spacetime_inv_t *inv_recv_ops, spacetime_ack_t* ac
                               ud_req_inv_t* incoming_invs, int* inv_push_ptr,
 							  uint16_t worker_lid, uint32_t* credit_debug_cnt)
 {
+
 	static int total_acks_issued[WORKERS_PER_MACHINE]= { 0 }; ///TODO just for debugging
 	int ret;
 	struct ibv_send_wr *bad_send_wr;
@@ -438,8 +442,17 @@ static inline void issue_acks(spacetime_inv_t *inv_recv_ops, spacetime_ack_t* ac
 	for (i = 0; i < MAX_BATCH_OPS_SIZE; i++) {
 		if (inv_recv_ops[i].opcode == ST_EMPTY)
 			continue;
+		if(ENABLE_ASSERTIONS){
+            assert(inv_recv_ops[i].opcode == ST_INV_SUCCESS || inv_recv_ops[i].opcode == ST_OP_INV);
+			assert(inv_recv_ops[i].sender == REMOTE_MACHINES - machine_id);
+			assert(inv_recv_ops[i].val_len == ST_VALUE_SIZE);
+			assert(inv_recv_ops[i].tie_breaker_id == REMOTE_MACHINES - machine_id);
+			assert(inv_recv_ops[i].value[0] == (uint8_t) 'x' + (REMOTE_MACHINES - machine_id));
+			assert(MACHINE_NUM != 2 || inv_recv_ops[i].sender == REMOTE_MACHINES - machine_id);
+		}
 		if(credits[ACK_UD_QP_ID][inv_recv_ops[i].sender] == 0){
 			(*credit_debug_cnt)++;
+            assert(0);
 			continue; //TODO we may need to push this to the top of the stack + (seems ok to batch this again to the KVS)
 		}
 		*credit_debug_cnt = 0;
@@ -457,6 +470,8 @@ static inline void issue_acks(spacetime_inv_t *inv_recv_ops, spacetime_ack_t* ac
         //empty inv buffer
 		if(inv_recv_ops[i].opcode == ST_INV_SUCCESS)
 			inv_recv_ops[i].opcode = ST_EMPTY;
+		else if(inv_recv_ops[i].opcode == ST_OP_INV) //TODO REMOVE THIS!!!
+			inv_recv_ops[i].opcode = ST_EMPTY;
 		else{
             printf("Unexpected Code: %s\n",code_to_str(inv_recv_ops[i].opcode));
 			assert(0);
@@ -469,15 +484,17 @@ static inline void issue_acks(spacetime_inv_t *inv_recv_ops, spacetime_ack_t* ac
 			post_receives(cb, send_ack_count, ST_INV_BUFF, incoming_invs, inv_push_ptr);
 			send_ack_wr[send_ack_count - 1].next = NULL;
 			if(ENABLE_ASSERTIONS){
+				for(i = 0; i < send_ack_count - 1; i++)
+					assert(send_ack_wr[i].next == &send_ack_wr[i+1]);
 				assert(send_ack_wr[0].opcode == IBV_WR_SEND);
 				assert(send_ack_wr[0].wr.ud.remote_qkey == HRD_DEFAULT_QKEY);
 				assert(send_ack_wr[0].sg_list == &send_ack_sgl[0]);
 				assert(send_ack_wr[0].sg_list->length == sizeof(spacetime_ack_t));
 				assert(send_ack_wr[0].num_sge == 1);
-//			assert(send_ack_wr[0].send_flags == IBV_SEND_INLINE);
+				assert(send_ack_wr[0].send_flags == IBV_SEND_INLINE || send_ack_wr[0].send_flags == IBV_SEND_INLINE | IBV_SEND_SIGNALED);
 				assert(((spacetime_inv_t*) send_ack_sgl[0].addr)->sender == machine_id);
 			}
-			total_acks_issued[worker_lid] +=send_ack_count;
+			total_acks_issued[worker_lid] += send_ack_count;
 			if(ENABLE_SEND_PRINTS && ENABLE_ACK_PRINTS && worker_lid < MAX_THREADS_TO_PRINT)
 				cyan_printf(">>> Send[W%d]: \033[33mACKs\033[0m %d (Total %d)\n", worker_lid, send_ack_count, total_acks_issued[worker_lid]);
 			ret = ibv_post_send(cb->dgram_qp[ACK_UD_QP_ID], &send_ack_wr[0], &bad_send_wr);
@@ -493,12 +510,14 @@ static inline void issue_acks(spacetime_inv_t *inv_recv_ops, spacetime_ack_t* ac
 		post_receives(cb, send_ack_count, ST_INV_BUFF, incoming_invs, inv_push_ptr);
 		send_ack_wr[send_ack_count - 1].next = NULL;
 	    if(ENABLE_ASSERTIONS){
+			for(i = 0; i < send_ack_count - 1; i++)
+				assert(send_ack_wr[i].next == &send_ack_wr[i+1]);
 			assert(send_ack_wr[0].opcode == IBV_WR_SEND);
 			assert(send_ack_wr[0].wr.ud.remote_qkey == HRD_DEFAULT_QKEY);
 			assert(send_ack_wr[0].sg_list == &send_ack_sgl[0]);
 			assert(send_ack_wr[0].sg_list->length == sizeof(spacetime_ack_t));
 			assert(send_ack_wr[0].num_sge == 1);
-//			assert(send_ack_wr[0].send_flags == IBV_SEND_INLINE);
+			assert(send_ack_wr[0].send_flags == IBV_SEND_INLINE || send_ack_wr[0].send_flags == IBV_SEND_INLINE | IBV_SEND_SIGNALED);
 			assert(((spacetime_inv_t*) send_ack_sgl[0].addr)->sender == machine_id);
 		}
 		total_acks_issued[worker_lid]+=send_ack_count;
@@ -507,6 +526,8 @@ static inline void issue_acks(spacetime_inv_t *inv_recv_ops, spacetime_ack_t* ac
 		ret = ibv_post_send(cb->dgram_qp[ACK_UD_QP_ID], &send_ack_wr[0], &bad_send_wr);
 		CPE(ret, "ibv_post_send error while sending ACKs", ret);
 	}
+	if(ENABLE_ASSERTIONS)
+		assert(total_acks_issued[worker_lid] == w_stats[worker_lid].issued_acks_per_worker);
 }
 
 
@@ -536,7 +557,7 @@ static inline void post_credit_recvs_and_batch_bcasts_to_NIC(
 
 	// Batch the broadcasts to the NIC
 	if (br_i > 0) {
-		send_wr[(br_i * MAX_MESSAGES_IN_BCAST) - 1].next = NULL;
+		send_wr[(br_i * REMOTE_MACHINES) - 1].next = NULL;
 		ret = ibv_post_send(cb->dgram_qp[qp_id], &send_wr[0], &bad_send_wr);
 		CPE(ret, "VALs ibv_post_send error", ret);
 		///TODO send non-inline aswell
@@ -553,8 +574,8 @@ static inline void post_credit_recvs(struct hrd_ctrl_blk *cb,
 	int ret;
 	struct ibv_recv_wr *bad_recv_wr;
 	if (*credit_recv_counter > 0) { // Must post receives for credits
-		for (j = 0; j < (MACHINE_NUM - 1) * (*credit_recv_counter); j++)
-			credit_recv_wr[j].next = (j == ((MACHINE_NUM - 1) * (*credit_recv_counter)) - 1) ?	NULL : &credit_recv_wr[j + 1];
+		for (j = 0; j < REMOTE_MACHINES * (*credit_recv_counter); j++)
+			credit_recv_wr[j].next = (j == (REMOTE_MACHINES * (*credit_recv_counter)) - 1) ?	NULL : &credit_recv_wr[j + 1];
 		ret = ibv_post_recv(cb->dgram_qp[CRD_UD_QP_ID], &credit_recv_wr[0], &bad_recv_wr);
 		CPE(ret, "ibv_post_recv error: posting recvs for credits before broadcasting", ret);
 		*credit_recv_counter = 0;
@@ -578,7 +599,7 @@ static inline void forge_bcast_val_wrs(spacetime_ack_t* ack_op, spacetime_val_t*
 
 
 	///TODO add code for non-inlining
-	w_stats[worker_lid].vals_per_worker++;
+	w_stats[worker_lid].issued_vals_per_worker++;
 	HRD_MOD_ADD(*val_push_ptr, MAX_BATCH_OPS_SIZE);
 
 	if(br_i == 0) //reset possibly signaled wr from the prev round
@@ -598,7 +619,7 @@ static inline void forge_bcast_val_wrs(spacetime_ack_t* ack_op, spacetime_val_t*
 	(*br_tx)++;
 	// SET THE LAST SEND_WR TO POINT TO NULL
 	if (br_i > 0)
-		send_val_wr[(br_i * MAX_MESSAGES_IN_BCAST) - 1].next = &send_val_wr[br_i * MAX_MESSAGES_IN_BCAST];
+		send_val_wr[(br_i * REMOTE_MACHINES) - 1].next = &send_val_wr[br_i * REMOTE_MACHINES];
 }
 
 static inline void broadcasts_vals(spacetime_ack_t* ack_ops, spacetime_val_t* val_send_ops, int* val_push_ptr,
@@ -637,7 +658,18 @@ static inline void broadcasts_vals(spacetime_ack_t* ack_ops, spacetime_val_t* va
 		if ((*br_tx) % CRDS_IN_MESSAGE == 0) credit_recv_counter++;
 		br_i++;
 		if (br_i == MAX_PCIE_BCAST_BATCH) {
-			send_val_wr[(br_i * MAX_MESSAGES_IN_BCAST) - 1].next = NULL;
+			send_val_wr[(br_i * REMOTE_MACHINES) - 1].next = NULL;
+			if(ENABLE_ASSERTIONS){
+				for(i = 0; i < br_i * REMOTE_MACHINES - 1; i++){
+					assert(send_val_wr[i].next ==  &send_val_wr[i+1]);
+					assert(send_val_wr[i].num_sge == 1);
+					assert(send_val_wr[i].opcode == IBV_SEND_INLINE | IBV_SEND_SIGNALED);
+					assert(send_val_wr[i].sg_list == &send_val_sgl[i / REMOTE_MACHINES]);
+					assert(send_val_sgl[i].length == sizeof(spacetime_val_t));
+				}
+				assert(send_val_wr[i].next == NULL);
+			}
+
 			if(ENABLE_POST_RECV_PRINTS && ENABLE_CRD_PRINTS && worker_lid < MAX_THREADS_TO_PRINT)
 				yellow_printf("vvv Post Receives[W%d]: \033[1m\033[36mCRDs\033[0m %d\n", worker_lid, credit_recv_counter);
 			post_credit_recvs(cb, credit_recv_wr, &credit_recv_counter);
@@ -645,12 +677,24 @@ static inline void broadcasts_vals(spacetime_ack_t* ack_ops, spacetime_val_t* va
 			if(ENABLE_SEND_PRINTS && ENABLE_VAL_PRINTS && worker_lid < MAX_THREADS_TO_PRINT)
 				cyan_printf(">>> Send[W%d]: \033[1m\033[32mVALs\033[0m %d (Total %d)\n", worker_lid, br_i, total_vals_issued[worker_lid]);
 			ret = ibv_post_send(cb->dgram_qp[VAL_UD_QP_ID], &send_val_wr[0], &bad_send_wr);
+			if(ret)
+				printf("Total vals issued:%d\n", total_vals_issued[worker_lid]);
 			CPE(ret, "Broadcast VALs ibv_post_send error", ret);
 			br_i = 0;
 		}
 	}
 	if(br_i > 0){
-		send_val_wr[(br_i * MAX_MESSAGES_IN_BCAST) - 1].next = NULL;
+		send_val_wr[(br_i * REMOTE_MACHINES) - 1].next = NULL;
+        if(ENABLE_ASSERTIONS){
+			for(i = 0; i < br_i * REMOTE_MACHINES - 1; i++){
+				assert(send_val_wr[i].next ==  &send_val_wr[i+1]);
+				assert(send_val_wr[i].num_sge== 1);
+				assert(send_val_wr[i].opcode == IBV_SEND_INLINE | IBV_SEND_SIGNALED);
+				assert(send_val_wr[i].sg_list == &send_val_sgl[i / REMOTE_MACHINES]);
+				assert(send_val_sgl[i].length == sizeof(spacetime_val_t));
+			}
+			assert(send_val_wr[i].next == NULL);
+		}
 		if(ENABLE_POST_RECV_PRINTS && ENABLE_CRD_PRINTS && worker_lid < MAX_THREADS_TO_PRINT)
 			yellow_printf("vvv Post Receives[W%d]: \033[1m\033[36mCRDs\033[0m %d\n", worker_lid, credit_recv_counter);
 		post_credit_recvs(cb,credit_recv_wr,&credit_recv_counter);
@@ -658,6 +702,8 @@ static inline void broadcasts_vals(spacetime_ack_t* ack_ops, spacetime_val_t* va
 		if(ENABLE_SEND_PRINTS && ENABLE_VAL_PRINTS && worker_lid < MAX_THREADS_TO_PRINT)
 			cyan_printf(">>> Send[W%d]: \033[1m\033[32mVALs\033[0m %d (Total %d)\n", worker_lid, br_i, total_vals_issued[worker_lid]);
 		ret = ibv_post_send(cb->dgram_qp[VAL_UD_QP_ID], &send_val_wr[0], &bad_send_wr);
+		if(ret)
+			printf("Total vals issued:%d\n", total_vals_issued[worker_lid]);
 		CPE(ret, "Broadcast VALs ibv_post_send error", ret);
 	}
 }
@@ -713,7 +759,7 @@ static inline void forge_crd_wr(spacetime_val_t* val_recv_op, struct ibv_send_wr
 
 
 	///TODO add code for non-inlining
-	w_stats[worker_lid].crds_per_worker++;
+	w_stats[worker_lid].issued_crds_per_worker++;
 
 	if (send_crd_count > 0)
 		send_crd_wr[send_crd_count - 1].next = &send_crd_wr[send_crd_count];
@@ -813,18 +859,17 @@ static inline void issue_credits(spacetime_val_t *val_recv_ops, long long int* s
 ---------------------------------------------------------------------------*/
 static inline uint32_t refill_ops(uint32_t* trace_iter, uint16_t worker_lid,
 								  struct spacetime_trace_command *trace,
-								  spacetime_ops_t *ops)
+								  spacetime_ops_t *ops, uint32_t* refill_ops_debug_cnt)
 {
-    int i = 0;
+    int i = 0, refilled_ops = 0;
 	for (i = 0; i < MAX_BATCH_OPS_SIZE; i++) {
 		if (ops[i].opcode != ST_EMPTY) continue;
+		refilled_ops++;
 		ops[i].state = ST_NEW;
 		if(ENABLE_ASSERTIONS)
 			assert(trace[*trace_iter].opcode == ST_OP_PUT || trace[*trace_iter].opcode == ST_OP_GET);
 
 		ops[i].opcode = trace[*trace_iter].opcode;
-//		ops[i].opcode = worker_lid % 2 == 0 ? ST_OP_PUT : ST_OP_GET;
-//		ops[i].opcode =  ST_OP_PUT;
 		memcpy(&ops[i].key, &trace[*trace_iter].key_hash, sizeof(spacetime_key_t));
 
 		if (ops[i].opcode == ST_OP_PUT)
@@ -836,6 +881,10 @@ static inline uint32_t refill_ops(uint32_t* trace_iter, uint16_t worker_lid,
 					   worker_lid, code_to_str(ops[i].opcode), ((uint64_t *) &ops[i].key)[1]);
 		HRD_MOD_ADD(*trace_iter, TRACE_SIZE);
 	}
+	if(refilled_ops == 0)
+		(*refill_ops_debug_cnt)++;
+	else
+		*refill_ops_debug_cnt = 0;
 
 }
 #endif //HERMES_INLINE_UTIL_H
