@@ -55,8 +55,6 @@
 #define ST_LAST_ACK_SUCCESS 126        //complete local write
 #define ST_LAST_ACK_PREV_WRITE_SUCCESS 127        //complete local write
 #define ST_PUT_COMPLETE 128 //broadcast invs
-//#define ST_LAST_ACK_WRITE_SUCCESS  127 //broadcast vals + complete local write (can be returned from Replay_w states too)
-//#define ST_LAST_ACK_REPLAY_SUCCESS 128 //broadcast vals
 #define ST_VAL_SUCCESS 129
 
 #define ST_MISS 130

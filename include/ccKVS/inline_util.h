@@ -1007,7 +1007,7 @@ static inline void send_credits(uint16_t credit_wr_i, struct ibv_sge* coh_recv_s
 //			op_i++;
 //			continue; // We only care about hot writes
 //		}
-//		if (!check_broadcast_credits(credits, cb, credit_wc, credit_debug_cnt, EC_UPD_VC, protocol)) {
+//		if (!check_val_credits(credits, cb, credit_wc, credit_debug_cnt, EC_UPD_VC, protocol)) {
 //			break;
 //		}
 //    forge_bcast_wrs_EC(op_i, ops, cb, coh_send_sgl, coh_send_wr, coh_buf, coh_buf_i, br_tx, local_client_id, br_i);

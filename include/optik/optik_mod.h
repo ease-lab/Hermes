@@ -383,8 +383,10 @@ optik_lock(spacetime_object_meta* ol)
 static inline void
 optik_unlock_write(spacetime_object_meta* ol, uint8_t cid, uint32_t* resp_version)
 {
-    //assert(ol->lock == OPTIK_LOCKED);
-    //assert(ol->version % 2 == 1);
+    if(ENABLE_ASSERTIONS){
+        assert(ol->lock == OPTIK_LOCKED);
+        assert(ol->version % 2 == 1);
+    }
     ol->tie_breaker_id = cid;
     *resp_version = ++ol->version;
     COMPILER_NO_REORDER(ol->lock = OPTIK_FREE);

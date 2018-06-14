@@ -6,16 +6,16 @@
 #define SPACETIME_CONFIG_H
 #include "hrd.h"
 
-#define ENABLE_ASSERTIONS 0
-#define MACHINE_NUM 2
+#define ENABLE_ASSERTIONS 1
+#define MACHINE_NUM 3
 #define REMOTE_MACHINES (MACHINE_NUM - 1)
 #define GROUP_MEMBERSHIP_ARRAY_SIZE  CEILING(MACHINE_NUM, 8) //assuming uint8_t
 #define WORKERS_PER_MACHINE 20
 #define ENABLE_HYPERTHREADING 1
 #define KV_SOCKET 0
 #define START_SPAWNING_THREADS_FROM_SOCKET 0
-#define WRITE_RATIO 200
-#define MAX_BATCH_OPS_SIZE 200 //30 //5
+#define WRITE_RATIO 1000
+#define MAX_BATCH_OPS_SIZE 150 //30 //5
 
 //TRACE
 #define FEED_FROM_TRACE 0
@@ -23,21 +23,22 @@
 #define USE_A_SINGLE_KEY 0
 
 
-/*-------------------------------------------------
------------------PCIe BATCHING---------------------
---------------------------------------------------*/
-#define MAX_PCIE_BCAST_BATCH 80  //(128 / (MACHINE_NUM - 1)) // how many broadcasts can fit in a batch
-#define MAX_MSGS_IN_PCIE_BCAST_BATCH (MAX_PCIE_BCAST_BATCH * REMOTE_MACHINES) //must be smaller than the q_depth
 
 /*-------------------------------------------------
 -----------------FLOW CONTROL---------------------
 --------------------------------------------------*/
-#define CREDITS_PER_REMOTE_WORKER MAX_BATCH_OPS_SIZE  //3 //60 //30
+#define CREDITS_PER_REMOTE_WORKER 185 ///MAX_BATCH_OPS_SIZE //3 //60 //30
 #define INV_CREDITS CREDITS_PER_REMOTE_WORKER
 #define ACK_CREDITS CREDITS_PER_REMOTE_WORKER
 #define VAL_CREDITS CREDITS_PER_REMOTE_WORKER
 #define CRD_CREDITS CREDITS_PER_REMOTE_WORKER
 #define CRDS_IN_MESSAGE 1 /* How many credits exist in a single back-pressure message- seems to be working with / 3*/
+
+/*-------------------------------------------------
+-----------------PCIe BATCHING---------------------
+--------------------------------------------------*/
+#define MAX_PCIE_BCAST_BATCH INV_CREDITS //(128 / (MACHINE_NUM - 1)) // how many broadcasts can fit in a batch
+#define MAX_MSGS_IN_PCIE_BCAST_BATCH (MAX_PCIE_BCAST_BATCH * REMOTE_MACHINES) //must be smaller than the q_depth
 
 /**/
 #define MAX_SEND_INV_WRS MAX_MSGS_IN_PCIE_BCAST_BATCH
@@ -62,12 +63,18 @@
 -----------------SELECTIVE SIGNALING---------------
 -------------------------------------------------*/
 #define MIN_SS_GRANULARITY 127// The minimum ss batch
-#define INV_SS_GRANULARITY MAX((MIN_SS_GRANULARITY / REMOTE_MACHINES), \
-                                MAX_MSGS_IN_PCIE_BCAST_BATCH + 3)
-#define ACK_SS_GRANULARITY MAX(MIN_SS_GRANULARITY, (MAX_SEND_ACK_WRS + 3))
-#define VAL_SS_GRANULARITY MAX((MIN_SS_GRANULARITY / REMOTE_MACHINES), \
-                                MAX_MSGS_IN_PCIE_BCAST_BATCH + 3)
-#define CRD_SS_GRANULARITY MAX(MIN_SS_GRANULARITY, (MAX_SEND_CRD_WRS + 3))
+//#define INV_SS_GRANULARITY (MAX_MSGS_IN_PCIE_BCAST_BATCH + 3)
+#define INV_SS_GRANULARITY (MAX_PCIE_BCAST_BATCH + 1)
+#define ACK_SS_GRANULARITY (MAX_SEND_ACK_WRS + 1)
+#define VAL_SS_GRANULARITY (MAX_PCIE_BCAST_BATCH + 1)
+#define CRD_SS_GRANULARITY (MAX_SEND_CRD_WRS + 1)
+
+//#define INV_SS_GRANULARITY MAX((MIN_SS_GRANULARITY / REMOTE_MACHINES), \
+//                               (MAX_PCIE_BCAST_BATCH + 1))
+//#define ACK_SS_GRANULARITY MAX(MIN_SS_GRANULARITY, (MAX_SEND_ACK_WRS + 1))
+//#define VAL_SS_GRANULARITY MAX((MIN_SS_GRANULARITY / REMOTE_MACHINES), \
+//                               (MAX_PCIE_BCAST_BATCH + 1))
+//#define CRD_SS_GRANULARITY MAX(MIN_SS_GRANULARITY, (MAX_SEND_CRD_WRS + 1))
 
 /*-------------------------------------------------
 -----------------QPs & QUEUE DEPTHS----------------
