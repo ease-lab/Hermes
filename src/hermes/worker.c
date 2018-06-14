@@ -57,17 +57,16 @@ void *run_worker(void *arg){
 
 	int inv_push_recv_ptr = 0, inv_pull_recv_ptr = -1,
 		ack_push_recv_ptr = 0, ack_pull_recv_ptr = -1,
-		val_push_recv_ptr = 0, val_pull_recv_ptr = -1,
-		crd_push_recv_ptr = 0, crd_pull_recv_ptr = -1;
-	int inv_push_send_ptr = 0, ack_push_send_ptr = 0,
-		val_push_send_ptr = 0, crd_push_send_ptr = 0;
+		val_push_recv_ptr = 0, val_pull_recv_ptr = -1;
+	int inv_push_send_ptr = 0, ack_push_send_ptr =  0, val_push_send_ptr = 0;
+
    	int i;
 	//init receiv buffs as empty (not need for CRD since CRD msgs are (immediate) header-only
-	for(i = 0; i < RECV_INV_Q_DEPTH; i ++)
+	for(i = 0; i < RECV_INV_Q_DEPTH; i++)
         incoming_invs[i].req.opcode = ST_EMPTY;
-	for(i = 0; i < RECV_ACK_Q_DEPTH; i ++)
+	for(i = 0; i < RECV_ACK_Q_DEPTH; i++)
 		incoming_acks[i].req.opcode = ST_EMPTY;
-	for(i = 0; i < RECV_VAL_Q_DEPTH; i ++)
+	for(i = 0; i < RECV_VAL_Q_DEPTH; i++)
 		incoming_vals[i].req.opcode = ST_EMPTY;
 
 	/* Post receives, we need to do this early */
@@ -78,9 +77,8 @@ void *run_worker(void *arg){
 		if(ENABLE_POST_RECV_PRINTS && ENABLE_VAL_PRINTS && worker_lid == 0)
 			yellow_printf("vvv Post Initial Receives: \033[1m\033[32mVALs\033[0m %d\n", MAX_RECV_VAL_WRS);
 		post_receives(cb, MAX_RECV_VAL_WRS, ST_VAL_BUFF, incoming_vals, &val_push_recv_ptr);
-        //TODO it seems like we need to overprovision recvs for ACKs
-		post_receives(cb, 3, ST_ACK_BUFF, incoming_acks, &ack_push_recv_ptr);
-//		post_credit_recvs(cb, recv_crd_wr,3);
+
+		post_receives(cb, 3, ST_ACK_BUFF, incoming_acks, &ack_push_recv_ptr);//TODO it seems like we need to overprovision recvs for ACKs
 	}
 	setup_qps(worker_gid, cb);
 
@@ -103,7 +101,6 @@ void *run_worker(void *arg){
 			  send_ack_wr, send_ack_sgl, recv_ack_wr, recv_ack_sgl,
 			  send_val_wr, send_val_sgl, recv_val_wr, recv_val_sgl, cb, worker_lid);
 
-	int j;
 	long long rolling_iter = 0; /* For throughput measurement */
 	uint32_t trace_iter = 0, credit_debug_cnt = 0, refill_ops_debug_cnt = 0;
 	long long int inv_br_tx = 0, val_br_tx = 0, send_ack_tx = 0, send_crd_tx = 0;
@@ -131,15 +128,14 @@ void *run_worker(void *arg){
             if(w_stats[worker_lid].received_invs_per_worker != w_stats[worker_lid].issued_acks_per_worker)
 				red_printf("\tFollower:    received invs: %d issued acks: %d\n",
 					   w_stats[worker_lid].received_invs_per_worker, w_stats[worker_lid].issued_acks_per_worker);
-
 			refill_ops_debug_cnt = 0;
 		}
 
        	refill_ops(&trace_iter, worker_lid, trace, ops, &refill_ops_debug_cnt);
 
 		if(ENABLE_ASSERTIONS)
-			for(j = 0; j < MAX_BATCH_OPS_SIZE; j++)
-				assert(ops[j].opcode == ST_OP_PUT || ops[j].opcode == ST_OP_GET);
+			for(i = 0; i < MAX_BATCH_OPS_SIZE; i++)
+				assert(ops[i].opcode == ST_OP_PUT || ops[i].opcode == ST_OP_GET);
 
 		spacetime_batch_ops(MAX_BATCH_OPS_SIZE, &ops, worker_lid, refill_ops_debug_cnt);
 
@@ -151,12 +147,12 @@ void *run_worker(void *arg){
 							incoming_acks, &ack_push_recv_ptr, worker_lid, &credit_debug_cnt);
 
 			if(ENABLE_ASSERTIONS)
-				for(j = 0; j < MAX_BATCH_OPS_SIZE; j++)
-					assert(ops[j].state == ST_BUFFERED_IN_PROGRESS_REPLAY ||
-						   ops[j].state == ST_IN_PROGRESS_WRITE ||
-						   ops[j].state == ST_PUT_SUCCESS ||
-						   ops[j].state == ST_PUT_STALL ||
-						   ops[j].opcode == ST_OP_GET);
+				for(i = 0; i < MAX_BATCH_OPS_SIZE; i++)
+					assert(ops[i].state == ST_BUFFERED_IN_PROGRESS_REPLAY ||
+						   ops[i].state == ST_IN_PROGRESS_WRITE ||
+						   ops[i].state == ST_PUT_SUCCESS ||
+						   ops[i].state == ST_PUT_STALL ||
+						   ops[i].opcode == ST_OP_GET);
 
 			///Poll for INVs
 			poll_buff(incoming_invs, ST_INV_BUFF, &inv_pull_recv_ptr, inv_recv_ops,
@@ -183,13 +179,13 @@ void *run_worker(void *arg){
 			if(ack_ops_i > 0){
 				spacetime_batch_acks(ack_ops_i, &ack_recv_ops, ops, worker_lid);
 				if(ENABLE_ASSERTIONS)
-					for(j = 0; j < MAX_BATCH_OPS_SIZE; j++)
-						assert(ops[j].state == ST_BUFFERED_IN_PROGRESS_REPLAY ||
-							   ops[j].state == ST_IN_PROGRESS_WRITE ||
-							   ops[j].state == ST_PUT_SUCCESS ||
-							   ops[j].state == ST_PUT_COMPLETE ||
-							   ops[j].state == ST_PUT_STALL ||
-							   ops[j].opcode == ST_OP_GET);
+					for(i = 0; i < MAX_BATCH_OPS_SIZE; i++)
+						assert(ops[i].state == ST_BUFFERED_IN_PROGRESS_REPLAY ||
+							   ops[i].state == ST_IN_PROGRESS_WRITE ||
+							   ops[i].state == ST_PUT_SUCCESS ||
+							   ops[i].state == ST_PUT_COMPLETE ||
+							   ops[i].state == ST_PUT_STALL ||
+							   ops[i].opcode == ST_OP_GET);
 
 				///~~~~~~~~~~~~~~~~~~~~~~VALS~~~~~~~~~~~~~~~~~~~~~~~~~~~
 				///BC vals and poll for credits

@@ -123,6 +123,7 @@ typedef struct {
     uint8_t tie_breaker_id;
     uint32_t version; ///timestamp{version+tie_braker_id}
 }spacetime_op_meta_t;
+
 /* Fixed-size 16 byte keys */
 typedef struct {
     uint64 __unused; // This should be 8B
@@ -155,7 +156,7 @@ typedef struct{
     spacetime_key_t key;	/* This must be the 1st field and 16B aligned */
     uint8_t opcode; //both recv / batch_op resp
     uint8_t sender;
-    uint8_t __unused; //align for using a single memcopy
+    uint8_t __unused; //align for using a single memcpy
     uint8_t tie_breaker_id;
     uint32_t version; ///timestamp{version+tie_braker_id}
 }spacetime_ack_t, spacetime_val_t;
@@ -165,6 +166,21 @@ typedef struct{
     uint8_t sender;
     uint8_t val_credits;
 }spacetime_crd_t;
+
+typedef struct {
+    uint8_t req_num;
+    spacetime_inv_t reqs[INV_MAX_REQ_COALESCE];
+}spacetime_inv_packet_t;
+
+typedef struct {
+    uint8_t req_num;
+    spacetime_ack_t reqs[ACK_MAX_REQ_COALESCE];
+}spacetime_ack_packet_t;
+
+typedef struct {
+    uint8_t req_num;
+    spacetime_val_t reqs[VAL_MAX_REQ_COALESCE];
+}spacetime_val_packet_t;
 
 
 typedef struct {

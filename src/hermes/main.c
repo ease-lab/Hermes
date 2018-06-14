@@ -29,6 +29,7 @@ int main(int argc, char *argv[]){
     assert(MACHINE_NUM <= GROUP_MEMBERSHIP_ARRAY_SIZE * 8);//bit vector for acks / group membership
     assert(sizeof(spacetime_crd_t) < sizeof(((struct ibv_send_wr*)0)->imm_data)); //for inlined credits
 
+
     assert(MAX_PCIE_BCAST_BATCH <= INV_CREDITS);
 	assert(MAX_PCIE_BCAST_BATCH <= VAL_CREDITS);
 
@@ -107,10 +108,12 @@ int main(int argc, char *argv[]){
 		pthread_attr_setaffinity_np(&attr, sizeof(cpu_set_t), &cpus_w);
 		pthread_create(&thread_arr[i], &attr, run_worker, &param_arr[i]);
 	}
-	green_printf("{Sizes} Op: %d, Meta %d, Value %d,\n",
+	yellow_printf("{Sizes} Op: %d, Meta %d, Value %d,\n",
 				 sizeof(spacetime_op_t), sizeof(spacetime_object_meta), ST_VALUE_SIZE);
-	green_printf("{Sizes} Inv: %d, Ack: %d, Val: %d, Crd: %d\n",
+	yellow_printf("{Op Sizes} Inv: %d, Ack: %d, Val: %d, Crd: %d\n",
 				 sizeof(spacetime_inv_t), sizeof(spacetime_ack_t), sizeof(spacetime_val_t), sizeof(spacetime_crd_t));
+	yellow_printf("{Max Coalesce Packet Sizes} Inv: %d, Ack: %d, Val: %d\n",
+				 sizeof(spacetime_inv_packet_t), sizeof(spacetime_ack_packet_t), sizeof(spacetime_val_packet_t));
 
 	for(i = 0; i < WORKERS_PER_MACHINE; i++)
 		pthread_join(thread_arr[i], NULL);
