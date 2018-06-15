@@ -63,11 +63,13 @@ void *run_worker(void *arg){
    	int i;
 	//init receiv buffs as empty (not need for CRD since CRD msgs are (immediate) header-only
 	for(i = 0; i < RECV_INV_Q_DEPTH; i++)
-        incoming_invs[i].req.opcode = ST_EMPTY;
+        incoming_invs[i].packet.req_num = 0;
 	for(i = 0; i < RECV_ACK_Q_DEPTH; i++)
-		incoming_acks[i].req.opcode = ST_EMPTY;
+		incoming_acks[i].packet.req_num = 0;
+//		incoming_acks[i].req.opcode = ST_EMPTY;
 	for(i = 0; i < RECV_VAL_Q_DEPTH; i++)
-		incoming_vals[i].req.opcode = ST_EMPTY;
+		incoming_vals[i].packet.req_num = 0;
+//		incoming_vals[i].req.opcode = ST_EMPTY;
 
 	/* Post receives, we need to do this early */
 	if (WRITE_RATIO > 0){
@@ -86,12 +88,16 @@ void *run_worker(void *arg){
 	uint16_t outstanding_invs = 0, outstanding_acks = 0, outstanding_vals = 0;
 
 	spacetime_op_t *ops;
-	spacetime_inv_t *inv_recv_ops, *inv_send_ops;
-	spacetime_ack_t *ack_recv_ops, *ack_send_ops;
+	spacetime_inv_t *inv_recv_ops; //, *inv_send_ops;
+	spacetime_ack_t *ack_recv_ops; //, *ack_send_ops;
 	spacetime_val_t *val_recv_ops, *val_send_ops;
 
+    spacetime_inv_packet_t *inv_send_packet_ops;
+	spacetime_ack_packet_t *ack_send_packet_ops;
+	spacetime_val_packet_t *val_send_packet_ops;
+
 	setup_ops(&ops, &inv_recv_ops, &ack_recv_ops,
-			  &val_recv_ops, &inv_send_ops, &ack_send_ops, &val_send_ops);
+			  &val_recv_ops, &inv_send_packet_ops, &ack_send_packet_ops, &val_send_ops);
 
 	///if no inlinig declare & set_up_mrs()
 	//struct ibv_mr *inv_mr, *ack_mr, *val_mr, *crd_mr;
@@ -142,7 +148,7 @@ void *run_worker(void *arg){
 		if (WRITE_RATIO > 0) {
 			///~~~~~~~~~~~~~~~~~~~~~~INVS~~~~~~~~~~~~~~~~~~~~~~~~~~~
 			///TODO remove credits recv etc from bcst_invs
-			broadcasts_invs(ops, inv_send_ops, &inv_push_send_ptr,
+			broadcasts_invs(ops, inv_send_packet_ops, &inv_push_send_ptr,
 							send_inv_wr, send_inv_sgl, credits, cb, &inv_br_tx,
 							incoming_acks, &ack_push_recv_ptr, worker_lid, &credit_debug_cnt);
 
@@ -166,9 +172,9 @@ void *run_worker(void *arg){
 				outstanding_invs = 0; //TODO this is only for testing
 
 				///~~~~~~~~~~~~~~~~~~~~~~ACKS~~~~~~~~~~~~~~~~~~~~~~~~~~~
-				issue_acks(inv_recv_ops, ack_send_ops, &ack_push_send_ptr,
-						   &send_ack_tx, send_ack_wr, send_ack_sgl, credits,
-						   cb, incoming_invs, &inv_push_recv_ptr, worker_lid, &credit_debug_cnt);
+				issue_acks(inv_recv_ops, ack_send_packet_ops, &send_ack_tx, send_ack_wr,
+						   send_ack_sgl, credits, cb, incoming_invs,
+						   &inv_push_recv_ptr, worker_lid, &credit_debug_cnt);
 				inv_ops_i = 0;
 			}
 
@@ -176,6 +182,7 @@ void *run_worker(void *arg){
 			poll_buff(incoming_acks, ST_ACK_BUFF, &ack_pull_recv_ptr, ack_recv_ops,
 					  &ack_ops_i, outstanding_acks, cb->dgram_recv_cq[ACK_UD_QP_ID],
 					  recv_ack_wc, credits, worker_lid);
+
 			if(ack_ops_i > 0){
 				spacetime_batch_acks(ack_ops_i, &ack_recv_ops, ops, worker_lid);
 				if(ENABLE_ASSERTIONS)
@@ -187,14 +194,16 @@ void *run_worker(void *arg){
 							   ops[i].state == ST_PUT_STALL ||
 							   ops[i].opcode == ST_OP_GET);
 
+				outstanding_acks = 0; //TODO this is only for testing
 				///~~~~~~~~~~~~~~~~~~~~~~VALS~~~~~~~~~~~~~~~~~~~~~~~~~~~
 				///BC vals and poll for credits
-				broadcasts_vals(ack_recv_ops, val_send_ops, &val_push_send_ptr,
-								send_val_wr, send_val_sgl, credits, cb, recv_crd_wc,
-								&credit_debug_cnt, &val_br_tx, recv_crd_wr, worker_lid);
+//				broadcasts_vals(ack_recv_ops, val_send_ops, &val_push_send_ptr,
+//								send_val_wr, send_val_sgl, credits, cb, recv_crd_wc,
+//								&credit_debug_cnt, &val_br_tx, recv_crd_wr, worker_lid);
 				ack_ops_i = 0;
 			}
 
+            /*
             ///TODO outstandig_vals are not really required
 			///Poll for Vals
             poll_buff(incoming_vals, ST_VAL_BUFF, &val_pull_recv_ptr, val_recv_ops,
@@ -209,6 +218,7 @@ void *run_worker(void *arg){
 							  cb, incoming_vals, &val_push_recv_ptr, worker_lid, &credit_debug_cnt);
                 val_ops_i = 0;
             }
+             */
 		}
 		rolling_iter++;
 	}

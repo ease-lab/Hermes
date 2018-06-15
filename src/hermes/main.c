@@ -23,9 +23,9 @@ int main(int argc, char *argv[]){
 
     assert(MICA_MAX_VALUE >= ST_VALUE_SIZE);
     assert(MACHINE_NUM <= 8); //TODO haven't test bit vectors with more than 8 nodes
-	assert(sizeof(ud_req_inv_t) == sizeof(struct ibv_grh) + sizeof(spacetime_inv_t));
-	assert(sizeof(ud_req_ack_t) == sizeof(struct ibv_grh) + sizeof(spacetime_ack_t));
-	assert(sizeof(ud_req_val_t) == sizeof(struct ibv_grh) + sizeof(spacetime_val_t));
+//	assert(sizeof(ud_req_inv_t) == sizeof(struct ibv_grh) + sizeof(spacetime_inv_t));
+//	assert(sizeof(ud_req_ack_t) == sizeof(struct ibv_grh) + sizeof(spacetime_ack_t));
+//	assert(sizeof(ud_req_val_t) == sizeof(struct ibv_grh) + sizeof(spacetime_val_t));
     assert(MACHINE_NUM <= GROUP_MEMBERSHIP_ARRAY_SIZE * 8);//bit vector for acks / group membership
     assert(sizeof(spacetime_crd_t) < sizeof(((struct ibv_send_wr*)0)->imm_data)); //for inlined credits
 
@@ -54,10 +54,14 @@ int main(int argc, char *argv[]){
 //	assert(sizeof(ud_req_crd_t) == sizeof(struct ibv_grh) + sizeof(spacetime_crd_t)); ///CRD --> 48 Bytes instead of 43
 
 	printf("CREDITS %d\n",CREDITS_PER_REMOTE_WORKER);
-	printf("INV_SS_GRANULARITY %d \t\t SEND_INV_Q_DEPTH %d\n",INV_SS_GRANULARITY,SEND_INV_Q_DEPTH);
-	printf("ACK_SS_GRANULARITY %d \t\t SEND_ACK_Q_DEPTH %d\n",ACK_SS_GRANULARITY,SEND_ACK_Q_DEPTH);
-	printf("VAL_SS_GRANULARITY %d \t\t SEND_VAL_Q_DEPTH %d\n",VAL_SS_GRANULARITY,SEND_VAL_Q_DEPTH);
-	printf("CRD_SS_GRANULARITY %d \t\t SEND_CRD_Q_DEPTH %d\n",CRD_SS_GRANULARITY,SEND_CRD_Q_DEPTH);
+	printf("INV_SS_GRANULARITY %d \t\t SEND_INV_Q_DEPTH %d \t\t RECV_INV_Q_DEPTH %d\n",
+		   INV_SS_GRANULARITY, SEND_INV_Q_DEPTH, RECV_INV_Q_DEPTH);
+	printf("ACK_SS_GRANULARITY %d \t\t SEND_ACK_Q_DEPTH %d \t\t RECV_ACK_Q_DEPTH %d\n",
+		   ACK_SS_GRANULARITY, SEND_ACK_Q_DEPTH, RECV_ACK_Q_DEPTH);
+	printf("VAL_SS_GRANULARITY %d \t\t SEND_VAL_Q_DEPTH %d \t\t RECV_VAL_Q_DEPTH %d\n",
+		   VAL_SS_GRANULARITY, SEND_VAL_Q_DEPTH, RECV_VAL_Q_DEPTH);
+	printf("CRD_SS_GRANULARITY %d \t\t SEND_CRD_Q_DEPTH %d \t\t RECV_CRD_Q_DEPTH %d\n",
+		   CRD_SS_GRANULARITY, SEND_CRD_Q_DEPTH, RECV_CRD_Q_DEPTH);
 
 	struct thread_params *param_arr;
 	pthread_t *thread_arr;

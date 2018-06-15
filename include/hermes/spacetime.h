@@ -182,21 +182,38 @@ typedef struct {
     spacetime_val_t reqs[VAL_MAX_REQ_COALESCE];
 }spacetime_val_packet_t;
 
+/**/
 
 typedef struct {
     struct ibv_grh grh;
-    spacetime_inv_t req;
+    spacetime_inv_packet_t packet;
 }ud_req_inv_t;
 
 typedef struct {
     struct ibv_grh grh;
-    spacetime_ack_t req;
+    spacetime_ack_packet_t packet;
 }ud_req_ack_t;
 
 typedef struct {
     struct ibv_grh grh;
-    spacetime_val_t req;
+    spacetime_val_packet_t packet;
 }ud_req_val_t;
+
+//
+//typedef struct {
+//    struct ibv_grh grh;
+//    spacetime_inv_t req;
+//}ud_req_inv_t;
+//
+//typedef struct {
+//    struct ibv_grh grh;
+//    spacetime_ack_t req;
+//}ud_req_ack_t;
+//
+//typedef struct {
+//    struct ibv_grh grh;
+//    spacetime_val_t req;
+//}ud_req_val_t;
 
 typedef struct {
     struct ibv_grh grh;

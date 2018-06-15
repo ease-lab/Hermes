@@ -71,8 +71,8 @@ void setup_q_depths(int** recv_q_depths, int** send_q_depths);
 char* code_to_str(uint8_t code);
 void setup_ops(spacetime_op_t **ops,
 			   spacetime_inv_t **inv_recv_ops, spacetime_ack_t **ack_recv_ops,
-			   spacetime_val_t **val_recv_ops, spacetime_inv_t **inv_send_ops,
-			   spacetime_ack_t **ack_send_ops, spacetime_val_t **val_send_ops);
+			   spacetime_val_t **val_recv_ops, spacetime_inv_packet_t **inv_send_ops,
+			   spacetime_ack_packet_t **ack_send_ops, spacetime_val_t **val_send_ops);
 void setup_credits(uint8_t credits[][MACHINE_NUM],     struct hrd_ctrl_blk *cb,
 				   struct ibv_send_wr* credit_send_wr, struct ibv_sge* credit_send_sgl,
 				   struct ibv_recv_wr* credit_recv_wr, struct ibv_sge* credit_recv_sgl);

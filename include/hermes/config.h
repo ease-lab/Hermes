@@ -6,16 +6,16 @@
 #define SPACETIME_CONFIG_H
 #include "hrd.h"
 
-#define ENABLE_ASSERTIONS 0
-#define MACHINE_NUM 3
+#define ENABLE_ASSERTIONS 1
+#define MACHINE_NUM 2
 #define REMOTE_MACHINES (MACHINE_NUM - 1)
 #define GROUP_MEMBERSHIP_ARRAY_SIZE  CEILING(MACHINE_NUM, 8) //assuming uint8_t
-#define WORKERS_PER_MACHINE 10
+#define WORKERS_PER_MACHINE 1
 #define ENABLE_HYPERTHREADING 1
 #define KV_SOCKET 0
 #define START_SPAWNING_THREADS_FROM_SOCKET 0
 #define WRITE_RATIO 1000
-#define MAX_BATCH_OPS_SIZE 185 //30 //5
+#define MAX_BATCH_OPS_SIZE 2 //30 //5
 
 //TRACE
 #define FEED_FROM_TRACE 0
@@ -27,7 +27,7 @@
 /*-------------------------------------------------
 -----------------FLOW CONTROL---------------------
 --------------------------------------------------*/
-#define CREDITS_PER_REMOTE_WORKER 150 ///MAX_BATCH_OPS_SIZE //3 //60 //30
+#define CREDITS_PER_REMOTE_WORKER 2 ///MAX_BATCH_OPS_SIZE //3 //60 //30
 #define INV_CREDITS CREDITS_PER_REMOTE_WORKER
 #define ACK_CREDITS CREDITS_PER_REMOTE_WORKER
 #define VAL_CREDITS CREDITS_PER_REMOTE_WORKER
@@ -87,7 +87,7 @@
 
 //RECV Depths
 #define RECV_INV_Q_DEPTH (MAX_RECV_INV_WRS + 3) /// it requires an upper bound
-#define RECV_ACK_Q_DEPTH (MAX_RECV_ACK_WRS + 3)
+#define RECV_ACK_Q_DEPTH (MAX_RECV_ACK_WRS + 6)
 #define RECV_VAL_Q_DEPTH (MAX_RECV_VAL_WRS + 3)
 #define RECV_CRD_Q_DEPTH (MAX_RECV_CRD_WRS + 3)
 
@@ -105,29 +105,29 @@
 /*-------------------------------------------------
 ----------------- REQ COALESCING -------------------
 --------------------------------------------------*/
-#define INV_MAX_REQ_COALESCE 1
-#define ACK_MAX_REQ_COALESCE 1
-#define VAL_MAX_REQ_COALESCE 1
+#define INV_MAX_REQ_COALESCE 2
+#define ACK_MAX_REQ_COALESCE 2
+#define VAL_MAX_REQ_COALESCE 2
 
 /*-------------------------------------------------
 -----------------PRINTS (DBG)---------------------
 --------------------------------------------------*/
-#define MAX_THREADS_TO_PRINT 0
+#define MAX_THREADS_TO_PRINT 1
 #define ENABLE_REQ_PRINTS 0
 #define ENABLE_BATCH_OP_PRINTS 0
-#define ENABLE_CREDIT_PRINTS 0
+#define ENABLE_CREDIT_PRINTS 1
 #define ENABLE_SEND_PRINTS 0
 #define ENABLE_POST_RECV_PRINTS 0
 #define ENABLE_RECV_PRINTS 0
-#define ENABLE_SS_PRINTS 1
-#define ENABLE_INV_PRINTS 1
-#define ENABLE_ACK_PRINTS 0
-#define ENABLE_VAL_PRINTS 1
+#define ENABLE_SS_PRINTS 0
+#define ENABLE_INV_PRINTS 0
+#define ENABLE_ACK_PRINTS 1
+#define ENABLE_VAL_PRINTS 0
 #define ENABLE_CRD_PRINTS 0
 
 //Stats
 #define EXIT_ON_PRINT 1
-#define PRINT_NUM 3
+#define PRINT_NUM 2
 #define MEASURE_LATENCY 0
 #define DUMP_STATS_2_FILE 0
 #define ENABLE_STAT_COUNTING 1
