@@ -351,7 +351,7 @@ void setup_credits(uint8_t credits[][MACHINE_NUM],     struct hrd_ctrl_blk *cb,
 void setup_ops(spacetime_op_t **ops,
 			   spacetime_inv_t **inv_recv_ops, spacetime_ack_t **ack_recv_ops,
 			   spacetime_val_t **val_recv_ops, spacetime_inv_packet_t** inv_send_packet_ops,
-			   spacetime_ack_packet_t** ack_send_packet_ops, spacetime_val_t **val_send_ops)
+			   spacetime_ack_packet_t** ack_send_packet_ops, spacetime_val_packet_t **val_send_packet_ops)
 {
     int i,j;
     *ops = memalign(4096, MAX_BATCH_OPS_SIZE * (sizeof(spacetime_op_t)));
@@ -368,10 +368,11 @@ void setup_ops(spacetime_op_t **ops,
 
 //	*inv_send_ops = (spacetime_inv_t*) malloc(MAX_BATCH_OPS_SIZE * sizeof(spacetime_inv_t));
 //	*ack_send_ops = (spacetime_ack_t*) malloc(MAX_BATCH_OPS_SIZE * sizeof(spacetime_ack_t));
+//    *val_send_ops = (spacetime_val_t*) malloc(MAX_BATCH_OPS_SIZE * sizeof(spacetime_val_t)); /* Batch of incoming broadcasts for the Cache*/
     *inv_send_packet_ops = (spacetime_inv_packet_t*) malloc(MAX_BATCH_OPS_SIZE * sizeof(spacetime_inv_packet_t));
     *ack_send_packet_ops = (spacetime_ack_packet_t*) malloc(MAX_BATCH_OPS_SIZE * sizeof(spacetime_ack_packet_t));
-	*val_send_ops = (spacetime_val_t*) malloc(MAX_BATCH_OPS_SIZE * sizeof(spacetime_val_t)); /* Batch of incoming broadcasts for the Cache*/
-	assert(*inv_send_packet_ops != NULL && *ack_send_packet_ops != NULL && *val_send_ops!= NULL);
+	*val_send_packet_ops = (spacetime_val_packet_t*) malloc(MAX_BATCH_OPS_SIZE * sizeof(spacetime_val_packet_t)); /* Batch of incoming broadcasts for the Cache*/
+	assert(*inv_send_packet_ops != NULL && *ack_send_packet_ops != NULL && *val_send_packet_ops!= NULL);
 //    assert(*inv_send_ops!= NULL && *ack_send_ops!= NULL && *val_send_ops!= NULL);
 
 	memset(*inv_recv_ops, 0, MAX_BATCH_OPS_SIZE * sizeof(spacetime_inv_t));
@@ -379,9 +380,10 @@ void setup_ops(spacetime_op_t **ops,
 	memset(*val_recv_ops, 0, MAX_BATCH_OPS_SIZE * sizeof(spacetime_val_t));
 //    memset(*inv_send_ops, 0, MAX_BATCH_OPS_SIZE * sizeof(spacetime_inv_t));
 //    memset(*ack_send_ops, 0, MAX_BATCH_OPS_SIZE * sizeof(spacetime_ack_t));
-	memset(*inv_send_packet_ops, 0, MAX_BATCH_OPS_SIZE * sizeof(spacetime_inv_t));
-	memset(*ack_send_packet_ops, 0, MAX_BATCH_OPS_SIZE * sizeof(spacetime_ack_t));
-	memset(*val_send_ops, 0, MAX_BATCH_OPS_SIZE * sizeof(spacetime_val_t));
+//    memset(*val_send_ops, 0, MAX_BATCH_OPS_SIZE * sizeof(spacetime_val_t));
+	memset(*inv_send_packet_ops, 0, MAX_BATCH_OPS_SIZE * sizeof(spacetime_inv_packet_t));
+	memset(*ack_send_packet_ops, 0, MAX_BATCH_OPS_SIZE * sizeof(spacetime_ack_packet_t));
+	memset(*val_send_packet_ops, 0, MAX_BATCH_OPS_SIZE * sizeof(spacetime_val_packet_t));
 
 	for(i = 0; i < MAX_BATCH_OPS_SIZE; i++) {
 		(*ops)[i].opcode = ST_EMPTY;
@@ -391,7 +393,7 @@ void setup_ops(spacetime_op_t **ops,
 		(*val_recv_ops)[i].opcode = ST_EMPTY;
 //		(*inv_send_ops)[i].opcode = ST_EMPTY;
 //		(*ack_send_ops)[i].opcode = ST_EMPTY;
-		(*val_send_ops)[i].opcode = ST_EMPTY;
+//		(*val_send_ops)[i].opcode = ST_EMPTY;
 
         (*inv_send_packet_ops)[i].req_num = 0;
         for(j = 0; j < INV_MAX_REQ_COALESCE; j++)
@@ -399,6 +401,9 @@ void setup_ops(spacetime_op_t **ops,
         (*ack_send_packet_ops)[i].req_num = 0;
         for(j = 0; j < ACK_MAX_REQ_COALESCE; j++)
             (*ack_send_packet_ops)[i].reqs[j].opcode = ST_EMPTY;
+        (*val_send_packet_ops)[i].req_num = 0;
+        for(j = 0; j < VAL_MAX_REQ_COALESCE; j++)
+            (*val_send_packet_ops)[i].reqs[j].opcode = ST_EMPTY;
 	}
 }
 

@@ -75,12 +75,15 @@ void *run_worker(void *arg){
 	if (WRITE_RATIO > 0){
 		if(ENABLE_POST_RECV_PRINTS && ENABLE_INV_PRINTS && worker_lid == 0)
 			yellow_printf("vvv Post Initial Receives: \033[31mINVs\033[0m %d\n", MAX_RECV_INV_WRS);
-		post_receives(cb, MAX_RECV_INV_WRS, ST_INV_BUFF, incoming_invs, &inv_push_recv_ptr);
+//		post_receives(cb, MAX_RECV_INV_WRS, ST_INV_BUFF, incoming_invs, &inv_push_recv_ptr);
+		post_receives(cb, 2 * MAX_RECV_INV_WRS, ST_INV_BUFF, incoming_invs, &inv_push_recv_ptr);
 		if(ENABLE_POST_RECV_PRINTS && ENABLE_VAL_PRINTS && worker_lid == 0)
 			yellow_printf("vvv Post Initial Receives: \033[1m\033[32mVALs\033[0m %d\n", MAX_RECV_VAL_WRS);
-		post_receives(cb, MAX_RECV_VAL_WRS, ST_VAL_BUFF, incoming_vals, &val_push_recv_ptr);
+//		post_receives(cb, MAX_RECV_VAL_WRS, ST_VAL_BUFF, incoming_vals, &val_push_recv_ptr);
+		post_receives(cb, 2 * MAX_RECV_VAL_WRS, ST_VAL_BUFF, incoming_vals, &val_push_recv_ptr);
 
-		post_receives(cb, 3, ST_ACK_BUFF, incoming_acks, &ack_push_recv_ptr);//TODO it seems like we need to overprovision recvs for ACKs
+//		post_receives(cb, 3, ST_ACK_BUFF, incoming_acks, &ack_push_recv_ptr);//TODO it seems like we need to overprovision recvs for ACKs
+		post_receives(cb, MAX_RECV_ACK_WRS, ST_ACK_BUFF, incoming_acks, &ack_push_recv_ptr);
 	}
 	setup_qps(worker_gid, cb);
 
@@ -88,16 +91,16 @@ void *run_worker(void *arg){
 	uint16_t outstanding_invs = 0, outstanding_acks = 0, outstanding_vals = 0;
 
 	spacetime_op_t *ops;
-	spacetime_inv_t *inv_recv_ops; //, *inv_send_ops;
-	spacetime_ack_t *ack_recv_ops; //, *ack_send_ops;
-	spacetime_val_t *val_recv_ops, *val_send_ops;
+	spacetime_inv_t *inv_recv_ops;
+	spacetime_ack_t *ack_recv_ops;
+	spacetime_val_t *val_recv_ops;
 
     spacetime_inv_packet_t *inv_send_packet_ops;
 	spacetime_ack_packet_t *ack_send_packet_ops;
 	spacetime_val_packet_t *val_send_packet_ops;
 
 	setup_ops(&ops, &inv_recv_ops, &ack_recv_ops,
-			  &val_recv_ops, &inv_send_packet_ops, &ack_send_packet_ops, &val_send_ops);
+			  &val_recv_ops, &inv_send_packet_ops, &ack_send_packet_ops, &val_send_packet_ops);
 
 	///if no inlinig declare & set_up_mrs()
 	//struct ibv_mr *inv_mr, *ack_mr, *val_mr, *crd_mr;
@@ -148,9 +151,9 @@ void *run_worker(void *arg){
 		if (WRITE_RATIO > 0) {
 			///~~~~~~~~~~~~~~~~~~~~~~INVS~~~~~~~~~~~~~~~~~~~~~~~~~~~
 			///TODO remove credits recv etc from bcst_invs
-			broadcasts_invs(ops, inv_send_packet_ops, &inv_push_send_ptr,
-							send_inv_wr, send_inv_sgl, credits, cb, &inv_br_tx,
-							incoming_acks, &ack_push_recv_ptr, worker_lid, &credit_debug_cnt);
+			broadcasts_invs(ops, inv_send_packet_ops, &inv_push_send_ptr, send_inv_wr,
+							send_inv_sgl, credits, cb, &inv_br_tx, incoming_acks,
+							&ack_push_recv_ptr, worker_lid, &credit_debug_cnt);
 
 			if(ENABLE_ASSERTIONS)
 				for(i = 0; i < MAX_BATCH_OPS_SIZE; i++)
@@ -197,13 +200,12 @@ void *run_worker(void *arg){
 				outstanding_acks = 0; //TODO this is only for testing
 				///~~~~~~~~~~~~~~~~~~~~~~VALS~~~~~~~~~~~~~~~~~~~~~~~~~~~
 				///BC vals and poll for credits
-//				broadcasts_vals(ack_recv_ops, val_send_ops, &val_push_send_ptr,
-//								send_val_wr, send_val_sgl, credits, cb, recv_crd_wc,
-//								&credit_debug_cnt, &val_br_tx, recv_crd_wr, worker_lid);
+				broadcasts_vals(ack_recv_ops, val_send_packet_ops, &val_push_send_ptr,
+								send_val_wr, send_val_sgl, credits, cb, recv_crd_wc,
+								&credit_debug_cnt, &val_br_tx, recv_crd_wr, worker_lid);
 				ack_ops_i = 0;
 			}
 
-            /*
             ///TODO outstandig_vals are not really required
 			///Poll for Vals
             poll_buff(incoming_vals, ST_VAL_BUFF, &val_pull_recv_ptr, val_recv_ops,
@@ -218,7 +220,6 @@ void *run_worker(void *arg){
 							  cb, incoming_vals, &val_push_recv_ptr, worker_lid, &credit_debug_cnt);
                 val_ops_i = 0;
             }
-             */
 		}
 		rolling_iter++;
 	}

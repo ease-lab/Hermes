@@ -21,13 +21,13 @@ void *print_stats(void* no_arg){
         print_count++;
         if (EXIT_ON_PRINT == 1 && print_count == PRINT_NUM) {
           if (MEASURE_LATENCY && machine_id == 0) print_latency_stats();
-//            for(i = 0; i < WORKERS_PER_MACHINE; i++)
-//                if(w_stats[i].received_invs_per_worker != w_stats[i].issued_acks_per_worker)
-//                    red_printf("\tFollower[%d]:    received invs: %d issued acks: %d\n",
-//                               i, w_stats[i].received_invs_per_worker,w_stats[i].issued_acks_per_worker);
-//                else
-//                    green_printf("\tFollower[%d]:    received invs: %d issued acks: %d\n",
-//                               i, w_stats[i].received_invs_per_worker,w_stats[i].issued_acks_per_worker);
+            for(i = 0; i < WORKERS_PER_MACHINE; i++)
+                if(w_stats[i].received_invs_per_worker != w_stats[i].issued_acks_per_worker)
+                    red_printf("\tFollower[%d]:    received invs: %d issued acks: %d\n",
+                               i, w_stats[i].received_invs_per_worker,w_stats[i].issued_acks_per_worker);
+                else
+                    green_printf("\tFollower[%d]:    received invs: %d issued acks: %d\n",
+                               i, w_stats[i].received_invs_per_worker,w_stats[i].issued_acks_per_worker);
             printf("---------------------------------------\n");
             printf("------------RUN TERMINATED-------------\n");
             printf("---------------------------------------\n");

@@ -26,6 +26,17 @@ struct worker_stats { // 2 cache lines
     long long received_vals_per_worker;
 	long long received_crds_per_worker;
 
+	long long issued_packet_acks_per_worker;
+    long long issued_packet_invs_per_worker;
+    long long issued_packet_vals_per_worker;
+	long long issued_packet_crds_per_worker;
+
+
+	long long received_packet_acks_per_worker;
+    long long received_packet_invs_per_worker;
+    long long received_packet_vals_per_worker;
+	long long received_packet_crds_per_worker;
+
     long long batches_per_worker;
     long long remote_messages_per_worker;
 
@@ -72,7 +83,7 @@ char* code_to_str(uint8_t code);
 void setup_ops(spacetime_op_t **ops,
 			   spacetime_inv_t **inv_recv_ops, spacetime_ack_t **ack_recv_ops,
 			   spacetime_val_t **val_recv_ops, spacetime_inv_packet_t **inv_send_ops,
-			   spacetime_ack_packet_t **ack_send_ops, spacetime_val_t **val_send_ops);
+			   spacetime_ack_packet_t **ack_send_ops, spacetime_val_packet_t **val_send_ops);
 void setup_credits(uint8_t credits[][MACHINE_NUM],     struct hrd_ctrl_blk *cb,
 				   struct ibv_send_wr* credit_send_wr, struct ibv_sge* credit_send_sgl,
 				   struct ibv_recv_wr* credit_recv_wr, struct ibv_sge* credit_recv_sgl);

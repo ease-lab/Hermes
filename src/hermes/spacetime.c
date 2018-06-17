@@ -383,11 +383,20 @@ void spacetime_batch_invs(int op_num, spacetime_inv_t **op, int thread_id)
 	int key_in_store[MAX_BATCH_OPS_SIZE];	/* Is this key in the datastore? */
 	struct mica_op *kv_ptr[MAX_BATCH_OPS_SIZE];	/* Ptr to KV item in log */
 
+
 	/*
 	 * We first lookup the key in the datastore. The first two @I loops work
 	 * for both GETs and PUTs.
 	 */
 	for(I = 0; I < op_num; I++) {
+        if(ENABLE_ASSERTIONS){
+            if(!(REMOTE_MACHINES != 1 || (*op)[I].sender == REMOTE_MACHINES - machine_id))
+                printf("I: %d\n", I);
+			assert(REMOTE_MACHINES != 1 || (*op)[I].sender == REMOTE_MACHINES - machine_id);
+			assert(REMOTE_MACHINES != 1 || (*op)[I].tie_breaker_id == REMOTE_MACHINES - machine_id);
+            assert((*op)[I].opcode == ST_OP_INV);
+			assert((*op)[I].val_len == ST_VALUE_SIZE);
+		}
 		///if (ENABLE_WAKE_UP == 1)
 		///	if (resp[I].type == CACHE_GET_STALL || resp[I].type == CACHE_PUT_STALL) continue;
 		bkt[I] = (*op)[I].key.bkt & kv.hash_table.bkt_mask;
@@ -523,8 +532,11 @@ void spacetime_batch_invs(int op_num, spacetime_inv_t **op, int thread_id)
 			(*op)[I].opcode = ST_MISS;
 	}
 	if(ENABLE_ASSERTIONS)
-		for(I = 0; I < op_num; I++)
+		for(I = 0; I < op_num; I++){
+			if((*op)[I].opcode != ST_INV_SUCCESS)
+				printf("Code: %s\n",code_to_str((*op)[I].opcode));
 			assert((*op)[I].opcode == ST_INV_SUCCESS);
+		}
 }
 
 
@@ -762,6 +774,13 @@ void spacetime_batch_vals(int op_num, spacetime_val_t **op, int thread_id)
 	 * for both GETs and PUTs.
 	 */
 	for(I = 0; I < op_num; I++) {
+		if(ENABLE_ASSERTIONS){
+//            if(!(REMOTE_MACHINES != 1 || (*op)[I].sender == REMOTE_MACHINES - machine_id))
+//                printf("I: %d\n", I);
+			assert(REMOTE_MACHINES != 1 || (*op)[I].sender == REMOTE_MACHINES - machine_id);
+			assert(REMOTE_MACHINES != 1 || (*op)[I].tie_breaker_id == REMOTE_MACHINES - machine_id);
+            assert((*op)[I].opcode == ST_OP_VAL);
+		}
 		///if (ENABLE_WAKE_UP == 1)
 		///	if (resp[I].type == CACHE_GET_STALL || resp[I].type == CACHE_PUT_STALL) continue;
 		bkt[I] = (*op)[I].key.bkt & kv.hash_table.bkt_mask;
