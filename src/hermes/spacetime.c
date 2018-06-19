@@ -391,18 +391,18 @@ void spacetime_batch_invs(int op_num, spacetime_inv_t **op, int thread_id)
 	for(I = 0; I < op_num; I++)
 		mica_print_op(&(*op)[I]);
 #endif
+
+	unsigned int bkt[MAX_BATCH_OPS_SIZE * INV_MAX_REQ_COALESCE];
+	struct mica_bkt *bkt_ptr[MAX_BATCH_OPS_SIZE * INV_MAX_REQ_COALESCE];
+	unsigned int tag[MAX_BATCH_OPS_SIZE * INV_MAX_REQ_COALESCE];
+	int key_in_store[MAX_BATCH_OPS_SIZE * INV_MAX_REQ_COALESCE];	/* Is this key in the datastore? */
+	struct mica_op *kv_ptr[MAX_BATCH_OPS_SIZE * INV_MAX_REQ_COALESCE];	/* Ptr to KV item in log */
+
 	if(ENABLE_BATCH_OP_PRINTS && ENABLE_INV_PRINTS && thread_id < MAX_THREADS_TO_PRINT)
 		red_printf("[W%d] Batch INVs (op num: %d)!\n", thread_id, op_num);
 
-	unsigned int bkt[MAX_BATCH_OPS_SIZE ];
-	struct mica_bkt *bkt_ptr[MAX_BATCH_OPS_SIZE];
-	unsigned int tag[MAX_BATCH_OPS_SIZE];
-	int key_in_store[MAX_BATCH_OPS_SIZE];	/* Is this key in the datastore? */
-	struct mica_op *kv_ptr[MAX_BATCH_OPS_SIZE];	/* Ptr to KV item in log */
-
-
 	if(ENABLE_ASSERTIONS)
-		assert(op_num <= MAX_BATCH_OPS_SIZE);
+		assert(op_num <= MAX_BATCH_OPS_SIZE * INV_MAX_REQ_COALESCE);
 	/*
 	 * We first lookup the key in the datastore. The first two @I loops work
 	 * for both GETs and PUTs.
@@ -577,14 +577,14 @@ void spacetime_batch_acks(int op_num, spacetime_ack_t **op, spacetime_op_t* read
 	if(ENABLE_BATCH_OP_PRINTS && ENABLE_ACK_PRINTS && thread_id < MAX_THREADS_TO_PRINT)
 		red_printf("[W%d] Batch ACKs (op num: %d)!\n",thread_id, op_num);
 
-	unsigned int bkt[MAX_BATCH_OPS_SIZE];
-	struct mica_bkt *bkt_ptr[MAX_BATCH_OPS_SIZE];
-	unsigned int tag[MAX_BATCH_OPS_SIZE];
-	int key_in_store[MAX_BATCH_OPS_SIZE];	/* Is this key in the datastore? */
-	struct mica_op *kv_ptr[MAX_BATCH_OPS_SIZE];	/* Ptr to KV item in log */
+	unsigned int bkt[MAX_BATCH_OPS_SIZE * ACK_MAX_REQ_COALESCE];
+	struct mica_bkt *bkt_ptr[MAX_BATCH_OPS_SIZE * ACK_MAX_REQ_COALESCE];
+	unsigned int tag[MAX_BATCH_OPS_SIZE * ACK_MAX_REQ_COALESCE];
+	int key_in_store[MAX_BATCH_OPS_SIZE * ACK_MAX_REQ_COALESCE];	/* Is this key in the datastore? */
+	struct mica_op *kv_ptr[MAX_BATCH_OPS_SIZE * ACK_MAX_REQ_COALESCE];	/* Ptr to KV item in log */
 
 	if(ENABLE_ASSERTIONS)
-		assert(op_num <= MAX_BATCH_OPS_SIZE);
+		assert(op_num <= MAX_BATCH_OPS_SIZE * ACK_MAX_REQ_COALESCE);
 	/*
 	 * We first lookup the key in the datastore. The first two @I loops work
 	 * for both GETs and PUTs.
@@ -773,7 +773,8 @@ void spacetime_batch_acks(int op_num, spacetime_ack_t **op, spacetime_op_t* read
 		}
 	}
 
-	assert(complete_reqs_dbg_cnt == op_num);
+	if(ENABLE_ASSERTIONS)
+		assert(REMOTE_MACHINES != 1 || complete_reqs_dbg_cnt == op_num);
 }
 
 

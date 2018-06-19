@@ -361,23 +361,30 @@ void setup_ops(spacetime_op_t **ops,
 
     ///Network ops
 	///TODO should we memalign aswell?
-	*inv_recv_ops = (spacetime_inv_t*) malloc(MAX_BATCH_OPS_SIZE * sizeof(spacetime_inv_t));
-	*ack_recv_ops = (spacetime_ack_t*) malloc(MAX_BATCH_OPS_SIZE * sizeof(spacetime_ack_t));
+	*inv_recv_ops = (spacetime_inv_t*) malloc(MAX_BATCH_OPS_SIZE * INV_MAX_REQ_COALESCE * sizeof(spacetime_inv_t));
+	*ack_recv_ops = (spacetime_ack_t*) malloc(MAX_BATCH_OPS_SIZE * ACK_MAX_REQ_COALESCE * sizeof(spacetime_ack_t));
     *val_recv_ops = (spacetime_val_t*) malloc(MAX_BATCH_OPS_SIZE * VAL_MAX_REQ_COALESCE * sizeof(spacetime_val_t)); /* Batch of incoming broadcasts for the Cache*/
 	assert(*inv_recv_ops!= NULL && *ack_recv_ops!= NULL && *val_recv_ops!= NULL);
+
+    memset(*inv_recv_ops, 0, MAX_BATCH_OPS_SIZE * INV_MAX_REQ_COALESCE * sizeof(spacetime_inv_t));
+    memset(*ack_recv_ops, 0, MAX_BATCH_OPS_SIZE * ACK_MAX_REQ_COALESCE * sizeof(spacetime_ack_t));
+    memset(*val_recv_ops, 0, MAX_BATCH_OPS_SIZE * VAL_MAX_REQ_COALESCE * sizeof(spacetime_val_t));
 
     *inv_send_packet_ops = (spacetime_inv_packet_t*) malloc(MAX_BATCH_OPS_SIZE * sizeof(spacetime_inv_packet_t));
     *ack_send_packet_ops = (spacetime_ack_packet_t*) malloc(MAX_BATCH_OPS_SIZE * sizeof(spacetime_ack_packet_t));
 	*val_send_packet_ops = (spacetime_val_packet_t*) malloc(MAX_BATCH_OPS_SIZE * sizeof(spacetime_val_packet_t)); /* Batch of incoming broadcasts for the Cache*/
 	assert(*inv_send_packet_ops != NULL && *ack_send_packet_ops != NULL && *val_send_packet_ops!= NULL);
 
-	memset(*inv_recv_ops, 0, MAX_BATCH_OPS_SIZE * sizeof(spacetime_inv_t));
-	memset(*ack_recv_ops, 0, MAX_BATCH_OPS_SIZE * sizeof(spacetime_ack_t));
-	memset(*val_recv_ops, 0, MAX_BATCH_OPS_SIZE * VAL_MAX_REQ_COALESCE * sizeof(spacetime_val_t));
-
 	memset(*inv_send_packet_ops, 0, MAX_BATCH_OPS_SIZE * sizeof(spacetime_inv_packet_t));
 	memset(*ack_send_packet_ops, 0, MAX_BATCH_OPS_SIZE * sizeof(spacetime_ack_packet_t));
 	memset(*val_send_packet_ops, 0, MAX_BATCH_OPS_SIZE * sizeof(spacetime_val_packet_t));
+
+
+    for(i = 0; i < MAX_BATCH_OPS_SIZE * INV_MAX_REQ_COALESCE; i++)
+        (*inv_recv_ops)[i].opcode = ST_EMPTY;
+
+    for(i = 0; i < MAX_BATCH_OPS_SIZE * ACK_MAX_REQ_COALESCE; i++)
+        (*ack_recv_ops)[i].opcode = ST_EMPTY;
 
     for(i = 0; i < MAX_BATCH_OPS_SIZE * VAL_MAX_REQ_COALESCE; i++)
         (*val_recv_ops)[i].opcode = ST_EMPTY;
@@ -385,8 +392,6 @@ void setup_ops(spacetime_op_t **ops,
 	for(i = 0; i < MAX_BATCH_OPS_SIZE; i++) {
 		(*ops)[i].opcode = ST_EMPTY;
 		(*ops)[i].state = ST_EMPTY;
-		(*inv_recv_ops)[i].opcode = ST_EMPTY;
-		(*ack_recv_ops)[i].opcode = ST_EMPTY;
 
         (*inv_send_packet_ops)[i].req_num = 0;
         for(j = 0; j < INV_MAX_REQ_COALESCE; j++)
