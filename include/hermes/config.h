@@ -6,16 +6,16 @@
 #define SPACETIME_CONFIG_H
 #include "hrd.h"
 
-#define ENABLE_ASSERTIONS 0
+#define ENABLE_ASSERTIONS 1
 #define MACHINE_NUM 2
 #define REMOTE_MACHINES (MACHINE_NUM - 1)
 #define GROUP_MEMBERSHIP_ARRAY_SIZE  CEILING(MACHINE_NUM, 8) //assuming uint8_t
-#define WORKERS_PER_MACHINE 1
+#define WORKERS_PER_MACHINE 20
 #define ENABLE_HYPERTHREADING 1
 #define KV_SOCKET 0
 #define START_SPAWNING_THREADS_FROM_SOCKET 0
 #define WRITE_RATIO 1000
-#define MAX_BATCH_OPS_SIZE 5 //30 //5
+#define MAX_BATCH_OPS_SIZE 250 //30 //5
 
 //DEBUG
 #define DISABLE_VALS 0
@@ -30,7 +30,7 @@
 /*-------------------------------------------------
 ----------------- REQ COALESCING -------------------
 --------------------------------------------------*/
-#define MAX_REQ_COALESCE 2
+#define MAX_REQ_COALESCE 3
 #define INV_MAX_REQ_COALESCE MAX_REQ_COALESCE
 #define ACK_MAX_REQ_COALESCE MAX_REQ_COALESCE
 #define VAL_MAX_REQ_COALESCE MAX_REQ_COALESCE
@@ -39,7 +39,7 @@
 /*-------------------------------------------------
 -----------------FLOW CONTROL---------------------
 --------------------------------------------------*/
-#define CREDITS_PER_REMOTE_WORKER (10 * MAX_BATCH_OPS_SIZE) //(MAX_BATCH_OPS_SIZE / (MAX_REQ_COALESCE * 2)) //3 //60 //30
+#define CREDITS_PER_REMOTE_WORKER MAX_BATCH_OPS_SIZE //(MAX_BATCH_OPS_SIZE / (MAX_REQ_COALESCE * 2)) //3 //60 //30
 #define INV_CREDITS CREDITS_PER_REMOTE_WORKER
 #define ACK_CREDITS CREDITS_PER_REMOTE_WORKER
 #define VAL_CREDITS CREDITS_PER_REMOTE_WORKER
@@ -113,11 +113,11 @@
 #define ENABLE_CREDIT_PRINTS 0
 #define ENABLE_SEND_PRINTS 1
 #define ENABLE_POST_RECV_PRINTS 0
-#define ENABLE_RECV_PRINTS 1
+#define ENABLE_RECV_PRINTS 0
 #define ENABLE_SS_PRINTS 0
 #define ENABLE_INV_PRINTS 0
 #define ENABLE_ACK_PRINTS 0
-#define ENABLE_VAL_PRINTS 1
+#define ENABLE_VAL_PRINTS 0
 #define ENABLE_CRD_PRINTS 0
 
 //Stats
@@ -130,8 +130,6 @@
 // Rarely change
 #define WORKER_NUM (MACHINE_NUM * WORKERS_PER_MACHINE)
 #define TOTAL_CORES 40
-//#define WINDOW_SIZE_ (WINDOW_SIZE - 1)
-//#define MSG_GRAN_OF_SELECTIVE_SIGNALING_ (MSG_GRAN_OF_SELECTIVE_SIGNALING - 1)
 #define BASE_SHM_KEY 24
 #define WORKER_SL 0 // service level for the workers
 

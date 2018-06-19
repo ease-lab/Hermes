@@ -363,7 +363,7 @@ void setup_ops(spacetime_op_t **ops,
 	///TODO should we memalign aswell?
 	*inv_recv_ops = (spacetime_inv_t*) malloc(MAX_BATCH_OPS_SIZE * sizeof(spacetime_inv_t));
 	*ack_recv_ops = (spacetime_ack_t*) malloc(MAX_BATCH_OPS_SIZE * sizeof(spacetime_ack_t));
-    *val_recv_ops = (spacetime_val_t*) malloc(MAX_BATCH_OPS_SIZE * sizeof(spacetime_val_t)); /* Batch of incoming broadcasts for the Cache*/
+    *val_recv_ops = (spacetime_val_t*) malloc(MAX_BATCH_OPS_SIZE * VAL_MAX_REQ_COALESCE * sizeof(spacetime_val_t)); /* Batch of incoming broadcasts for the Cache*/
 	assert(*inv_recv_ops!= NULL && *ack_recv_ops!= NULL && *val_recv_ops!= NULL);
 
     *inv_send_packet_ops = (spacetime_inv_packet_t*) malloc(MAX_BATCH_OPS_SIZE * sizeof(spacetime_inv_packet_t));
@@ -373,18 +373,20 @@ void setup_ops(spacetime_op_t **ops,
 
 	memset(*inv_recv_ops, 0, MAX_BATCH_OPS_SIZE * sizeof(spacetime_inv_t));
 	memset(*ack_recv_ops, 0, MAX_BATCH_OPS_SIZE * sizeof(spacetime_ack_t));
-	memset(*val_recv_ops, 0, MAX_BATCH_OPS_SIZE * sizeof(spacetime_val_t));
+	memset(*val_recv_ops, 0, MAX_BATCH_OPS_SIZE * VAL_MAX_REQ_COALESCE * sizeof(spacetime_val_t));
 
 	memset(*inv_send_packet_ops, 0, MAX_BATCH_OPS_SIZE * sizeof(spacetime_inv_packet_t));
 	memset(*ack_send_packet_ops, 0, MAX_BATCH_OPS_SIZE * sizeof(spacetime_ack_packet_t));
 	memset(*val_send_packet_ops, 0, MAX_BATCH_OPS_SIZE * sizeof(spacetime_val_packet_t));
+
+    for(i = 0; i < MAX_BATCH_OPS_SIZE * VAL_MAX_REQ_COALESCE; i++)
+        (*val_recv_ops)[i].opcode = ST_EMPTY;
 
 	for(i = 0; i < MAX_BATCH_OPS_SIZE; i++) {
 		(*ops)[i].opcode = ST_EMPTY;
 		(*ops)[i].state = ST_EMPTY;
 		(*inv_recv_ops)[i].opcode = ST_EMPTY;
 		(*ack_recv_ops)[i].opcode = ST_EMPTY;
-		(*val_recv_ops)[i].opcode = ST_EMPTY;
 
         (*inv_send_packet_ops)[i].req_num = 0;
         for(j = 0; j < INV_MAX_REQ_COALESCE; j++)
