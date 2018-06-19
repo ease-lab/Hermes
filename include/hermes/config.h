@@ -6,16 +6,17 @@
 #define SPACETIME_CONFIG_H
 #include "hrd.h"
 
-#define ENABLE_ASSERTIONS 1
+#define ENABLE_ASSERTIONS 0
 #define MACHINE_NUM 3
 #define REMOTE_MACHINES (MACHINE_NUM - 1)
 #define GROUP_MEMBERSHIP_ARRAY_SIZE  CEILING(MACHINE_NUM, 8) //assuming uint8_t
 #define WORKERS_PER_MACHINE 20
+#define USE_ALL_CORES 1
 #define ENABLE_HYPERTHREADING 1
 #define KV_SOCKET 0
 #define START_SPAWNING_THREADS_FROM_SOCKET 0
 #define WRITE_RATIO 1000
-#define MAX_BATCH_OPS_SIZE 75 //30 //5
+#define MAX_BATCH_OPS_SIZE 100 //30 //5
 
 //DEBUG
 #define DISABLE_VALS 0
@@ -30,7 +31,7 @@
 /*-------------------------------------------------
 ----------------- REQ COALESCING -------------------
 --------------------------------------------------*/
-#define MAX_REQ_COALESCE 3
+#define MAX_REQ_COALESCE 4
 #define INV_MAX_REQ_COALESCE MAX_REQ_COALESCE
 #define ACK_MAX_REQ_COALESCE MAX_REQ_COALESCE
 #define VAL_MAX_REQ_COALESCE MAX_REQ_COALESCE

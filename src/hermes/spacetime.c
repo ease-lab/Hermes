@@ -205,10 +205,11 @@ void spacetime_batch_ops(int op_num, spacetime_op_t **op, int thread_id, uint32_
 		if(kv_ptr[I] != NULL) {
 			/* We had a tag match earlier. Now compare log entry. */
 			long long *key_ptr_log = (long long *) kv_ptr[I];
-			long long *key_ptr_req = (long long *) &(*op)[I];
+			long long *key_ptr_req = (long long *) &(*op)[I].key;
 
-			if(key_ptr_log[0] == key_ptr_req[0] &&
-			   key_ptr_log[1] == key_ptr_req[1]) { //Key Found
+//			if(key_ptr_log[0] == key_ptr_req[0] &&
+//			   key_ptr_log[1] == key_ptr_req[1]) { //Key Found 16 Byte keys
+			if(key_ptr_log[1] == key_ptr_req[0]){ //Key Found 8 Byte keys
 				key_in_store[I] = 1;
 
 				volatile spacetime_object_meta *curr_meta = (spacetime_object_meta *) kv_ptr[I]->value;
@@ -296,14 +297,14 @@ void spacetime_batch_ops(int op_num, spacetime_op_t **op, int thread_id, uint32_
 								green_printf("\tCoordinator: issued_invs: %d received acks: %d, state: %s\n",
 											 w_stats[thread_id].issued_invs_per_worker, w_stats[thread_id].received_acks_per_worker, code_to_str(curr_meta->state));
 							for(j = 0; j < MAX_BATCH_OPS_SIZE; j++)
-								if(((uint64_t *) &(*op)[I].key)[1] == ((uint64_t *) &(*op)[j].key)[1])
+								if(((uint64_t *) &(*op)[I].key)[0] == ((uint64_t *) &(*op)[j].key)[0])
 									red_printf("\t J: %d, hash(1st 8B):%" PRIu64 ", Op-State: %s\n",
-											   j, ((uint64_t *) &(*op)[I].key)[1], code_to_str((*op)[j].state));
+											   j, ((uint64_t *) &(*op)[I].key)[0], code_to_str((*op)[j].state));
 							ref_ops_dbg_array_cnt[I] = 0;
 						}
 					if(ENABLE_ASSERTIONS && refilled_ops_debug_cnt > M_4)
 						yellow_printf("W%d--> Op[%d] | Key Hash:%" PRIu64 "\n\tOp: %s state: %s, version: %d, tie-breaker: %d, waits ack: %s\n",
-									  thread_id, I, ((uint64_t *) &(*op)[I].key)[1],
+									  thread_id, I, ((uint64_t *) &(*op)[I].key)[0],
 									  code_to_str((*op)[I].state), code_to_str(curr_meta->state),
 									  curr_meta->version - 1, curr_meta->tie_breaker_id,
 									  curr_meta->write_buffer_index != WRITE_BUFF_EMPTY ? "y":"n");
@@ -462,10 +463,12 @@ void spacetime_batch_invs(int op_num, spacetime_inv_t **op, int thread_id)
 		if(kv_ptr[I] != NULL) {
 			/* We had a tag match earlier. Now compare log entry. */
 			long long *key_ptr_log = (long long *) kv_ptr[I];
-			long long *key_ptr_req = (long long *) &(*op)[I];
+			long long *key_ptr_req = (long long *) &(*op)[I].key;
 
-			if(key_ptr_log[0] == key_ptr_req[0] &&
-			   key_ptr_log[1] == key_ptr_req[1]) { //Key Found
+
+//			if(key_ptr_log[0] == key_ptr_req[0] &&
+//			   key_ptr_log[1] == key_ptr_req[1]) { //Key Found 16 Byte keys
+			if(key_ptr_log[1] == key_ptr_req[0]){ //Key Found 8 Byte keys
 				key_in_store[I] = 1;
 
 				volatile spacetime_object_meta *curr_meta = (spacetime_object_meta *) kv_ptr[I]->value;
@@ -640,10 +643,11 @@ void spacetime_batch_acks(int op_num, spacetime_ack_t **op, spacetime_op_t* read
 		if(kv_ptr[I] != NULL) {
 			/* We had a tag match earlier. Now compare log entry. */
 			long long *key_ptr_log = (long long *) kv_ptr[I];
-			long long *key_ptr_req = (long long *) &(*op)[I];
+			long long *key_ptr_req = (long long *) &(*op)[I].key;
 
-			if(key_ptr_log[0] == key_ptr_req[0] &&
-			   key_ptr_log[1] == key_ptr_req[1]) { //Key Found
+//			if(key_ptr_log[0] == key_ptr_req[0] &&
+//			   key_ptr_log[1] == key_ptr_req[1]) { //Key Found 16 Byte keys
+			if(key_ptr_log[1] == key_ptr_req[0]){ //Key Found 8 Byte keys
 				key_in_store[I] = 1;
 
 				volatile spacetime_object_meta *curr_meta = (spacetime_object_meta *) kv_ptr[I]->value;
@@ -753,7 +757,7 @@ void spacetime_batch_acks(int op_num, spacetime_ack_t **op, spacetime_op_t* read
 									   code_to_str(read_write_op[complete_buff_write].state),
 									   complete_buff_write);
 							assert(read_write_op[complete_buff_write].state == ST_IN_PROGRESS_WRITE);
-                            assert(((uint64_t *) &read_write_op[complete_buff_write].key)[1] == ((uint64_t *) &(*op)[I].key)[1]);
+                            assert(((uint64_t *) &read_write_op[complete_buff_write].key)[0] == ((uint64_t *) &(*op)[I].key)[0]);
 						}
 						complete_reqs_dbg_cnt++;
 						completed_writes_debug_cnt++;
@@ -865,10 +869,11 @@ void spacetime_batch_vals(int op_num, spacetime_val_t **op, int thread_id)
 		if(kv_ptr[I] != NULL) {
 			// We had a tag match earlier. Now compare log entry.
 			long long *key_ptr_log = (long long *) kv_ptr[I];
-			long long *key_ptr_req = (long long *) &(*op)[I];
+			long long *key_ptr_req = (long long *) &(*op)[I].key;
 
-			if(key_ptr_log[0] == key_ptr_req[0] &&
-			   key_ptr_log[1] == key_ptr_req[1]) { //Key Found
+//			if(key_ptr_log[0] == key_ptr_req[0] &&
+//			   key_ptr_log[1] == key_ptr_req[1]) { //Key Found 16 Byte keys
+			if(key_ptr_log[1] == key_ptr_req[0]){ //Key Found 8 Byte keys
 				key_in_store[I] = 1;
 
 				volatile spacetime_object_meta *curr_meta = (spacetime_object_meta *) kv_ptr[I]->value;

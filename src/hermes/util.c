@@ -263,7 +263,8 @@ void manufacture_trace(struct spacetime_trace_command **cmds, int worker_gid)
         uint32 key_id = KEY_NUM != 0 ? (uint32) rand() % KEY_NUM : (uint32) rand() % SPACETIME_NUM_KEYS;
         if(USE_A_SINGLE_KEY == 1) key_id =  0;
         uint128 key_hash = CityHash128((char *) &(key_id), 4);
-        memcpy(&(*cmds)[i].key_hash, &key_hash, 16);
+//        memcpy(&(*cmds)[i].key_hash, &key_hash, 16);
+        memcpy(&(*cmds)[i].key_hash, &((uint64_t*)&key_hash)[1], 8);
         if ((*cmds)[i].opcode == ST_OP_PUT) writes++;
     }
 

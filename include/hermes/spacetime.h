@@ -125,9 +125,16 @@ typedef struct {
     uint32_t version; ///timestamp{version+tie_braker_id}
 }spacetime_op_meta_t;
 
-/* Fixed-size 16 byte keys */
+///* Fixed-size 16 byte keys */
+//typedef struct {
+//    uint64 __unused; // This should be 8B
+//    unsigned int bkt			:32;
+//    unsigned int server			:16;
+//    unsigned int tag			:16;
+//}spacetime_key_t;
+
+/* Fixed-size 8 byte keys */
 typedef struct {
-    uint64 __unused; // This should be 8B
     unsigned int bkt			:32;
     unsigned int server			:16;
     unsigned int tag			:16;
@@ -157,7 +164,7 @@ typedef struct{
     spacetime_key_t key;	/* This must be the 1st field and 16B aligned */
     uint8_t opcode; //both recv / batch_op resp
     uint8_t sender;
-    uint8_t __unused; //align for using a single memcpy
+    uint8_t __unused; //align for using a single memcpy ///Warning currently in use for marking coalesed packets!
     uint8_t tie_breaker_id;
     uint32_t version; ///timestamp{version+tie_braker_id}
 }spacetime_ack_t, spacetime_val_t;
