@@ -81,6 +81,8 @@ void *run_worker(void *arg){
 		post_receives(cb, 2 * MAX_RECV_VAL_WRS, ST_VAL_BUFF, incoming_vals, &val_push_recv_ptr);
 
 		post_receives(cb, MAX_RECV_ACK_WRS, ST_ACK_BUFF, incoming_acks, &ack_push_recv_ptr);
+		///
+        post_credit_recvs(cb, recv_crd_wr, MAX_RECV_CRD_WRS);
 	}
 	setup_qps(worker_gid, cb);
 

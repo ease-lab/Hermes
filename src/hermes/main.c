@@ -103,7 +103,8 @@ int main(int argc, char *argv[]){
 
 	pthread_attr_init(&attr);
 	for(i = 0; i < WORKERS_PER_MACHINE; i++) {
-		int w_core = START_SPAWNING_THREADS_FROM_SOCKET +  (ENABLE_HYPERTHREADING == 1 ? 2 * i : 4 * i ); // use socket one cores
+//		int w_core = START_SPAWNING_THREADS_FROM_SOCKET +  (ENABLE_HYPERTHREADING == 1 ? 2 * i : 4 * i ); // use socket one cores
+		int w_core = i; // use socket one cores
 		param_arr[i].id = i;
 
 		green_printf("Creating worker thread %d at core %d \n", param_arr[i].id, w_core);
