@@ -23,18 +23,17 @@ int main(int argc, char *argv[]){
 
     assert(MICA_MAX_VALUE >= ST_VALUE_SIZE);
     assert(MACHINE_NUM <= 8); //TODO haven't test bit vectors with more than 8 nodes
-//	assert(sizeof(ud_req_inv_t) == sizeof(struct ibv_grh) + sizeof(spacetime_inv_t));
-//	assert(sizeof(ud_req_ack_t) == sizeof(struct ibv_grh) + sizeof(spacetime_ack_t));
-//	assert(sizeof(ud_req_val_t) == sizeof(struct ibv_grh) + sizeof(spacetime_val_t));
     assert(MACHINE_NUM <= GROUP_MEMBERSHIP_ARRAY_SIZE * 8);//bit vector for acks / group membership
     assert(sizeof(spacetime_crd_t) < sizeof(((struct ibv_send_wr*)0)->imm_data)); //for inlined credits
 
 
     assert(MAX_PCIE_BCAST_BATCH <= INV_CREDITS);
 	assert(MAX_PCIE_BCAST_BATCH <= VAL_CREDITS);
-
 	assert(MAX_PCIE_BCAST_BATCH <= INV_SS_GRANULARITY);
 	assert(MAX_PCIE_BCAST_BATCH <= VAL_SS_GRANULARITY);
+
+	assert(MAX_CRDS_IN_MESSAGE <= 255);
+
 	assert(MACHINE_NUM < TIE_BREAKER_ID_EMPTY);
 	assert(MACHINE_NUM < LAST_WRITER_ID_EMPTY);
 	assert(MAX_BATCH_OPS_SIZE < WRITE_BUFF_EMPTY); /// 1B write_buffer_index and 255 is used as "empty" value

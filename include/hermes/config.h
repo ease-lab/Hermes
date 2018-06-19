@@ -6,7 +6,7 @@
 #define SPACETIME_CONFIG_H
 #include "hrd.h"
 
-#define ENABLE_ASSERTIONS 1
+#define ENABLE_ASSERTIONS 0
 #define MACHINE_NUM 2
 #define REMOTE_MACHINES (MACHINE_NUM - 1)
 #define GROUP_MEMBERSHIP_ARRAY_SIZE  CEILING(MACHINE_NUM, 8) //assuming uint8_t
@@ -15,7 +15,11 @@
 #define KV_SOCKET 0
 #define START_SPAWNING_THREADS_FROM_SOCKET 0
 #define WRITE_RATIO 1000
-#define MAX_BATCH_OPS_SIZE 200 //30 //5
+#define MAX_BATCH_OPS_SIZE 5 //30 //5
+
+//DEBUG
+#define DISABLE_VALS 0
+#define KEY_NUM 0 //use 0 to disable
 
 //TRACE
 #define FEED_FROM_TRACE 0
@@ -26,25 +30,25 @@
 /*-------------------------------------------------
 ----------------- REQ COALESCING -------------------
 --------------------------------------------------*/
-#define MAX_REQ_COALESCE 1
+#define MAX_REQ_COALESCE 2
 #define INV_MAX_REQ_COALESCE MAX_REQ_COALESCE
 #define ACK_MAX_REQ_COALESCE MAX_REQ_COALESCE
 #define VAL_MAX_REQ_COALESCE MAX_REQ_COALESCE
+#define MAX_CRDS_IN_MESSAGE MAX_REQ_COALESCE // How many credits exist in a single CRD message (quite similar to coalescing)
 
 /*-------------------------------------------------
 -----------------FLOW CONTROL---------------------
 --------------------------------------------------*/
-#define CREDITS_PER_REMOTE_WORKER MAX_BATCH_OPS_SIZE //(MAX_BATCH_OPS_SIZE / MAX_REQ_COALESCE) //3 //60 //30
+#define CREDITS_PER_REMOTE_WORKER (10 * MAX_BATCH_OPS_SIZE) //(MAX_BATCH_OPS_SIZE / (MAX_REQ_COALESCE * 2)) //3 //60 //30
 #define INV_CREDITS CREDITS_PER_REMOTE_WORKER
 #define ACK_CREDITS CREDITS_PER_REMOTE_WORKER
 #define VAL_CREDITS CREDITS_PER_REMOTE_WORKER
 #define CRD_CREDITS CREDITS_PER_REMOTE_WORKER
-#define CRDS_IN_MESSAGE 1 /* How many credits exist in a single back-pressure message- seems to be working with / 3*/
 
 /*-------------------------------------------------
 -----------------PCIe BATCHING---------------------
 --------------------------------------------------*/
-#define MAX_PCIE_BCAST_BATCH INV_CREDITS //(128 / (MACHINE_NUM - 1)) // how many broadcasts can fit in a batch
+#define MAX_PCIE_BCAST_BATCH MIN(MAX_BATCH_OPS_SIZE, INV_CREDITS) //Warning! use min to avoid reseting the first req prior batching to the NIC
 #define MAX_MSGS_IN_PCIE_BCAST_BATCH (MAX_PCIE_BCAST_BATCH * REMOTE_MACHINES) //must be smaller than the q_depth
 
 /**/
@@ -107,18 +111,18 @@
 #define ENABLE_REQ_PRINTS 0
 #define ENABLE_BATCH_OP_PRINTS 0
 #define ENABLE_CREDIT_PRINTS 0
-#define ENABLE_SEND_PRINTS 0
+#define ENABLE_SEND_PRINTS 1
 #define ENABLE_POST_RECV_PRINTS 0
-#define ENABLE_RECV_PRINTS 0
-#define ENABLE_SS_PRINTS 1
+#define ENABLE_RECV_PRINTS 1
+#define ENABLE_SS_PRINTS 0
 #define ENABLE_INV_PRINTS 0
 #define ENABLE_ACK_PRINTS 0
-#define ENABLE_VAL_PRINTS 0
+#define ENABLE_VAL_PRINTS 1
 #define ENABLE_CRD_PRINTS 0
 
 //Stats
 #define EXIT_ON_PRINT 1
-#define PRINT_NUM 3
+#define PRINT_NUM 5
 #define MEASURE_LATENCY 0
 #define DUMP_STATS_2_FILE 0
 #define ENABLE_STAT_COUNTING 1

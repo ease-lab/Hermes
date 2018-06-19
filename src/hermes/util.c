@@ -251,7 +251,7 @@ char* code_to_str(uint8_t code)
 // Manufactures a trace with a uniform distrbution without a backing file
 void manufacture_trace(struct spacetime_trace_command **cmds, int worker_gid)
 {
-    srand(time(NULL) + worker_gid);
+    srand(time(NULL) + worker_gid * 7);
     *cmds = (struct spacetime_trace_command *)malloc((TRACE_SIZE + 1) * sizeof(struct spacetime_trace_command));
     uint32_t i, writes = 0;
     //parse file line by line and insert trace to cmd.
@@ -260,7 +260,7 @@ void manufacture_trace(struct spacetime_trace_command **cmds, int worker_gid)
         (*cmds)[i].opcode = (uint8_t) (WRITE_RATIO == 1000 || ((rand() % 1000 < WRITE_RATIO)) ? ST_OP_PUT :  ST_OP_GET);
 
         //--- KEY ID----------
-        uint32 key_id = (uint32) rand() % SPACETIME_NUM_KEYS;
+        uint32 key_id = KEY_NUM != 0 ? (uint32) rand() % KEY_NUM : (uint32) rand() % SPACETIME_NUM_KEYS;
         if(USE_A_SINGLE_KEY == 1) key_id =  0;
         uint128 key_hash = CityHash128((char *) &(key_id), 4);
         memcpy(&(*cmds)[i].key_hash, &key_hash, 16);
@@ -320,8 +320,8 @@ void setup_credits(uint8_t credits[][MACHINE_NUM],     struct hrd_ctrl_blk *cb,
 
     crd_tmp.opcode = ST_OP_CRD;
     crd_tmp.sender = (uint8_t) machine_id;
-    crd_tmp.val_credits = 1;
-//    crd_tmp.val_credits = CRDS_IN_MESSAGE;
+    crd_tmp.val_credits = 0;
+//    crd_tmp.val_credits = MAX_CRDS_IN_MESSAGE;
     // Credit WRs
     for (i = 0; i < MAX_SEND_CRD_WRS; i++) {
         credit_send_sgl->length = 0;
@@ -366,21 +366,15 @@ void setup_ops(spacetime_op_t **ops,
     *val_recv_ops = (spacetime_val_t*) malloc(MAX_BATCH_OPS_SIZE * sizeof(spacetime_val_t)); /* Batch of incoming broadcasts for the Cache*/
 	assert(*inv_recv_ops!= NULL && *ack_recv_ops!= NULL && *val_recv_ops!= NULL);
 
-//	*inv_send_ops = (spacetime_inv_t*) malloc(MAX_BATCH_OPS_SIZE * sizeof(spacetime_inv_t));
-//	*ack_send_ops = (spacetime_ack_t*) malloc(MAX_BATCH_OPS_SIZE * sizeof(spacetime_ack_t));
-//    *val_send_ops = (spacetime_val_t*) malloc(MAX_BATCH_OPS_SIZE * sizeof(spacetime_val_t)); /* Batch of incoming broadcasts for the Cache*/
     *inv_send_packet_ops = (spacetime_inv_packet_t*) malloc(MAX_BATCH_OPS_SIZE * sizeof(spacetime_inv_packet_t));
     *ack_send_packet_ops = (spacetime_ack_packet_t*) malloc(MAX_BATCH_OPS_SIZE * sizeof(spacetime_ack_packet_t));
 	*val_send_packet_ops = (spacetime_val_packet_t*) malloc(MAX_BATCH_OPS_SIZE * sizeof(spacetime_val_packet_t)); /* Batch of incoming broadcasts for the Cache*/
 	assert(*inv_send_packet_ops != NULL && *ack_send_packet_ops != NULL && *val_send_packet_ops!= NULL);
-//    assert(*inv_send_ops!= NULL && *ack_send_ops!= NULL && *val_send_ops!= NULL);
 
 	memset(*inv_recv_ops, 0, MAX_BATCH_OPS_SIZE * sizeof(spacetime_inv_t));
 	memset(*ack_recv_ops, 0, MAX_BATCH_OPS_SIZE * sizeof(spacetime_ack_t));
 	memset(*val_recv_ops, 0, MAX_BATCH_OPS_SIZE * sizeof(spacetime_val_t));
-//    memset(*inv_send_ops, 0, MAX_BATCH_OPS_SIZE * sizeof(spacetime_inv_t));
-//    memset(*ack_send_ops, 0, MAX_BATCH_OPS_SIZE * sizeof(spacetime_ack_t));
-//    memset(*val_send_ops, 0, MAX_BATCH_OPS_SIZE * sizeof(spacetime_val_t));
+
 	memset(*inv_send_packet_ops, 0, MAX_BATCH_OPS_SIZE * sizeof(spacetime_inv_packet_t));
 	memset(*ack_send_packet_ops, 0, MAX_BATCH_OPS_SIZE * sizeof(spacetime_ack_packet_t));
 	memset(*val_send_packet_ops, 0, MAX_BATCH_OPS_SIZE * sizeof(spacetime_val_packet_t));
@@ -391,9 +385,6 @@ void setup_ops(spacetime_op_t **ops,
 		(*inv_recv_ops)[i].opcode = ST_EMPTY;
 		(*ack_recv_ops)[i].opcode = ST_EMPTY;
 		(*val_recv_ops)[i].opcode = ST_EMPTY;
-//		(*inv_send_ops)[i].opcode = ST_EMPTY;
-//		(*ack_send_ops)[i].opcode = ST_EMPTY;
-//		(*val_send_ops)[i].opcode = ST_EMPTY;
 
         (*inv_send_packet_ops)[i].req_num = 0;
         for(j = 0; j < INV_MAX_REQ_COALESCE; j++)
@@ -420,8 +411,6 @@ void setup_WRs(struct ibv_send_wr *inv_send_wr, struct ibv_sge *inv_send_sgl,
 
     //Broadcast (INV / VAL) sgls
     for (i = 0; i < MAX_PCIE_BCAST_BATCH; i++) {
-//        inv_send_sgl[i].length = sizeof(spacetime_inv_t);
-//        val_send_sgl[i].length = sizeof(spacetime_val_t);
         inv_send_sgl[i].length = sizeof(spacetime_inv_packet_t);
         val_send_sgl[i].length = sizeof(spacetime_val_packet_t);
     }
@@ -468,7 +457,6 @@ void setup_WRs(struct ibv_send_wr *inv_send_wr, struct ibv_sge *inv_send_sgl,
     //Send ACK  WRs
     for(i = 0; i < MAX_SEND_ACK_WRS; i++){
 		ack_send_wr[i].wr.ud.remote_qkey = HRD_DEFAULT_QKEY;
-//		ack_send_sgl[i].length = sizeof(spacetime_ack_t);
         ack_send_sgl[i].length = sizeof(spacetime_ack_packet_t);
 		ack_send_wr[i].opcode = IBV_WR_SEND; // Attention!! there is no immediate here, cids do the job!
         ack_send_wr[i].num_sge = 1;

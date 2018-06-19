@@ -1,4 +1,4 @@
-SUBDIRS = libhrd hermes mica ccKVS rdma_writes
+SUBDIRS = libhrd hermes mica 
 
 
 CLEANDIRS = $(SUBDIRS:%=clean-%)

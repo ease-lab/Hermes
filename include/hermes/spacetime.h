@@ -20,7 +20,8 @@
 ///#define NUM_KEYS (250 * 1000)
 ///#define NUM_BKTS (64 * 1024) //64K buckets seems to be enough to store most of our keys
 //#define SPACETIME_NUM_KEYS (1 * 1000 * 1000)
-#define SPACETIME_NUM_KEYS (500 * 1000)
+#define SPACETIME_NUM_KEYS (50 * 1000)
+//#define SPACETIME_NUM_KEYS (500 * 1000)
 #define SPACETIME_NUM_BKTS (16 * 1024 * 1024)
 
 ///WARNING the monotonically increasing assigned numbers to States are used for comparisons (do not reorder / change numbers)
@@ -161,12 +162,13 @@ typedef struct{
     uint32_t version; ///timestamp{version+tie_braker_id}
 }spacetime_ack_t, spacetime_val_t;
 
-typedef struct{
+typedef struct{ //always send as immediate
     uint8_t opcode; //we do not really need this
     uint8_t sender;
     uint8_t val_credits;
 }spacetime_crd_t;
 
+/*Packet types (used for coalescing)*/
 typedef struct {
     uint8_t req_num;
     spacetime_inv_t reqs[INV_MAX_REQ_COALESCE];
@@ -182,7 +184,7 @@ typedef struct {
     spacetime_val_t reqs[VAL_MAX_REQ_COALESCE];
 }spacetime_val_packet_t;
 
-/**/
+/*Packets with GRH*/
 
 typedef struct {
     struct ibv_grh grh;
@@ -199,22 +201,6 @@ typedef struct {
     spacetime_val_packet_t packet;
 }ud_req_val_t;
 
-//
-//typedef struct {
-//    struct ibv_grh grh;
-//    spacetime_inv_t req;
-//}ud_req_inv_t;
-//
-//typedef struct {
-//    struct ibv_grh grh;
-//    spacetime_ack_t req;
-//}ud_req_ack_t;
-//
-//typedef struct {
-//    struct ibv_grh grh;
-//    spacetime_val_t req;
-//}ud_req_val_t;
-
 typedef struct {
     struct ibv_grh grh;
     spacetime_crd_t req;
@@ -226,14 +212,6 @@ typedef struct{
     uint8_t write_ack_init[GROUP_MEMBERSHIP_ARRAY_SIZE];
     spacetime_lock optik_lock;
 }spacetime_group_membership;
-// this is used to facilitate the coalescing
-/*struct spacetime_op_coalescing {
-    struct spacetime_key key;
-    uint8_t opcode;
-    uint8_t val_len;
-    uint8_t value[MICA_MAX_VALUE + EXTRA_WORKER_REQ_BYTES];
-};*/
-
 
 struct spacetime_meta_stats { //TODO change this name
     /* Stats */
@@ -277,7 +255,7 @@ struct spacetime_trace_command {
 
 void spacetime_init(int spacetime_id, int num_threads);
 void spacetime_populate_fixed_len(struct spacetime_kv* kv,  int n,  int val_len);
-void spacetime_batch_ops(int op_num, spacetime_op_t **ops, int thread_id, uint32_t refilled_ops_debug_cnt);
+void spacetime_batch_ops(int op_num, spacetime_op_t **ops, int thread_id, uint32_t refilled_ops_debug_cnt, uint32_t* ref_ops_dbg_array_cnt);
 void spacetime_batch_invs(int op_num, spacetime_inv_t **op, int thread_id);
 void spacetime_batch_acks(int op_num, spacetime_ack_t **op, spacetime_op_t* read_write_op, int thread_id);
 void spacetime_batch_vals(int op_num, spacetime_val_t **op, int thread_id);
