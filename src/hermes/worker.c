@@ -154,8 +154,8 @@ void *run_worker(void *arg){
 			///~~~~~~~~~~~~~~~~~~~~~~INVS~~~~~~~~~~~~~~~~~~~~~~~~~~~
 			///TODO remove credits recv etc from bcst_invs
 			broadcasts_invs(ops, inv_send_packet_ops, &inv_push_send_ptr, send_inv_wr,
-							send_inv_sgl, credits, cb, &inv_br_tx, incoming_acks,
-							&ack_push_recv_ptr, worker_lid, &credit_debug_cnt, &rolling_index);
+							send_inv_sgl, credits, cb, &inv_br_tx,
+							worker_lid, &credit_debug_cnt, &rolling_index);
 
 			if(ENABLE_ASSERTIONS)
 				for(i = 0; i < MAX_BATCH_OPS_SIZE; i++)
@@ -166,9 +166,9 @@ void *run_worker(void *arg){
 						   ops[i].opcode == ST_OP_GET);
 
 			///Poll for INVs
-			poll_buff(incoming_invs, ST_INV_BUFF, &inv_pull_recv_ptr, inv_recv_ops,
-					  &inv_ops_i, outstanding_invs, cb->dgram_recv_cq[INV_UD_QP_ID],
-					  recv_inv_wc, credits, worker_lid);
+			poll_buff_and_post_recvs(incoming_invs, ST_INV_BUFF, &inv_pull_recv_ptr, inv_recv_ops,
+									 &inv_ops_i, outstanding_invs, cb->dgram_recv_cq[INV_UD_QP_ID],
+									 recv_inv_wc, cb, &inv_push_recv_ptr, credits, worker_lid);
 
 			if(inv_ops_i > 0) {
 				///TODO fix outstanding_invs
@@ -184,9 +184,9 @@ void *run_worker(void *arg){
 			}
 
 			///Poll for Acks
-			poll_buff(incoming_acks, ST_ACK_BUFF, &ack_pull_recv_ptr, ack_recv_ops,
-					  &ack_ops_i, outstanding_acks, cb->dgram_recv_cq[ACK_UD_QP_ID],
-					  recv_ack_wc, credits, worker_lid);
+			poll_buff_and_post_recvs(incoming_acks, ST_ACK_BUFF, &ack_pull_recv_ptr, ack_recv_ops,
+									 &ack_ops_i, outstanding_acks, cb->dgram_recv_cq[ACK_UD_QP_ID],
+									 recv_ack_wc, cb, &ack_push_recv_ptr, credits, worker_lid);
 
 			if(ack_ops_i > 0){
 				spacetime_batch_acks(ack_ops_i, &ack_recv_ops, ops, worker_lid);
@@ -211,17 +211,17 @@ void *run_worker(void *arg){
 			if(!DISABLE_VALS) {
 				///TODO outstandig_vals are not really required
 				///Poll for Vals
-				poll_buff(incoming_vals, ST_VAL_BUFF, &val_pull_recv_ptr, val_recv_ops,
-						  &val_ops_i, outstanding_vals, cb->dgram_recv_cq[VAL_UD_QP_ID],
-						  recv_val_wc, credits, worker_lid);
+				poll_buff_and_post_recvs(incoming_vals, ST_VAL_BUFF, &val_pull_recv_ptr, val_recv_ops,
+										 &val_ops_i, outstanding_vals, cb->dgram_recv_cq[VAL_UD_QP_ID],
+										 recv_val_wc, cb, &val_push_recv_ptr, credits, worker_lid);
 
 				if (val_ops_i > 0) {
 					spacetime_batch_vals(val_ops_i, &val_recv_ops, worker_lid);
 
 					outstanding_vals = 0; //TODO this is only for testing
 					///~~~~~~~~~~~~~~~~~~~~~~CREDITS~~~~~~~~~~~~~~~~~~~~~~~~~~~
-					issue_credits(val_recv_ops, &send_crd_tx, send_crd_wr, credits,
-								  cb, incoming_vals, &val_push_recv_ptr, worker_lid, &credit_debug_cnt);
+					issue_credits(val_recv_ops, &send_crd_tx, send_crd_wr,
+								  credits, cb, worker_lid, &credit_debug_cnt);
 					val_ops_i = 0;
 				}
 			}

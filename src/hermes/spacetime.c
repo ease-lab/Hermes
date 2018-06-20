@@ -877,7 +877,6 @@ void spacetime_batch_vals(int op_num, spacetime_val_t **op, int thread_id)
 				key_in_store[I] = 1;
 
 				volatile spacetime_object_meta *curr_meta = (spacetime_object_meta *) kv_ptr[I]->value;
-				uint8_t* kv_value_ptr = (uint8_t*) &curr_meta[1] ;
 				if ((*op)[I].opcode != ST_OP_VAL) assert(0);
 				else{
 					uint32_t debug_cntr = 0;
@@ -954,22 +953,4 @@ void group_membership_init(void)
 		}
 	}
 }
-
-
-
-//switch template with all states
-//		switch(curr_meta->state) {
-//			case VALID_STATE:
-//			case INVALID_STATE:
-//			case INVALID_WRITE_STATE:
-//			case INVALID_BUFF_STATE:
-//			case INVALID_WRITE_BUFF_STATE:
-//			case WRITE_STATE:
-//			case WRITE_BUFF_STATE:
-//			case REPLAY_STATE:
-//			case REPLAY_BUFF_STATE:
-//			case REPLAY_WRITE_STATE:
-//			case REPLAY_WRITE_BUFF_STATE:
-//			default: assert(0);
-//		}
 

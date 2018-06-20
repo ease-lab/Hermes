@@ -19,10 +19,12 @@
 
 ///#define NUM_KEYS (250 * 1000)
 ///#define NUM_BKTS (64 * 1024) //64K buckets seems to be enough to store most of our keys
-//#define SPACETIME_NUM_KEYS (1 * 1000 * 1000)
-#define SPACETIME_NUM_KEYS (50 * 1000)
+//#define SPACETIME_NUM_KEYS (50 * 1000)
+#define SPACETIME_NUM_KEYS (250 * 1000)
 //#define SPACETIME_NUM_KEYS (500 * 1000)
-#define SPACETIME_NUM_BKTS (16 * 1024 * 1024)
+//#define SPACETIME_NUM_KEYS (1 * 1000 * 1000)
+#define SPACETIME_NUM_BKTS (1 * 1024 * 1024)
+//#define SPACETIME_NUM_BKTS (16 * 1024 * 1024)
 
 ///WARNING the monotonically increasing assigned numbers to States are used for comparisons (do not reorder / change numbers)
 //States
@@ -117,10 +119,12 @@
   (byte & 0x02 ? '1' : '0'), \
   (byte & 0x01 ? '1' : '0')
 
+
+
 typedef struct {
     uint8_t opcode; //both recv / resp
     uint8_t state_or_sender;
-    uint8_t val_len;
+    uint8_t val_len_or_packet_mark;
     uint8_t tie_breaker_id;
     uint32_t version; ///timestamp{version+tie_braker_id}
 }spacetime_op_meta_t;
