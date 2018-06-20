@@ -6,11 +6,11 @@
 #define SPACETIME_CONFIG_H
 #include "hrd.h"
 
-#define ENABLE_ASSERTIONS 1
+#define ENABLE_ASSERTIONS 0
 #define MACHINE_NUM 3
 #define REMOTE_MACHINES (MACHINE_NUM - 1)
 #define GROUP_MEMBERSHIP_ARRAY_SIZE  CEILING(MACHINE_NUM, 8) //assuming uint8_t
-#define WORKERS_PER_MACHINE 39
+#define WORKERS_PER_MACHINE 20
 #define USE_ALL_CORES 1
 #define ENABLE_HYPERTHREADING 1
 #define KV_SOCKET 0
@@ -35,7 +35,6 @@
 #define INV_MAX_REQ_COALESCE MAX_REQ_COALESCE
 #define ACK_MAX_REQ_COALESCE MAX_REQ_COALESCE
 #define VAL_MAX_REQ_COALESCE MAX_REQ_COALESCE
-#define MAX_CRDS_IN_MESSAGE MAX_REQ_COALESCE // How many credits exist in a single CRD message (quite similar to coalescing)
 
 /*-------------------------------------------------
 -----------------FLOW CONTROL---------------------
@@ -49,7 +48,7 @@
 /*-------------------------------------------------
 -----------------PCIe BATCHING---------------------
 --------------------------------------------------*/
-#define MAX_PCIE_BCAST_BATCH MIN(MAX_BATCH_OPS_SIZE, INV_CREDITS) //Warning! use min to avoid reseting the first req prior batching to the NIC
+#define MAX_PCIE_BCAST_BATCH 16 //MIN(MAX_BATCH_OPS_SIZE, INV_CREDITS) //Warning! use min to avoid reseting the first req prior batching to the NIC
 #define MAX_MSGS_IN_PCIE_BCAST_BATCH (MAX_PCIE_BCAST_BATCH * REMOTE_MACHINES) //must be smaller than the q_depth
 
 /**/
@@ -89,10 +88,15 @@
 #define TOTAL_WORKER_UD_QPs 4
 
 //RECV Depths
-#define RECV_INV_Q_DEPTH (2 * MAX_RECV_INV_WRS)
-#define RECV_ACK_Q_DEPTH (2 * MAX_RECV_ACK_WRS)
-#define RECV_VAL_Q_DEPTH (2 * MAX_RECV_VAL_WRS)
-#define RECV_CRD_Q_DEPTH (2 * MAX_RECV_CRD_WRS)
+#define RECV_INV_Q_DEPTH (MAX_RECV_INV_WRS)
+#define RECV_ACK_Q_DEPTH (MAX_RECV_ACK_WRS)
+#define RECV_VAL_Q_DEPTH (MAX_RECV_VAL_WRS)
+#define RECV_CRD_Q_DEPTH (MAX_RECV_CRD_WRS)
+
+//#define RECV_INV_Q_DEPTH (2 * MAX_RECV_INV_WRS)
+//#define RECV_ACK_Q_DEPTH (2 * MAX_RECV_ACK_WRS)
+//#define RECV_VAL_Q_DEPTH (2 * MAX_RECV_VAL_WRS)
+//#define RECV_CRD_Q_DEPTH (2 * MAX_RECV_CRD_WRS)
 
 //SEND Depths
 #define SEND_INV_Q_DEPTH ((INV_SS_GRANULARITY * REMOTE_MACHINES) * 2)

@@ -13,10 +13,37 @@
 struct spacetime_kv kv;
 volatile spacetime_group_membership group_membership;
 
-void meta_reset(struct spacetime_meta_stats* meta);
-void extended_meta_reset(struct extended_spacetime_meta_stats* meta);
+void meta_reset(struct spacetime_meta_stats* meta)
+{
+	meta->num_get_success = 0;
+	meta->num_put_success = 0;
+	meta->num_upd_success = 0;
+	meta->num_inv_success = 0;
+	meta->num_ack_success = 0;
+	meta->num_get_stall = 0;
+	meta->num_put_stall = 0;
+	meta->num_upd_fail = 0;
+	meta->num_inv_fail = 0;
+	meta->num_ack_fail = 0;
+	meta->num_get_miss = 0;
+	meta->num_put_miss = 0;
+	meta->num_unserved_get_miss = 0;
+	meta->num_unserved_put_miss = 0;
+}
 
-static inline uint8_t is_last_ack(uint8_t const * gathered_acks, int worker_lid){
+void extended_meta_reset(struct extended_spacetime_meta_stats* meta)
+{
+	meta->num_hit = 0;
+	meta->num_miss = 0;
+	meta->num_stall = 0;
+	meta->num_coherence_fail = 0;
+	meta->num_coherence_success = 0;
+
+	meta_reset(&meta->metadata);
+}
+
+static inline uint8_t is_last_ack(uint8_t const * gathered_acks, int worker_lid)
+{
 	//lock_free read of group membership & comparison with gathered acks
 	int i = 0;
 	spacetime_group_membership curr_membership;
@@ -40,7 +67,8 @@ static inline uint8_t is_last_ack(uint8_t const * gathered_acks, int worker_lid)
 	return 1;
 }
 
-void spacetime_object_meta_init(spacetime_object_meta* ol){
+void spacetime_object_meta_init(spacetime_object_meta* ol)
+{
 	ol->tie_breaker_id = TIE_BREAKER_ID_EMPTY;
 	ol->last_writer_id = LAST_WRITER_ID_EMPTY;
 	ol->version = 0;
@@ -49,7 +77,8 @@ void spacetime_object_meta_init(spacetime_object_meta* ol){
 	ol->lock = OPTIK_FREE;
 }
 
-void spacetime_init(int instance_id, int num_threads) {
+void spacetime_init(int instance_id, int num_threads)
+{
 	int i;
 	///assert(sizeof(spacetime_object_meta) == 8); //make sure that the meta are 8B and thus can fit in mica unused key
 
@@ -65,34 +94,8 @@ void spacetime_init(int instance_id, int num_threads) {
 	spacetime_populate_fixed_len(&kv, SPACETIME_NUM_KEYS, HERD_VALUE_SIZE);
 }
 
-void meta_reset(struct spacetime_meta_stats* meta){
-	meta->num_get_success = 0;
-	meta->num_put_success = 0;
-	meta->num_upd_success = 0;
-	meta->num_inv_success = 0;
-	meta->num_ack_success = 0;
-	meta->num_get_stall = 0;
-	meta->num_put_stall = 0;
-	meta->num_upd_fail = 0;
-	meta->num_inv_fail = 0;
-	meta->num_ack_fail = 0;
-	meta->num_get_miss = 0;
-	meta->num_put_miss = 0;
-	meta->num_unserved_get_miss = 0;
-	meta->num_unserved_put_miss = 0;
-}
-
-void extended_meta_reset(struct extended_spacetime_meta_stats* meta){
-	meta->num_hit = 0;
-	meta->num_miss = 0;
-	meta->num_stall = 0;
-	meta->num_coherence_fail = 0;
-	meta->num_coherence_success = 0;
-
-	meta_reset(&meta->metadata);
-}
-
-void spacetime_populate_fixed_len(struct spacetime_kv* kv, int n, int val_len) {
+void spacetime_populate_fixed_len(struct spacetime_kv* kv, int n, int val_len)
+{
 	assert(n > 0);
 	assert(val_len > 0 && val_len <= MICA_MAX_VALUE);
 
@@ -129,9 +132,9 @@ void spacetime_populate_fixed_len(struct spacetime_kv* kv, int n, int val_len) {
 				  (double) kv->hash_table.num_index_evictions / kv->hash_table.num_insert_op);
 }
 
-
 //TODO may merge all the batch_* func
-void spacetime_batch_ops(int op_num, spacetime_op_t **op, int thread_id, uint32_t refilled_ops_debug_cnt, uint32_t* ref_ops_dbg_array_cnt)
+void spacetime_batch_ops(int op_num, spacetime_op_t **op, int thread_id,
+						 uint32_t refilled_ops_debug_cnt, uint32_t* ref_ops_dbg_array_cnt)
 {
 	int I, j;	/* I is batch index */
 	long long stalled_brces = 0;
@@ -212,14 +215,14 @@ void spacetime_batch_ops(int op_num, spacetime_op_t **op, int thread_id, uint32_
 			if(key_ptr_log[1] == key_ptr_req[0]){ //Key Found 8 Byte keys
 				key_in_store[I] = 1;
 
-				volatile spacetime_object_meta *curr_meta = (spacetime_object_meta *) kv_ptr[I]->value;
+				spacetime_object_meta *curr_meta = (spacetime_object_meta *) kv_ptr[I]->value;
 				uint8_t* kv_value_ptr = (uint8_t*) &curr_meta[1] ;
 				if ((*op)[I].opcode == ST_OP_GET) {
 					//Lock free reads through versioning (successful when version is even)
 					uint8_t was_locked_read = 0;
 					(*op)[I].state = ST_EMPTY;
 					do {
-						prev_meta = *((spacetime_object_meta*) curr_meta);
+						prev_meta = *curr_meta;
 						//switch template with all states
 						switch(curr_meta->state) {
 							case VALID_STATE:
@@ -235,7 +238,7 @@ void spacetime_batch_ops(int op_num, spacetime_op_t **op, int thread_id, uint32_
 								break;
 							default:
 								was_locked_read = 1;
-								optik_lock((spacetime_object_meta*) curr_meta);
+								optik_lock(curr_meta);
 								switch(curr_meta->state) {
 									case VALID_STATE:
 										memcpy((*op)[I].value, kv_value_ptr, ST_VALUE_SIZE);
@@ -266,7 +269,7 @@ void spacetime_batch_ops(int op_num, spacetime_op_t **op, int thread_id, uint32_
 										printf("Wrong opcode %s\n",code_to_str(curr_meta->state));
 										assert(0);
 								}
-								optik_unlock_decrement_version((spacetime_object_meta*) curr_meta);
+								optik_unlock_decrement_version(curr_meta);
 								if((*op)[I].state != ST_GET_SUCCESS)
 									(*op)[I].state = ST_GET_STALL;
 								break;
@@ -287,7 +290,7 @@ void spacetime_batch_ops(int op_num, spacetime_op_t **op, int thread_id, uint32_
 						assert((*op)[I].val_len == ST_VALUE_SIZE);
 					///Warning: even if a write is in progress write we may need to update the value of write_buffer_index
 					(*op)[I].state = ST_EMPTY;
-					optik_lock((spacetime_object_meta*) curr_meta);
+					optik_lock(curr_meta);
 					if(ENABLE_ASSERTIONS)
 						if(unlikely(ref_ops_dbg_array_cnt[I] > M_4)){
 							red_printf("Worker %d is stacked in %d\n", thread_id, I);
@@ -315,7 +318,7 @@ void spacetime_batch_ops(int op_num, spacetime_op_t **op, int thread_id, uint32_
 					switch(curr_meta->state) {
 						case VALID_STATE:
 						case INVALID_STATE:
-//						case INVALID_BUFF_STATE:
+						case INVALID_BUFF_STATE:
 							if(curr_meta->write_buffer_index != WRITE_BUFF_EMPTY){
 								///stall write: until all acks from last write arrive
 //                                printf("[W%d]-->State:%s version:%d, tie: %d, buff index: %d, last_write-version: %d, last_write-id: %d !\n",
@@ -338,7 +341,6 @@ void spacetime_batch_ops(int op_num, spacetime_op_t **op, int thread_id, uint32_
 							}
 							break;
 
-						case INVALID_BUFF_STATE: //TODO only for Bebugging
 						case INVALID_WRITE_BUFF_STATE:
 						case WRITE_BUFF_STATE:
 						case REPLAY_BUFF_STATE:
@@ -361,7 +363,7 @@ void spacetime_batch_ops(int op_num, spacetime_op_t **op, int thread_id, uint32_
 									break;
 								default: assert(0);
 							}
-							optik_unlock_decrement_version((spacetime_object_meta*) curr_meta);
+							optik_unlock_decrement_version(curr_meta);
 							break;
 					}
 					if((*op)[I].state == ST_PUT_SUCCESS)
@@ -372,11 +374,9 @@ void spacetime_batch_ops(int op_num, spacetime_op_t **op, int thread_id, uint32_
 			}
 		}
 
-		if(key_in_store[I] == 0) {  //KVS miss --> We get here if either tag or log key match failed
-			(*op)[I].val_len = 0;
-			(*op)[I].state = ST_MISS;
+		if(key_in_store[I] == 0)  //KVS miss --> We get here if either tag or log key match failed
 			assert(0);
-		}
+
 	}
 }
 
@@ -471,7 +471,7 @@ void spacetime_batch_invs(int op_num, spacetime_inv_t **op, int thread_id)
 			if(key_ptr_log[1] == key_ptr_req[0]){ //Key Found 8 Byte keys
 				key_in_store[I] = 1;
 
-				volatile spacetime_object_meta *curr_meta = (spacetime_object_meta *) kv_ptr[I]->value;
+				spacetime_object_meta *curr_meta = (spacetime_object_meta *) kv_ptr[I]->value;
 				uint8_t* kv_value_ptr = (uint8_t*) &curr_meta[1] ;
 				if ((*op)[I].opcode != ST_OP_INV) assert(0);
 				else{
@@ -484,14 +484,14 @@ void spacetime_batch_invs(int op_num, spacetime_inv_t **op, int thread_id)
 								debug_cntr = 0;
 							}
 						}
-						prev_meta = *((spacetime_object_meta*) curr_meta);
+						prev_meta = *curr_meta;
 					} while (!is_same_version_and_valid(&prev_meta, curr_meta));
 					//lock and proceed iff remote.TS >= local.TS
 					//if inv TS >= local timestamp
 					if(!timestamp_is_smaller((*op)[I].version,  (*op)[I].tie_breaker_id,
 											 prev_meta.version, prev_meta.tie_breaker_id)){
 						//Lock and check again if inv TS > local timestamp
-						optik_lock((spacetime_object_meta*) curr_meta);
+						optik_lock(curr_meta);
 						///Warning: use op.version + 1 bellow since optik_lock() increases curr_meta->version by 1
 						if(timestamp_is_smaller(curr_meta->version, curr_meta->tie_breaker_id,
 												(*op)[I].version + 1,   (*op)[I].tie_breaker_id)){
@@ -535,15 +535,15 @@ void spacetime_batch_invs(int op_num, spacetime_inv_t **op, int thread_id)
 								default: assert(0);
 							}
 							curr_meta->last_writer_id = (*op)[I].sender;
-							optik_unlock((spacetime_object_meta*) curr_meta, (*op)[I].tie_breaker_id, (*op)[I].version);
+							optik_unlock(curr_meta, (*op)[I].tie_breaker_id, (*op)[I].version);
 						} else if(timestamp_is_equal(curr_meta->version, curr_meta->tie_breaker_id,
 													 (*op)[I].version,   (*op)[I].tie_breaker_id)) {
 							if (curr_meta->state == WRITE_STATE || curr_meta->state == WRITE_BUFF_STATE)
 								(*op)[I].opcode = ST_INV_OUT_OF_GROUP;
 							curr_meta->last_writer_id = (*op)[I].sender;
-							optik_unlock((spacetime_object_meta*) curr_meta, (*op)[I].tie_breaker_id, (*op)[I].version);
+							optik_unlock(curr_meta, (*op)[I].tie_breaker_id, (*op)[I].version);
 						}else
-							optik_unlock_decrement_version((spacetime_object_meta*) curr_meta);
+							optik_unlock_decrement_version(curr_meta);
 					}
 				}
 				if((*op)[I].opcode != ST_INV_OUT_OF_GROUP)
@@ -559,8 +559,8 @@ void spacetime_batch_invs(int op_num, spacetime_inv_t **op, int thread_id)
 	}
 }
 
-
-void spacetime_batch_acks(int op_num, spacetime_ack_t **op, spacetime_op_t* read_write_op, int thread_id)
+void spacetime_batch_acks(int op_num, spacetime_ack_t **op,
+						  spacetime_op_t* read_write_op, int thread_id)
 {
     int complete_reqs_dbg_cnt = 0;
 	int I, j;	/* I is batch index */
@@ -651,8 +651,7 @@ void spacetime_batch_acks(int op_num, spacetime_ack_t **op, spacetime_op_t* read
 			if(key_ptr_log[1] == key_ptr_req[0]){ //Key Found 8 Byte keys
 				key_in_store[I] = 1;
 
-				volatile spacetime_object_meta *curr_meta = (spacetime_object_meta *) kv_ptr[I]->value;
-				uint8_t* kv_value_ptr = (uint8_t*) &curr_meta[1] ;
+				spacetime_object_meta *curr_meta = (spacetime_object_meta *) kv_ptr[I]->value;
 				if ((*op)[I].opcode != ST_OP_ACK) assert(0);
 				else{
 					uint32_t debug_cntr = 0;
@@ -664,7 +663,7 @@ void spacetime_batch_acks(int op_num, spacetime_ack_t **op, spacetime_op_t* read
 								debug_cntr = 0;
 							}
 						}
-						lock_free_read_meta = *((spacetime_object_meta*) curr_meta);
+						lock_free_read_meta = *curr_meta;
 					} while (!is_same_version_and_valid(&lock_free_read_meta, curr_meta));
                     if(ENABLE_ASSERTIONS){
 //						if()
@@ -677,7 +676,7 @@ void spacetime_batch_acks(int op_num, spacetime_ack_t **op, spacetime_op_t* read
 					   timestamp_is_equal(lock_free_read_meta.last_writer_version, (uint8_t) machine_id,
 										  (*op)[I].version,   (*op)[I].tie_breaker_id)){
 						///Lock and check again if ack TS == local timestamp
-						optik_lock((spacetime_object_meta*) curr_meta);
+						optik_lock(curr_meta);
 						///Warning: use op.version + 1 bellow since optik_lock() increases curr_meta->version by 1
 						if(timestamp_is_equal(curr_meta->version, curr_meta->tie_breaker_id,
 											  (*op)[I].version + 1,   (*op)[I].tie_breaker_id)){
@@ -747,7 +746,7 @@ void spacetime_batch_acks(int op_num, spacetime_ack_t **op, spacetime_op_t* read
 								}
 							}
 						}
-						optik_unlock_decrement_version((spacetime_object_meta*) curr_meta);
+						optik_unlock_decrement_version(curr_meta);
 					}
 					if(((*op)[I].opcode == ST_LAST_ACK_SUCCESS ||
 						(*op)[I].opcode == ST_LAST_ACK_PREV_WRITE_SUCCESS) &&
@@ -780,7 +779,6 @@ void spacetime_batch_acks(int op_num, spacetime_ack_t **op, spacetime_op_t* read
 	if(ENABLE_ASSERTIONS)
 		assert(REMOTE_MACHINES != 1 || complete_reqs_dbg_cnt == op_num);
 }
-
 
 void spacetime_batch_vals(int op_num, spacetime_val_t **op, int thread_id)
 {
@@ -873,7 +871,7 @@ void spacetime_batch_vals(int op_num, spacetime_val_t **op, int thread_id)
 			if(key_ptr_log[1] == key_ptr_req[0]){ //Key Found 8 Byte keys
 				key_in_store[I] = 1;
 
-				volatile spacetime_object_meta *curr_meta = (spacetime_object_meta *) kv_ptr[I]->value;
+				spacetime_object_meta *curr_meta = (spacetime_object_meta *) kv_ptr[I]->value;
 				if ((*op)[I].opcode != ST_OP_VAL) assert(0);
 				else{
 					uint32_t debug_cntr = 0;
@@ -885,13 +883,13 @@ void spacetime_batch_vals(int op_num, spacetime_val_t **op, int thread_id)
 								debug_cntr = 0;
 							}
 						}
-						lock_free_read_meta = *((spacetime_object_meta*) curr_meta);
+						lock_free_read_meta = *curr_meta;
 					} while (!is_same_version_and_valid(&lock_free_read_meta, curr_meta));
 					///lock and proceed iff remote.TS == local.TS
 					if(timestamp_is_equal(lock_free_read_meta.version, lock_free_read_meta.tie_breaker_id,
 										  (*op)[I].version,   (*op)[I].tie_breaker_id)){
 						///Lock and check again if still TS == local timestamp
-						optik_lock((spacetime_object_meta*) curr_meta);
+						optik_lock(curr_meta);
 						///Warning: use op.version + 1 bellow since optik_lock() increases curr_meta->version by 1
 						if(timestamp_is_equal(curr_meta->version, curr_meta->tie_breaker_id,
 											  (*op)[I].version + 1,   (*op)[I].tie_breaker_id)){
@@ -914,7 +912,7 @@ void spacetime_batch_vals(int op_num, spacetime_val_t **op, int thread_id)
 								default: assert(0);
 							}
 						}
-						optik_unlock_decrement_version((spacetime_object_meta*) curr_meta);
+						optik_unlock_decrement_version(curr_meta);
 					}
 				}
 			}
@@ -947,4 +945,3 @@ void group_membership_init(void)
 		}
 	}
 }
-

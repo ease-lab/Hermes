@@ -20,7 +20,7 @@
  *
  */
 /*
- * WARNING: This file has been modified to fit to "ARMONIA" needs.
+ * WARNING: This file has been modified to fit to "HERMES" needs.
  */
 
 #ifndef _H_OPTIK_
@@ -151,28 +151,9 @@ extern size_t __optik_trylock_calls_suc_tot;
 
 #define OPTIK_PAUSE() asm volatile ("mfence");
 
-
-static inline const char*
-optik_get_type_name()
-{
-    return "OPTIK-separate";
-}
-
 #  define OPTIK_INIT    { 0, 0 }
 #  define OPTIK_LOCKED  0x1
 #  define OPTIK_FREE    0x0
-
-typedef volatile struct
-{
-    uint8_t state;
-    uint8_t pending_acks;
-    uint8_t cid;
-    uint8_t lock;
-    uint32_t version;
-} cache_meta;
-
-typedef cache_meta optik_lock_t;
-///typedef cache_meta spacetime_object_meta;
 
 typedef volatile struct
 {
@@ -193,143 +174,7 @@ typedef volatile struct
     uint32_t version;  /// for lock-free reads & as part of timestamp:{version|tie_breaker_id}
 }spacetime_lock;
 
-//static inline int
-//optik_is_locked(cache_meta ol)
-//{
-//    return (ol.lock == OPTIK_LOCKED);
-//}
-
-static inline uint32_t
-optik_get_version(cache_meta ol)
-{
-    return ol.version;
-}
-
-static inline uint32_t
-optik_get_cid(cache_meta ol)
-{
-    return ol.cid;
-}
-
-static inline void
-optik_init(cache_meta* ol)
-{
-    ol->cid = 0;
-    ol->version = 0;
-    ol->lock = OPTIK_FREE;
-}
-
-//static inline int
-//optik_lock(cache_meta* ol)
-//{
-//    cache_meta ol_old;
-//    do
-//    {
-//        while (1)
-//        {
-//            ol_old = *ol;
-//            if (!optik_is_locked(ol_old))
-//            {
-//                break;
-//            }
-//            OPTIK_PAUSE();
-//        }
-//
-//        OPTIK_STATS_TRYLOCK_CAS_INC();
-//        if (CAS_U8(&ol->lock, 0, 1) == 0)
-//        {
-//            ol->version++;
-//            //assert(ol->version % 2 == 1);
-//            break;
-//        }
-//    }
-//    while (1);
-//    return 1;
-//}
-
-static inline int
-optik_is_same_version_plus_one(volatile cache_meta v1, volatile cache_meta v2)
-{
-    return v1.version == (v2.version + 1) && v1.cid == v2.cid;
-}
-
-static inline int
-optik_is_same_version_and_valid(volatile cache_meta v1, volatile cache_meta v2)
-{
-    return v1.version == v2.version && v1.cid == v2.cid && v1.version % 2 == 0;
-}
-
-static inline int
-optik_is_greater_version(cache_meta curr, cache_meta receiv)
-{
-    return curr.version < receiv.version ||
-            ((curr.version - 1) == receiv.version && curr.cid < receiv.cid);
-}
-
-/* Equivalent to optik_is_greater, this is used when cid is used as session id*/
-static inline int
-optik_is_greater_version_session(cache_meta curr, cache_meta receiv, int machine_id)
-{
-    return curr.version < receiv.version ||
-            ((curr.version - 1) == receiv.version && machine_id < receiv.cid);
-}
-
-//static inline int
-//optik_lock_backoff(cache_meta* ol)
-//{
-//    cache_meta ol_old;
-//    do
-//    {
-//        while (1)
-//        {
-//            ol_old = *ol;
-//            if (!optik_is_locked(ol_old))
-//            {
-//                break;
-//            }
-//            cpause(128);
-//        }
-//
-//        if (CAS_U8(&ol->lock, 0, 1) == 0)
-//        {
-//            ol->version++;
-//            break;
-//        }
-//    }
-//    while (1);
-//    return 1;
-//}
-
-//static inline void
-//optik_unlock_write(cache_meta* ol, uint8_t cid, uint32_t* resp_version)
-//{
-//    //assert(ol->lock == OPTIK_LOCKED);
-//    //assert(ol->version % 2 == 1);
-//    ol->cid = cid;
-//    *resp_version = ++ol->version;
-//    COMPILER_NO_REORDER(ol->lock = OPTIK_FREE);
-//
-//}
-
-//static inline void
-//optik_unlock_decrement_version(cache_meta* ol)
-//{
-//    ol->version = --ol->version;
-//    assert(ol->version % 2 == 0);
-//    COMPILER_NO_REORDER(ol->lock = OPTIK_FREE);
-//}
-
-//static inline void
-//optik_unlock(cache_meta* ol, uint8_t cid, uint32_t version)
-//{
-//    assert(version % 2 == 0);
-//    ol->cid = cid;
-//    ol->version = version;
-//    COMPILER_NO_REORDER(ol->lock = OPTIK_FREE);
-//}
-
 ////// SPACETIME Functions
-
 
 static inline void
 optik_unlock(spacetime_object_meta* ol, uint8_t cid, uint32_t version)
@@ -340,8 +185,10 @@ optik_unlock(spacetime_object_meta* ol, uint8_t cid, uint32_t version)
     COMPILER_NO_REORDER(ol->lock = OPTIK_FREE);
 }
 
-static inline int is_same_version_and_valid(volatile spacetime_object_meta* v1,
-                                            volatile spacetime_object_meta* v2){
+static inline int
+is_same_version_and_valid(volatile spacetime_object_meta* v1,
+                          volatile spacetime_object_meta* v2)
+{
     return  v1->version == v2->version &&
             v1->tie_breaker_id == v2->tie_breaker_id &&
             v1->version % 2 == 0;

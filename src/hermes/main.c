@@ -33,8 +33,6 @@ int main(int argc, char *argv[]){
 	assert(MAX_PCIE_BCAST_BATCH <= INV_SS_GRANULARITY);
 	assert(MAX_PCIE_BCAST_BATCH <= VAL_SS_GRANULARITY);
 
-	assert(MAX_CRDS_IN_MESSAGE <= 255);
-
 	assert(MACHINE_NUM < TIE_BREAKER_ID_EMPTY);
 	assert(MACHINE_NUM < LAST_WRITER_ID_EMPTY);
 	assert(MAX_BATCH_OPS_SIZE < WRITE_BUFF_EMPTY); /// 1B write_buffer_index and 255 is used as "empty" value

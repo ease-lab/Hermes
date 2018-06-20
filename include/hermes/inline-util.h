@@ -757,10 +757,10 @@ static inline void batch_vals_2_NIC(struct ibv_send_wr *send_val_wr, struct ibv_
 }
 
 static inline uint8_t broadcasts_vals(spacetime_ack_t* ack_ops, spacetime_val_packet_t* val_send_packet_ops, int* val_push_ptr,
-								   struct ibv_send_wr* send_val_wr, struct ibv_sge* send_val_sgl,
-								   uint8_t credits[][MACHINE_NUM], struct hrd_ctrl_blk* cb,
-								   struct ibv_wc* credit_wc, uint32_t* credit_debug_cnt,
-								   long long* br_tx, struct ibv_recv_wr* credit_recv_wr, uint16_t worker_lid)
+									  struct ibv_send_wr* send_val_wr, struct ibv_sge* send_val_sgl,
+									  uint8_t credits[][MACHINE_NUM], struct hrd_ctrl_blk* cb,
+									  struct ibv_wc* credit_wc, uint32_t* credit_debug_cnt,
+									  long long* br_tx, struct ibv_recv_wr* credit_recv_wr, uint16_t worker_lid)
 {
 //	static spacetime_ack_t outstanding_ack_to_vals[MAX_BATCH_OPS_SIZE] = {0};
 //	static int outstanding_index = 0;
@@ -777,13 +777,12 @@ static inline uint8_t broadcasts_vals(spacetime_ack_t* ack_ops, spacetime_val_pa
 			continue;
 		} else if (ack_ops[i].opcode == ST_EMPTY)
 			continue;
-//			break;
+
 		if(ENABLE_ASSERTIONS)
 			assert(ack_ops[i].opcode == ST_LAST_ACK_SUCCESS);
 
 		// if not enough credits for a Broadcast
 		if (!check_val_credits(credits, cb, credit_wc, credit_recv_wr, credit_debug_cnt, worker_lid)){
-//			printf("NOT ENOUGH CREDITS!\n");
 			has_outstanding_vals = 1;
 			break;
 		}

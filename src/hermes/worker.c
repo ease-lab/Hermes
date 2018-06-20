@@ -27,43 +27,43 @@ void *run_worker(void *arg){
 
 	///Send declarations
 	struct ibv_send_wr send_inv_wr[MAX_SEND_INV_WRS],
-					   send_ack_wr[MAX_SEND_ACK_WRS],
-					   send_val_wr[MAX_SEND_VAL_WRS],
-			  		   send_crd_wr[MAX_SEND_CRD_WRS];
+			send_ack_wr[MAX_SEND_ACK_WRS],
+			send_val_wr[MAX_SEND_VAL_WRS],
+			send_crd_wr[MAX_SEND_CRD_WRS];
 
 	struct ibv_sge     send_inv_sgl[MAX_PCIE_BCAST_BATCH],
-			           send_ack_sgl[MAX_SEND_ACK_WRS],
-			           send_val_sgl[MAX_PCIE_BCAST_BATCH], send_crd_sgl;
+			send_ack_sgl[MAX_SEND_ACK_WRS],
+			send_val_sgl[MAX_PCIE_BCAST_BATCH], send_crd_sgl;
 
 	uint8_t credits[TOTAL_WORKER_UD_QPs][MACHINE_NUM];
 
 	///Receive declarations
 	struct ibv_recv_wr recv_inv_wr[MAX_RECV_INV_WRS],
-					   recv_ack_wr[MAX_RECV_ACK_WRS],
-					   recv_val_wr[MAX_RECV_VAL_WRS],
-			           recv_crd_wr[MAX_RECV_CRD_WRS];
+			recv_ack_wr[MAX_RECV_ACK_WRS],
+			recv_val_wr[MAX_RECV_VAL_WRS],
+			recv_crd_wr[MAX_RECV_CRD_WRS];
 
 	struct ibv_sge 	   recv_inv_sgl[MAX_RECV_INV_WRS],
-			 		   recv_ack_sgl[MAX_RECV_ACK_WRS],
-			           recv_val_sgl[MAX_RECV_VAL_WRS], recv_crd_sgl;
+			recv_ack_sgl[MAX_RECV_ACK_WRS],
+			recv_val_sgl[MAX_RECV_VAL_WRS], recv_crd_sgl;
 
 	//Only for immediates
 	struct ibv_wc      recv_inv_wc[MAX_RECV_INV_WRS],
-				       recv_ack_wc[MAX_RECV_ACK_WRS],
-			 	       recv_val_wc[MAX_RECV_VAL_WRS],
-			           recv_crd_wc[MAX_RECV_CRD_WRS];
+			recv_ack_wc[MAX_RECV_ACK_WRS],
+			recv_val_wc[MAX_RECV_VAL_WRS],
+			recv_crd_wc[MAX_RECV_CRD_WRS];
 
 
 
 	int inv_push_recv_ptr = 0, inv_pull_recv_ptr = -1,
-		ack_push_recv_ptr = 0, ack_pull_recv_ptr = -1,
-		val_push_recv_ptr = 0, val_pull_recv_ptr = -1;
+			ack_push_recv_ptr = 0, ack_pull_recv_ptr = -1,
+			val_push_recv_ptr = 0, val_pull_recv_ptr = -1;
 	int inv_push_send_ptr = 0, ack_push_send_ptr =  0, val_push_send_ptr = 0;
 
-   	int i, j;
+	int i, j;
 	//init recv buffs as empty (not need for CRD since CRD msgs are (immediate) header-only
 	for(i = 0; i < RECV_INV_Q_DEPTH; i++)
-        incoming_invs[i].packet.req_num = 0;
+		incoming_invs[i].packet.req_num = 0;
 	for(i = 0; i < RECV_ACK_Q_DEPTH; i++)
 		incoming_acks[i].packet.req_num = 0;
 	for(i = 0; i < RECV_VAL_Q_DEPTH; i++)
@@ -71,18 +71,31 @@ void *run_worker(void *arg){
 
 	/* Post receives, we need to do this early */
 	if (WRITE_RATIO > 0){
-		if(ENABLE_POST_RECV_PRINTS && ENABLE_INV_PRINTS && worker_lid == 0)
-			yellow_printf("vvv Post Initial Receives: \033[31mINVs\033[0m %d\n", 2 * MAX_RECV_INV_WRS);
-		post_receives(cb, 2 * MAX_RECV_INV_WRS, ST_INV_BUFF, incoming_invs, &inv_push_recv_ptr);
+//		if(ENABLE_POST_RECV_PRINTS && ENABLE_INV_PRINTS && worker_lid == 0)
+//			yellow_printf("vvv Post Initial Receives: \033[31mINVs\033[0m %d\n", 2 * MAX_RECV_INV_WRS);
+//		post_receives(cb, 2 * MAX_RECV_INV_WRS, ST_INV_BUFF, incoming_invs, &inv_push_recv_ptr);
+//		if(ENABLE_POST_RECV_PRINTS && ENABLE_VAL_PRINTS && worker_lid == 0)
+//			yellow_printf("vvv Post Initial Receives: \033[1m\033[32mVALs\033[0m %d\n", 2 * MAX_RECV_VAL_WRS);
+//		post_receives(cb, 2 * MAX_RECV_VAL_WRS, ST_VAL_BUFF, incoming_vals, &val_push_recv_ptr);
+//		if(ENABLE_POST_RECV_PRINTS && ENABLE_ACK_PRINTS && worker_lid == 0)
+//			yellow_printf("vvv Post Initial Receives: \033[33mACKs\033[0m %d\n", 2 * MAX_RECV_ACK_WRS);
+//		post_receives(cb, 2 * MAX_RECV_ACK_WRS, ST_ACK_BUFF, incoming_acks, &ack_push_recv_ptr);
+//		if(ENABLE_POST_RECV_PRINTS && ENABLE_CRD_PRINTS && worker_lid == 0)
+//			yellow_printf("vvv Post Initial Receives: \033[1m\033[36mCRDs\033[0m %d\n", 2 * MAX_RECV_CRD_WRS);
+//		post_credit_recvs(cb, recv_crd_wr, MAX_RECV_CRD_WRS);
+//		post_credit_recvs(cb, recv_crd_wr, MAX_RECV_CRD_WRS);
+
+        if(ENABLE_POST_RECV_PRINTS && ENABLE_INV_PRINTS && worker_lid == 0)
+			yellow_printf("vvv Post Initial Receives: \033[31mINVs\033[0m %d\n", MAX_RECV_INV_WRS);
+		post_receives(cb, MAX_RECV_INV_WRS, ST_INV_BUFF, incoming_invs, &inv_push_recv_ptr);
 		if(ENABLE_POST_RECV_PRINTS && ENABLE_VAL_PRINTS && worker_lid == 0)
-			yellow_printf("vvv Post Initial Receives: \033[1m\033[32mVALs\033[0m %d\n", 2 * MAX_RECV_VAL_WRS);
-		post_receives(cb, 2 * MAX_RECV_VAL_WRS, ST_VAL_BUFF, incoming_vals, &val_push_recv_ptr);
+			yellow_printf("vvv Post Initial Receives: \033[1m\033[32mVALs\033[0m %d\n", MAX_RECV_VAL_WRS);
+		post_receives(cb, MAX_RECV_VAL_WRS, ST_VAL_BUFF, incoming_vals, &val_push_recv_ptr);
 		if(ENABLE_POST_RECV_PRINTS && ENABLE_ACK_PRINTS && worker_lid == 0)
-			yellow_printf("vvv Post Initial Receives: \033[33mACKs\033[0m %d\n", 2 * MAX_RECV_ACK_WRS);
-		post_receives(cb, 2 * MAX_RECV_ACK_WRS, ST_ACK_BUFF, incoming_acks, &ack_push_recv_ptr);
+			yellow_printf("vvv Post Initial Receives: \033[33mACKs\033[0m %d\n", MAX_RECV_ACK_WRS);
+		post_receives(cb, MAX_RECV_ACK_WRS, ST_ACK_BUFF, incoming_acks, &ack_push_recv_ptr);
 		if(ENABLE_POST_RECV_PRINTS && ENABLE_CRD_PRINTS && worker_lid == 0)
-			yellow_printf("vvv Post Initial Receives: \033[1m\033[36mCRDs\033[0m %d\n", 2 * MAX_RECV_CRD_WRS);
-        post_credit_recvs(cb, recv_crd_wr, MAX_RECV_CRD_WRS);
+			yellow_printf("vvv Post Initial Receives: \033[1m\033[36mCRDs\033[0m %d\n", MAX_RECV_CRD_WRS);
 		post_credit_recvs(cb, recv_crd_wr, MAX_RECV_CRD_WRS);
 	}
 	setup_qps(worker_gid, cb);
@@ -96,7 +109,7 @@ void *run_worker(void *arg){
 	spacetime_ack_t *ack_recv_ops;
 	spacetime_val_t *val_recv_ops;
 
-    spacetime_inv_packet_t *inv_send_packet_ops;
+	spacetime_inv_packet_t *inv_send_packet_ops;
 	spacetime_ack_packet_t *ack_send_packet_ops;
 	spacetime_val_packet_t *val_send_packet_ops;
 
@@ -114,8 +127,8 @@ void *run_worker(void *arg){
 	long long rolling_iter = 0; /* For throughput measurement */
 	uint32_t trace_iter = 0, credit_debug_cnt = 0, refill_ops_debug_cnt = 0;
 	long long int inv_br_tx = 0, val_br_tx = 0, send_ack_tx = 0, send_crd_tx = 0;
-    struct spacetime_trace_command *trace;
-	uint16_t rolling_inv_index = 0, rolling_val_index = 0;
+	struct spacetime_trace_command *trace;
+	uint16_t rolling_inv_index = 0;
 	uint8_t has_outstanding_vals = 0;
 	trace_init(&trace, worker_gid);
 
@@ -134,24 +147,16 @@ void *run_worker(void *arg){
 		}
 		if (unlikely(refill_ops_debug_cnt > M_4)) {
 			red_printf("Worker %d is stacked \n", worker_lid);
-			printf("Issued Vals: %llu, Received Vals: %llu\n",
-				   w_stats[worker_lid].issued_vals_per_worker,
-				   w_stats[worker_lid].received_vals_per_worker );
-            for(j = 0; j < MAX_BATCH_OPS_SIZE; j++){
-				printf("W%d--> Key Hash:%" PRIu64 "\n\t\tState: %s\n",
-								 worker_lid, ((uint64_t *) &ops[j].key)[0], code_to_str(ops[j].state));
-			}
-            exit(0);
-            if(w_stats[worker_lid].issued_invs_per_worker != w_stats[worker_lid].received_acks_per_worker)
+			if(w_stats[worker_lid].issued_invs_per_worker != w_stats[worker_lid].received_acks_per_worker)
 				red_printf("\tCoordinator: issued_invs: %d received acks: %d\n",
-					   w_stats[worker_lid].issued_invs_per_worker, w_stats[worker_lid].received_acks_per_worker);
-            if(w_stats[worker_lid].received_invs_per_worker != w_stats[worker_lid].issued_acks_per_worker)
+						   w_stats[worker_lid].issued_invs_per_worker, w_stats[worker_lid].received_acks_per_worker);
+			if(w_stats[worker_lid].received_invs_per_worker != w_stats[worker_lid].issued_acks_per_worker)
 				red_printf("\tFollower:    received invs: %d issued acks: %d\n",
-					   w_stats[worker_lid].received_invs_per_worker, w_stats[worker_lid].issued_acks_per_worker);
+						   w_stats[worker_lid].received_invs_per_worker, w_stats[worker_lid].issued_acks_per_worker);
 			refill_ops_debug_cnt = 0;
 		}
 
-       	refill_ops(&trace_iter, worker_lid, trace, ops, &refill_ops_debug_cnt, refilled_ops_debug_cnt);
+		refill_ops(&trace_iter, worker_lid, trace, ops, &refill_ops_debug_cnt, refilled_ops_debug_cnt);
 
 		if(ENABLE_ASSERTIONS)
 			for(i = 0; i < MAX_BATCH_OPS_SIZE; i++)
@@ -195,9 +200,9 @@ void *run_worker(void *arg){
 			if(has_outstanding_vals == 0)
 				///Poll for Acks
 				poll_buff_and_post_recvs(incoming_acks, ST_ACK_BUFF, &ack_pull_recv_ptr, ack_recv_ops,
-									 &ack_ops_i, outstanding_acks, cb->dgram_recv_cq[ACK_UD_QP_ID],
-									 recv_ack_wc, cb, &ack_push_recv_ptr, credits, worker_lid);
-            else
+										 &ack_ops_i, outstanding_acks, cb->dgram_recv_cq[ACK_UD_QP_ID],
+										 recv_ack_wc, cb, &ack_push_recv_ptr, credits, worker_lid);
+			else
 				has_outstanding_vals = broadcasts_vals(ack_recv_ops, val_send_packet_ops, &val_push_send_ptr,
 													   send_val_wr, send_val_sgl, credits, cb, recv_crd_wc,
 													   &credit_debug_cnt, &val_br_tx, recv_crd_wr, worker_lid);
@@ -216,7 +221,7 @@ void *run_worker(void *arg){
 				outstanding_acks = 0; //TODO this is only for testing
 				///~~~~~~~~~~~~~~~~~~~~~~VALS~~~~~~~~~~~~~~~~~~~~~~~~~~~
 				///BC vals and poll for credits
-                if(!DISABLE_VALS)
+				if(!DISABLE_VALS)
 					has_outstanding_vals = broadcasts_vals(ack_recv_ops, val_send_packet_ops, &val_push_send_ptr,
 														   send_val_wr, send_val_sgl, credits, cb, recv_crd_wc,
 														   &credit_debug_cnt, &val_br_tx, recv_crd_wr, worker_lid);

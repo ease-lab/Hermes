@@ -266,7 +266,8 @@ struct spacetime_trace_command {
 
 void spacetime_init(int spacetime_id, int num_threads);
 void spacetime_populate_fixed_len(struct spacetime_kv* kv,  int n,  int val_len);
-void spacetime_batch_ops(int op_num, spacetime_op_t **ops, int thread_id, uint32_t refilled_ops_debug_cnt, uint32_t* ref_ops_dbg_array_cnt);
+void spacetime_batch_ops(int op_num, spacetime_op_t **ops, int thread_id, uint32_t refilled_ops_debug_cnt,
+                         uint32_t* ref_ops_dbg_array_cnt);
 void spacetime_batch_invs(int op_num, spacetime_inv_t **op, int thread_id);
 void spacetime_batch_acks(int op_num, spacetime_ack_t **op, spacetime_op_t* read_write_op, int thread_id);
 void spacetime_batch_vals(int op_num, spacetime_val_t **op, int thread_id);
