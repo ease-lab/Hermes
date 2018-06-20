@@ -272,7 +272,9 @@ void spacetime_batch_ops(int op_num, spacetime_op_t **op, int thread_id, uint32_
 								break;
 						}
 					} while (!is_same_version_and_valid(&prev_meta, curr_meta) && was_locked_read == 0);
-
+					if(refilled_ops_debug_cnt > M_4){
+						printf("State: %s, Version: %d tie-id: %d,\n", code_to_str(curr_meta->state), curr_meta->version, curr_meta->tie_breaker_id);
+					}
 					///TODO may need to put this inside the above criticial section
 					if((*op)[I].state == ST_GET_SUCCESS) {
 						(*op)[I].val_len = kv_ptr[I]->val_len - sizeof(spacetime_object_meta);
@@ -287,7 +289,7 @@ void spacetime_batch_ops(int op_num, spacetime_op_t **op, int thread_id, uint32_
 					(*op)[I].state = ST_EMPTY;
 					optik_lock((spacetime_object_meta*) curr_meta);
 					if(ENABLE_ASSERTIONS)
-						if(unlikely(ref_ops_dbg_array_cnt[I] > M_2)){
+						if(unlikely(ref_ops_dbg_array_cnt[I] > M_4)){
 							red_printf("Worker %d is stacked in %d\n", thread_id, I);
 							if(w_stats[thread_id].issued_invs_per_worker != w_stats[thread_id].received_acks_per_worker) {
 								red_printf("\tCoordinator: issued_invs: %d received acks: %d, state: %s\n",
@@ -313,7 +315,7 @@ void spacetime_batch_ops(int op_num, spacetime_op_t **op, int thread_id, uint32_
 					switch(curr_meta->state) {
 						case VALID_STATE:
 						case INVALID_STATE:
-						case INVALID_BUFF_STATE:
+//						case INVALID_BUFF_STATE:
 							if(curr_meta->write_buffer_index != WRITE_BUFF_EMPTY){
 								///stall write: until all acks from last write arrive
 //                                printf("[W%d]-->State:%s version:%d, tie: %d, buff index: %d, last_write-version: %d, last_write-id: %d !\n",
@@ -336,6 +338,7 @@ void spacetime_batch_ops(int op_num, spacetime_op_t **op, int thread_id, uint32_
 							}
 							break;
 
+						case INVALID_BUFF_STATE: //TODO only for Bebugging
 						case INVALID_WRITE_BUFF_STATE:
 						case WRITE_BUFF_STATE:
 						case REPLAY_BUFF_STATE:
@@ -415,10 +418,9 @@ void spacetime_batch_invs(int op_num, spacetime_inv_t **op, int thread_id)
 			assert((*op)[I].val_len == ST_VALUE_SIZE);
 			assert(REMOTE_MACHINES != 1 || (*op)[I].sender == REMOTE_MACHINES - machine_id);
 			assert(REMOTE_MACHINES != 1 || (*op)[I].tie_breaker_id == REMOTE_MACHINES - machine_id);
-//			red_printf("Ops[%d]vvv hash(1st 8B):%" PRIu64 "\n", I, ((uint64_t *) &(*op)[I].key)[1]);
+//			red_printf("INVs: Ops[%d]vvv hash(1st 8B):%" PRIu64 " version: %d, tie: %d\n", I,
+//					   ((uint64_t *) &(*op)[I].key)[0], (*op)[I].version, (*op)[I].tie_breaker_id);
 		}
-		///if (ENABLE_WAKE_UP == 1)
-		///	if (resp[I].type == CACHE_GET_STALL || resp[I].type == CACHE_PUT_STALL) continue;
 		bkt[I] = (*op)[I].key.bkt & kv.hash_table.bkt_mask;
 		bkt_ptr[I] = &kv.hash_table.ht_index[bkt[I]];
 		__builtin_prefetch(bkt_ptr[I], 0, 0);
@@ -429,8 +431,6 @@ void spacetime_batch_invs(int op_num, spacetime_inv_t **op, int thread_id)
 	}
 
 	for(I = 0; I < op_num; I++) {
-		///if (ENABLE_WAKE_UP == 1)
-		///	if (resp[I].type == CACHE_GET_STALL || resp[I].type == CACHE_PUT_STALL) continue;
 		for(j = 0; j < 8; j++) {
 			if(bkt_ptr[I]->slots[j].in_use == 1 &&
 			   bkt_ptr[I]->slots[j].tag == tag[I]) {
@@ -598,7 +598,8 @@ void spacetime_batch_acks(int op_num, spacetime_ack_t **op, spacetime_op_t* read
             assert((*op)[I].opcode == ST_OP_ACK);
 			assert((*op)[I].tie_breaker_id == machine_id);
 			assert(REMOTE_MACHINES != 1 || (*op)[I].sender == REMOTE_MACHINES - machine_id);
-//			red_printf("Ops[%d]vvv hash(1st 8B):%" PRIu64 "\n", I, ((uint64_t *) &(*op)[I].key)[1]);
+//			yellow_printf("ACKS: Ops[%d]vvv hash(1st 8B):%" PRIu64 " version: %d, tie: %d\n", I,
+//					   ((uint64_t *) &(*op)[I].key)[0], (*op)[I].version, (*op)[I].tie_breaker_id);
 		}
 		bkt[I] = (*op)[I].key.bkt & kv.hash_table.bkt_mask;
 		bkt_ptr[I] = &kv.hash_table.ht_index[bkt[I]];
@@ -665,6 +666,11 @@ void spacetime_batch_acks(int op_num, spacetime_ack_t **op, spacetime_op_t* read
 						}
 						lock_free_read_meta = *((spacetime_object_meta*) curr_meta);
 					} while (!is_same_version_and_valid(&lock_free_read_meta, curr_meta));
+                    if(ENABLE_ASSERTIONS){
+//						if()
+						assert(!timestamp_is_smaller(lock_free_read_meta.version, lock_free_read_meta.tie_breaker_id,
+													(*op)[I].version, (*op)[I].tie_breaker_id));
+					}
 					///lock and proceed iff remote.TS == local.TS or TS  == of local.last_write_TS
 					if(timestamp_is_equal(lock_free_read_meta.version, lock_free_read_meta.tie_breaker_id,
 										  (*op)[I].version, (*op)[I].tie_breaker_id) ||
@@ -751,17 +757,12 @@ void spacetime_batch_acks(int op_num, spacetime_ack_t **op, spacetime_op_t* read
 //                            printf("ACK[%d]: Key Hash:%" PRIu64 " complete buff: %d\n\t op: %s, TS: %d | %d, sender: %d\n",
 //								   I, ((uint64_t *) &(*op)[I].key)[1], complete_buff_write, code_to_str((*op)[I].opcode),
 //								   (*op)[I].version, (*op)[I].tie_breaker_id, (*op)[I].sender);
-							if(read_write_op[complete_buff_write].state != ST_IN_PROGRESS_WRITE)
-								printf("Opcode: %s State %s, complete_buff_write: %d\n",
-									   code_to_str(read_write_op[complete_buff_write].opcode),
-									   code_to_str(read_write_op[complete_buff_write].state),
-									   complete_buff_write);
 							assert(read_write_op[complete_buff_write].state == ST_IN_PROGRESS_WRITE);
                             assert(((uint64_t *) &read_write_op[complete_buff_write].key)[0] == ((uint64_t *) &(*op)[I].key)[0]);
 						}
 						complete_reqs_dbg_cnt++;
 						completed_writes_debug_cnt++;
-						read_write_op[complete_buff_write].state = ST_PUT_COMPLETE; // or ST_COMPLETE
+						read_write_op[complete_buff_write].state = ST_PUT_COMPLETE;
 					} else if(((*op)[I].opcode == ST_LAST_ACK_SUCCESS ||
 						(*op)[I].opcode == ST_LAST_ACK_PREV_WRITE_SUCCESS) &&
 							complete_buff_write == WRITE_BUFF_EMPTY)
@@ -771,10 +772,9 @@ void spacetime_batch_acks(int op_num, spacetime_ack_t **op, spacetime_op_t* read
 			if((*op)[I].opcode != ST_LAST_ACK_SUCCESS)
 				(*op)[I].opcode = ST_ACK_SUCCESS;
 		}
-		if(key_in_store[I] == 0) { //KVS miss --> We get here if either tag or log key match failed
-			(*op)[I].opcode = ST_MISS;
+		if(key_in_store[I] == 0) //KVS miss --> We get here if either tag or log key match failed
 			assert(0);
-		}
+
 	}
 
 	if(ENABLE_ASSERTIONS)
@@ -821,10 +821,9 @@ void spacetime_batch_vals(int op_num, spacetime_val_t **op, int thread_id)
             assert((*op)[I].opcode == ST_OP_VAL);
 			assert(REMOTE_MACHINES != 1 || (*op)[I].sender == REMOTE_MACHINES - machine_id);
 			assert(REMOTE_MACHINES != 1 || (*op)[I].tie_breaker_id == REMOTE_MACHINES - machine_id);
-//            red_printf("Ops[%d]vvv hash(1st 8B):%" PRIu64 "\n", I, ((uint64_t *) &(*op)[I].key)[1]);
+//			green_printf("VALS: Ops[%d]vvv hash(1st 8B):%" PRIu64 " version: %d, tie: %d\n", I,
+//					   ((uint64_t *) &(*op)[I].key)[0], (*op)[I].version, (*op)[I].tie_breaker_id);
 		}
-		///if (ENABLE_WAKE_UP == 1)
-		///	if (resp[I].type == CACHE_GET_STALL || resp[I].type == CACHE_PUT_STALL) continue;
 		bkt[I] = (*op)[I].key.bkt & kv.hash_table.bkt_mask;
 		bkt_ptr[I] = &kv.hash_table.ht_index[bkt[I]];
 		__builtin_prefetch(bkt_ptr[I], 0, 0);
@@ -835,8 +834,6 @@ void spacetime_batch_vals(int op_num, spacetime_val_t **op, int thread_id)
 	}
 
 	for(I = 0; I < op_num; I++) {
-		///if (ENABLE_WAKE_UP == 1)
-		///	if (resp[I].type == CACHE_GET_STALL || resp[I].type == CACHE_PUT_STALL) continue;
 		for(j = 0; j < 8; j++) {
 			if(bkt_ptr[I]->slots[j].in_use == 1 &&
 			   bkt_ptr[I]->slots[j].tag == tag[I]) {
@@ -923,11 +920,8 @@ void spacetime_batch_vals(int op_num, spacetime_val_t **op, int thread_id)
 			}
 			(*op)[I].opcode = ST_VAL_SUCCESS;
 		}
-		if(key_in_store[I] == 0){ //KVS miss --> We get here if either tag or log key match failed
-			red_printf("ASSERTION-->Ops[%d]vvv hash(1st 8B):%" PRIu64 "\n", I, ((uint64_t *) &(*op)[I].key)[1]);
+		if(key_in_store[I] == 0)//KVS miss --> We get here if either tag or log key match failed
 			assert(0);
-			(*op)[I].opcode = ST_MISS;
-		}
 	}
 }
 

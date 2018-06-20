@@ -7,10 +7,10 @@
 #include "hrd.h"
 
 #define ENABLE_ASSERTIONS 1
-#define MACHINE_NUM 2
+#define MACHINE_NUM 3
 #define REMOTE_MACHINES (MACHINE_NUM - 1)
 #define GROUP_MEMBERSHIP_ARRAY_SIZE  CEILING(MACHINE_NUM, 8) //assuming uint8_t
-#define WORKERS_PER_MACHINE 20
+#define WORKERS_PER_MACHINE 39
 #define USE_ALL_CORES 1
 #define ENABLE_HYPERTHREADING 1
 #define KV_SOCKET 0
@@ -109,16 +109,16 @@
 -----------------PRINTS (DBG)---------------------
 --------------------------------------------------*/
 #define MAX_THREADS_TO_PRINT 1
-#define ENABLE_REQ_PRINTS 0
-#define ENABLE_BATCH_OP_PRINTS 0
-#define ENABLE_CREDIT_PRINTS 0
-#define ENABLE_SEND_PRINTS 0
-#define ENABLE_POST_RECV_PRINTS 0
-#define ENABLE_RECV_PRINTS 0
 #define ENABLE_SS_PRINTS 0
-#define ENABLE_INV_PRINTS 0
+#define ENABLE_REQ_PRINTS 0
+#define ENABLE_SEND_PRINTS 0
+#define ENABLE_RECV_PRINTS 0
+#define ENABLE_CREDIT_PRINTS 0
+#define ENABLE_POST_RECV_PRINTS 0
+#define ENABLE_BATCH_OP_PRINTS 0
+#define ENABLE_INV_PRINTS 1
 #define ENABLE_ACK_PRINTS 0
-#define ENABLE_VAL_PRINTS 0
+#define ENABLE_VAL_PRINTS 1
 #define ENABLE_CRD_PRINTS 0
 
 //Stats
