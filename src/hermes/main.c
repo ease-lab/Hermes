@@ -106,6 +106,7 @@ int main(int argc, char *argv[]){
             w_core = i;
 		else
 			w_core = START_SPAWNING_THREADS_FROM_SOCKET +  (ENABLE_HYPERTHREADING == 1 ? 2 * i : 4 * i ); // use socket one cores
+        assert(w_core < TOTAL_CORES);
 		param_arr[i].id = i;
 
 		green_printf("Creating worker thread %d at core %d \n", param_arr[i].id, w_core);

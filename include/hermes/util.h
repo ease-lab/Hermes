@@ -80,26 +80,35 @@ void print_latency_stats(void);
 void setup_qps(int worker_lid, struct hrd_ctrl_blk *cb);
 void setup_q_depths(int** recv_q_depths, int** send_q_depths);
 char* code_to_str(uint8_t code);
+
+
 void setup_ops(spacetime_op_t **ops,
 			   spacetime_inv_t **inv_recv_ops, spacetime_ack_t **ack_recv_ops,
 			   spacetime_val_t **val_recv_ops, spacetime_inv_packet_t **inv_send_ops,
 			   spacetime_ack_packet_t **ack_send_ops, spacetime_val_packet_t **val_send_ops);
+
 void setup_credits(uint8_t credits[][MACHINE_NUM],     struct hrd_ctrl_blk *cb,
 				   struct ibv_send_wr* credit_send_wr, struct ibv_sge* credit_send_sgl,
 				   struct ibv_recv_wr* credit_recv_wr, struct ibv_sge* credit_recv_sgl);
-void setup_WRs(struct ibv_send_wr *inv_send_wr, struct ibv_sge *inv_send_sgl,
-                    struct ibv_recv_wr *inv_recv_wr, struct ibv_sge *inv_recv_sgl,
+
+void setup_send_WRs(struct ibv_send_wr *inv_send_wr, struct ibv_sge *inv_send_sgl,
 					struct ibv_send_wr *ack_send_wr, struct ibv_sge *ack_send_sgl,
-                    struct ibv_recv_wr *ack_recv_wr, struct ibv_sge *ack_recv_sgl,
                     struct ibv_send_wr *val_send_wr, struct ibv_sge *val_send_sgl,
+                    struct ibv_mr *inv_mr, struct ibv_mr *ack_mr,
+                    struct ibv_mr *val_mr, uint16_t local_worker_id);
+
+void setup_recv_WRs(struct ibv_recv_wr *inv_recv_wr, struct ibv_sge *inv_recv_sgl,
+                    struct ibv_recv_wr *ack_recv_wr, struct ibv_sge *ack_recv_sgl,
                     struct ibv_recv_wr *val_recv_wr, struct ibv_sge *val_recv_sgl,
-					struct hrd_ctrl_blk *cb, uint16_t local_client_id);
-void post_coh_recvs(struct hrd_ctrl_blk *cb,
-					int* inv_push_ptr, ud_req_inv_t* inv_buf,
-					int* ack_push_ptr, ud_req_ack_t* ack_buf,
-					int* val_push_ptr, ud_req_val_t* val_buf);
+					struct hrd_ctrl_blk *cb);
 
-
+void setup_incoming_buffs_and_post_initial_recvs(ud_req_inv_t *incoming_invs, ud_req_ack_t *incoming_acks,
+												 ud_req_val_t *incoming_vals,
+												 int *inv_push_recv_ptr, int *ack_push_recv_ptr, int *val_push_recv_ptr,
+												 struct ibv_recv_wr *inv_recv_wr, struct ibv_recv_wr *ack_recv_wr,
+												 struct ibv_recv_wr *val_recv_wr,
+												 struct ibv_recv_wr *crd_recv_wr, struct hrd_ctrl_blk *cb,
+												 uint16_t worker_lid);
 extern int qps_published;
 extern volatile struct worker_stats w_stats[WORKERS_PER_MACHINE];
 #endif //HERMES_UTIL_H

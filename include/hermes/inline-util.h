@@ -19,43 +19,71 @@ static inline void poll_cq_for_credits(struct ibv_cq *credit_recv_cq, struct ibv
 ---------------------------------------------------------------------------*/
 ///TODO ADD Batching to the NIC for post RECEIVES
 static inline void post_receives(struct hrd_ctrl_blk *cb, uint16_t num_of_receives,
-								 uint8_t buff_type, void *recv_buff, int *push_ptr)
+								 uint8_t buff_type, void *recv_buff, int *push_ptr,
+								 struct ibv_recv_wr *recv_wr)
 {
-	int i,qp_id, req_size, recv_q_depth;
+	int i, ret, qp_id, req_size, recv_q_depth, max_recv_wrs;
+	struct ibv_recv_wr *bad_recv_wr;
 	void* next_buff_addr;
+
 	switch(buff_type){
 		case ST_INV_BUFF:
-			req_size = sizeof(ud_req_inv_t);
+			req_size = INV_RECV_REQ_SIZE;
 			recv_q_depth = RECV_INV_Q_DEPTH;
+			max_recv_wrs = MAX_RECV_INV_WRS;
 			qp_id = INV_UD_QP_ID;
 			break;
 		case ST_ACK_BUFF:
-			req_size = sizeof(ud_req_ack_t);
+			req_size = ACK_RECV_REQ_SIZE;
 			recv_q_depth = RECV_ACK_Q_DEPTH;
+			max_recv_wrs = MAX_RECV_ACK_WRS;
 			qp_id = ACK_UD_QP_ID;
 			break;
 		case ST_VAL_BUFF:
-			req_size = sizeof(ud_req_val_t);
+			req_size = VAL_RECV_REQ_SIZE;
 			recv_q_depth = RECV_VAL_Q_DEPTH;
+			max_recv_wrs = MAX_RECV_VAL_WRS;
 			qp_id = VAL_UD_QP_ID;
 			break;
 		default: assert(0);
 	}
+	if(ENABLE_ASSERTIONS)
+		assert(num_of_receives <= max_recv_wrs);
 
 	for(i = 0; i < num_of_receives; i++) {
 		next_buff_addr = ((uint8_t*) recv_buff) + (*push_ptr * req_size);
 		memset(next_buff_addr, 0, (size_t) req_size); //reset the buffer before posting the receive
-		hrd_post_dgram_recv(cb->dgram_qp[qp_id],
-							next_buff_addr,
-							req_size, cb->dgram_buf_mr->lkey);
+        if(BATCH_POST_RECVS_TO_NIC)
+			recv_wr[i].sg_list->addr = (uintptr_t) next_buff_addr;
+        else
+			hrd_post_dgram_recv(cb->dgram_qp[qp_id], next_buff_addr,
+								req_size, cb->dgram_buf_mr->lkey);
 		HRD_MOD_ADD(*push_ptr, recv_q_depth);
+	}
+
+    if(BATCH_POST_RECVS_TO_NIC) {
+		recv_wr[num_of_receives - 1].next = NULL;
+		if (ENABLE_ASSERTIONS) {
+			for (i = 0; i < num_of_receives - 1; i++) {
+				assert(recv_wr[i].num_sge == 1);
+				assert(recv_wr[i].next == &recv_wr[i + 1]);
+				assert(recv_wr[i].sg_list->length == req_size);
+				assert(recv_wr[i].sg_list->lkey == cb->dgram_buf_mr->lkey);
+			}
+			assert(recv_wr[i].next == NULL);
+		}
+		ret = ibv_post_recv(cb->dgram_qp[qp_id], &recv_wr[0], &bad_recv_wr);
+		CPE(ret, "ibv_post_recv error: posting recvs for credits before val bcast", ret);
+		//recover next ptr of last wr to NULL
+		recv_wr[num_of_receives - 1].next = (max_recv_wrs == num_of_receives - 1) ? NULL : &recv_wr[num_of_receives];
 	}
 }
 
 static inline void poll_buff_and_post_recvs(void *incoming_buff, uint8_t buff_type, int *buf_pull_ptr,
-											void *recv_ops, int *ops_push_ptr, uint16_t outstanding_ops,
+											void *recv_ops, int *ops_push_ptr,
 											struct ibv_cq *completion_q, struct ibv_wc *work_completions,
 											struct hrd_ctrl_blk *cb, int *recv_push_ptr,
+											struct ibv_recv_wr *recv_wr,
 											uint8_t credits[][MACHINE_NUM], uint16_t worker_lid)
 {
 	void* next_packet_reqs, *recv_op_ptr, *next_req;
@@ -89,7 +117,7 @@ static inline void poll_buff_and_post_recvs(void *incoming_buff, uint8_t buff_ty
 	}
 
 	//poll completion q
-	packets_polled = ibv_poll_cq(completion_q, MAX_BATCH_OPS_SIZE - outstanding_ops - *ops_push_ptr, work_completions);
+	packets_polled = ibv_poll_cq(completion_q, MAX_BATCH_OPS_SIZE - *ops_push_ptr, work_completions);
 
 	for(i = 0; i < packets_polled; i++){
 		index = (*buf_pull_ptr + 1) % recv_q_depth;
@@ -145,8 +173,6 @@ static inline void poll_buff_and_post_recvs(void *incoming_buff, uint8_t buff_ty
 		for(j = 0; j < *next_packet_req_num_ptr; j++){
 			recv_op_ptr = ((uint8_t *) recv_ops) + (*ops_push_ptr * req_size);
 			next_req = &((uint8_t*) next_packet_reqs)[j * req_size];
-//            if(ENABLE_ASSERTIONS)
-//				recv_op_ptr
 			memcpy(recv_op_ptr, next_req, req_size);
 			reqs_polled++;
 			(*ops_push_ptr)++;
@@ -164,7 +190,7 @@ static inline void poll_buff_and_post_recvs(void *incoming_buff, uint8_t buff_ty
 
 	//Refill recvs
 	if(packets_polled > 0)
-		post_receives(cb, (uint16_t) packets_polled, buff_type, incoming_buff, recv_push_ptr);
+		post_receives(cb, (uint16_t) packets_polled, buff_type, incoming_buff, recv_push_ptr, recv_wr);
 
 	if (ENABLE_RECV_PRINTS || ENABLE_CREDIT_PRINTS || ENABLE_POST_RECV_PRINTS || ENABLE_STAT_COUNTING)
 		if(packets_polled > 0){
@@ -245,7 +271,10 @@ static inline void forge_bcast_inv_wrs(spacetime_op_t* op, spacetime_inv_packet_
 
 	if(inv_send_op->req_num == 1) {
 		send_inv_sgl[br_i].addr = (uint64_t) (uintptr_t) inv_send_op;
-		send_inv_wr[br_i * REMOTE_MACHINES].send_flags = IBV_SEND_INLINE; //reset possibly signaled wr from the prev round
+		if(DISABLE_INV_INLINING)
+			send_inv_wr[br_i * REMOTE_MACHINES].send_flags = 0;
+		else
+			send_inv_wr[br_i * REMOTE_MACHINES].send_flags = IBV_SEND_INLINE; //reset possibly signaled wr from the prev round
 		// SET THE PREV SEND_WR TO POINT TO CURR
 		if (br_i > 0)
 			send_inv_wr[br_i * REMOTE_MACHINES - 1].next = &send_inv_wr[br_i * REMOTE_MACHINES];
@@ -282,7 +311,7 @@ static inline void batch_invs_2_NIC(struct ibv_send_wr *send_inv_wr, struct ibv_
 		for (j = 0; j < br_i * REMOTE_MACHINES - 1; j++) {
 			assert(send_inv_wr[j].num_sge == 1);
 			assert(send_inv_wr[j].next == &send_inv_wr[j + 1]);
-			assert(send_inv_wr[j].opcode == IBV_SEND_INLINE | IBV_SEND_SIGNALED);
+			assert(DISABLE_INV_INLINING || send_inv_wr[j].opcode == IBV_SEND_INLINE | IBV_SEND_SIGNALED);
 			assert(send_inv_wr[j].sg_list == &send_inv_sgl[j / REMOTE_MACHINES]);
 			assert(send_inv_sgl[j / REMOTE_MACHINES].length == sizeof(spacetime_inv_packet_t));
 			assert(((spacetime_inv_packet_t *) send_inv_sgl[j / REMOTE_MACHINES].addr)->req_num > 0);
@@ -375,7 +404,7 @@ static inline void broadcasts_invs(spacetime_op_t* ops, spacetime_inv_packet_t* 
 				br_i = 0;
 				total_invs_in_batch = 0;
 			}
-			HRD_MOD_ADD(*inv_push_ptr, MAX_BATCH_OPS_SIZE); //got to the next "packet"
+			HRD_MOD_ADD(*inv_push_ptr, INV_SEND_OPS_SIZE); //got to the next "packet"
 			//Reset data left from previous bcasts after ibv_post_send to avoid sending reseted data
 			inv_send_packet_ops[*inv_push_ptr].req_num = 0;
 			for(j = 0; j < INV_MAX_REQ_COALESCE; j++)
@@ -395,7 +424,7 @@ static inline void broadcasts_invs(spacetime_op_t* ops, spacetime_inv_packet_t* 
 	//Move to next packet and reset data left from previous bcasts
 	if(inv_send_packet_ops[*inv_push_ptr].req_num > 0 &&
 	   inv_send_packet_ops[*inv_push_ptr].req_num < INV_MAX_REQ_COALESCE) {
-		HRD_MOD_ADD(*inv_push_ptr, MAX_BATCH_OPS_SIZE);
+		HRD_MOD_ADD(*inv_push_ptr, INV_SEND_OPS_SIZE);
 		inv_send_packet_ops[*inv_push_ptr].req_num = 0;
 		for(j = 0; j < INV_MAX_REQ_COALESCE; j++)
 			inv_send_packet_ops[*inv_push_ptr].reqs[j].opcode = ST_EMPTY;
@@ -432,7 +461,10 @@ static inline void forge_ack_wr(spacetime_inv_t* inv_recv_op, spacetime_ack_pack
 		send_ack_sgl[send_ack_packets].addr = (uint64_t) ack_send_ops;
 		send_ack_wr[send_ack_packets].wr.ud.ah = remote_worker_qps[dst_worker_gid][ACK_UD_QP_ID].ah;
 		send_ack_wr[send_ack_packets].wr.ud.remote_qpn = (uint32) remote_worker_qps[dst_worker_gid][ACK_UD_QP_ID].qpn;
-		send_ack_wr[send_ack_packets].send_flags = IBV_SEND_INLINE;
+		if(DISABLE_ACK_INLINING)
+			send_ack_wr[send_ack_packets].send_flags = 0;
+		else
+			send_ack_wr[send_ack_packets].send_flags = IBV_SEND_INLINE;
 
 		if (send_ack_packets > 0)
 			send_ack_wr[send_ack_packets - 1].next = &send_ack_wr[send_ack_packets];
@@ -470,7 +502,7 @@ static inline void batch_acks_2_NIC(struct ibv_send_wr *send_ack_wr, struct ibv_
 			assert(send_ack_wr[j].sg_list == &send_ack_sgl[j]);
 			assert(send_ack_wr[j].sg_list->length == sizeof(spacetime_ack_packet_t));
 			assert(send_ack_wr[j].num_sge == 1);
-			assert(send_ack_wr[j].send_flags == IBV_SEND_INLINE ||
+			assert(DISABLE_ACK_INLINING || send_ack_wr[j].send_flags == IBV_SEND_INLINE ||
 				   send_ack_wr[j].send_flags == IBV_SEND_INLINE | IBV_SEND_SIGNALED);
 			assert(((spacetime_ack_packet_t *) send_ack_sgl[j].addr)->req_num > 0);
 			assert(((spacetime_ack_packet_t *) send_ack_sgl[j].addr)->reqs[0].opcode == ST_OP_ACK);
@@ -494,18 +526,16 @@ static inline void batch_acks_2_NIC(struct ibv_send_wr *send_ack_wr, struct ibv_
 		assert(total_acks_issued[worker_lid] == w_stats[worker_lid].issued_acks_per_worker);
 }
 
-static inline void issue_acks(spacetime_inv_t *inv_recv_ops, spacetime_ack_packet_t* ack_send_packet_ops,
+static inline void issue_acks(spacetime_inv_t *inv_recv_ops, spacetime_ack_packet_t* ack_send_packet_ops, int* ack_push_ptr,
 							  long long int* send_ack_tx, struct ibv_send_wr *send_ack_wr,
 							  struct ibv_sge *send_ack_sgl, uint8_t credits[][MACHINE_NUM],
 							  struct hrd_ctrl_blk *cb,  uint16_t worker_lid, uint32_t* credit_debug_cnt)
 {
-	uint16_t i = 0, send_ack_packets = 0, total_acks_in_batch = 0, j = 0;
+	uint16_t i = 0, total_acks_in_batch = 0, j = 0, send_ack_packets = 0;
 	uint8_t last_ack_dst = 255;
 
-	//Reset data left from previous unicasts
-	ack_send_packet_ops[send_ack_packets].req_num = 0;
-	for(j = 0; j < ACK_MAX_REQ_COALESCE; j++)
-		ack_send_packet_ops[send_ack_packets].reqs[j].opcode = ST_EMPTY;
+	if(ENABLE_ASSERTIONS)
+		assert(ack_send_packet_ops[*ack_push_ptr].req_num == 0);
 
 	for (i = 0; i < MAX_BATCH_OPS_SIZE * INV_MAX_REQ_COALESCE; i++) {
 		if (inv_recv_ops[i].opcode == ST_EMPTY)
@@ -519,16 +549,17 @@ static inline void issue_acks(spacetime_inv_t *inv_recv_ops, spacetime_ack_packe
 			assert(REMOTE_MACHINES != 1 || inv_recv_ops[i].sender == REMOTE_MACHINES - machine_id);
 		}
 
-		if (credits[ACK_UD_QP_ID][inv_recv_ops[i].sender] == 0) {
+		if (credits[ACK_UD_QP_ID][inv_recv_ops[i].sender] == 0)
 			assert(0); // we should always have credits for acks
-		}
+
 		*credit_debug_cnt = 0;
 		//reduce credits
 		credits[ACK_UD_QP_ID][inv_recv_ops[i].sender]--;
 		if (ENABLE_CREDIT_PRINTS && ENABLE_ACK_PRINTS && worker_lid < MAX_THREADS_TO_PRINT)
 			printf("$$$ Credits[W%d]: \033[33mACKs\033[0m \033[31mdecremented\033[0m to %d (for machine %d)\n",
 				   worker_lid, credits[ACK_UD_QP_ID][inv_recv_ops[i].sender], inv_recv_ops[i].sender);
-		if(ack_send_packet_ops[send_ack_packets].req_num != 0 && inv_recv_ops[i].sender != last_ack_dst){ //in case that the last ack dst != this ack dst
+
+		if(ack_send_packet_ops[*ack_push_ptr].req_num != 0 && inv_recv_ops[i].sender != last_ack_dst){ //in case that the last ack dst != this ack dst
 			send_ack_packets++;
 			if (send_ack_packets == MAX_SEND_ACK_WRS) {
 				batch_acks_2_NIC(send_ack_wr, send_ack_sgl, cb, send_ack_packets,
@@ -536,11 +567,11 @@ static inline void issue_acks(spacetime_inv_t *inv_recv_ops, spacetime_ack_packe
 				send_ack_packets = 0;
 				total_acks_in_batch = 0;
 			}
-
+			HRD_MOD_ADD(*ack_push_ptr, ACK_SEND_OPS_SIZE); //got to the next "packet"
 			//Reset data left from previous unicasts
-			ack_send_packet_ops[send_ack_packets].req_num = 0;
+			ack_send_packet_ops[*ack_push_ptr].req_num = 0;
 			for(j = 0; j < ACK_MAX_REQ_COALESCE; j++)
-				ack_send_packet_ops[send_ack_packets].reqs[j].opcode = ST_EMPTY;
+				ack_send_packet_ops[*ack_push_ptr].reqs[j].opcode = ST_EMPTY;
 		}
 		last_ack_dst = inv_recv_ops[i].sender;
 
@@ -551,35 +582,43 @@ static inline void issue_acks(spacetime_inv_t *inv_recv_ops, spacetime_ack_packe
 		else assert(0);
 
 		// Create the broadcast messages
-		forge_ack_wr(&inv_recv_ops[i], &ack_send_packet_ops[send_ack_packets], send_ack_wr,
+		forge_ack_wr(&inv_recv_ops[i], &ack_send_packet_ops[*ack_push_ptr], send_ack_wr,
 					 send_ack_sgl, cb, send_ack_tx, send_ack_packets, worker_lid);
 		total_acks_in_batch++;
 
-		if(ack_send_packet_ops[send_ack_packets].req_num == ACK_MAX_REQ_COALESCE) {
+		if(ack_send_packet_ops[*ack_push_ptr].req_num == ACK_MAX_REQ_COALESCE) {
 			send_ack_packets++;
-
 			if (send_ack_packets == MAX_SEND_ACK_WRS) {
 				batch_acks_2_NIC(send_ack_wr, send_ack_sgl, cb, send_ack_packets,
 								 total_acks_in_batch, worker_lid);
 				send_ack_packets = 0;
 				total_acks_in_batch = 0;
 			}
-
+			HRD_MOD_ADD(*ack_push_ptr, ACK_SEND_OPS_SIZE);
 			//Reset data left from previous unicasts
-			ack_send_packet_ops[send_ack_packets].req_num = 0;
+			ack_send_packet_ops[*ack_push_ptr].req_num = 0;
 			for(j = 0; j < ACK_MAX_REQ_COALESCE; j++)
-				ack_send_packet_ops[send_ack_packets].reqs[j].opcode = ST_EMPTY;
+				ack_send_packet_ops[*ack_push_ptr].reqs[j].opcode = ST_EMPTY;
 
 		}
 	}
 
-	if(ack_send_packet_ops[send_ack_packets].req_num > 0 &&
-	   ack_send_packet_ops[send_ack_packets].req_num < ACK_MAX_REQ_COALESCE)
+	if(ack_send_packet_ops[*ack_push_ptr].req_num > 0 &&
+	   ack_send_packet_ops[*ack_push_ptr].req_num < ACK_MAX_REQ_COALESCE)
 		send_ack_packets++;
 
 	if (send_ack_packets > 0)
 		batch_acks_2_NIC(send_ack_wr, send_ack_sgl, cb, send_ack_packets,
 						 total_acks_in_batch, worker_lid);
+
+	//Move to next packet and reset data left from previous unicasts
+	if(ack_send_packet_ops[*ack_push_ptr].req_num > 0 &&
+	   ack_send_packet_ops[*ack_push_ptr].req_num < ACK_MAX_REQ_COALESCE) {
+		HRD_MOD_ADD(*ack_push_ptr, ACK_SEND_OPS_SIZE);
+		ack_send_packet_ops[*ack_push_ptr].req_num = 0;
+		for(j = 0; j < ACK_MAX_REQ_COALESCE; j++)
+			ack_send_packet_ops[*ack_push_ptr].reqs[j].opcode = ST_EMPTY;
+	}
 }
 
 
@@ -689,7 +728,10 @@ static inline void forge_bcast_val_wrs(spacetime_ack_t* ack_op, spacetime_val_pa
 
 	if(val_packet_send_op->req_num == 1) {
 		send_val_sgl[br_i].addr = (uint64_t) (uintptr_t) val_packet_send_op;
-		send_val_wr[br_i * REMOTE_MACHINES].send_flags = IBV_SEND_INLINE;
+		if(DISABLE_VAL_INLINING)
+			send_val_wr[br_i * REMOTE_MACHINES].send_flags = 0;
+		else
+			send_val_wr[br_i * REMOTE_MACHINES].send_flags = IBV_SEND_INLINE;
 
 		// SET THE LAST SEND_WR TO POINT TO NULL
 		if (br_i > 0)
@@ -728,7 +770,7 @@ static inline void batch_vals_2_NIC(struct ibv_send_wr *send_val_wr, struct ibv_
 		for (j = 0; j < br_i * REMOTE_MACHINES - 1; j++) {
 			assert(send_val_wr[j].next == &send_val_wr[j + 1]);
 			assert(send_val_wr[j].num_sge == 1);
-			assert(send_val_wr[j].opcode == IBV_SEND_INLINE | IBV_SEND_SIGNALED);
+			assert(DISABLE_VAL_INLINING || send_val_wr[j].opcode == IBV_SEND_INLINE | IBV_SEND_SIGNALED);
 			assert(send_val_wr[j].sg_list == &send_val_sgl[j / REMOTE_MACHINES]);
 			assert(send_val_sgl[j / REMOTE_MACHINES].length == sizeof(spacetime_val_packet_t));
 //            for(k = 0; k < ((spacetime_val_packet_t*) send_val_sgl[j / REMOTE_MACHINES].addr)->req_num; k ++)
@@ -810,7 +852,7 @@ static inline uint8_t broadcasts_vals(spacetime_ack_t* ack_ops, spacetime_val_pa
 				br_i = 0;
 				total_vals_in_batch = 0;
 			}
-			HRD_MOD_ADD(*val_push_ptr, MAX_BATCH_OPS_SIZE);
+			HRD_MOD_ADD(*val_push_ptr, VAL_SEND_OPS_SIZE);
 			//Reset data left from previous bcasts after ibv_post_send to avoid sending reseted data
 			val_send_packet_ops[*val_push_ptr].req_num = 0;
 			for(j = 0; j < VAL_MAX_REQ_COALESCE; j++)
@@ -829,7 +871,7 @@ static inline uint8_t broadcasts_vals(spacetime_ack_t* ack_ops, spacetime_val_pa
 	//Reset data left from previous bcasts
 	if(val_send_packet_ops[*val_push_ptr].req_num > 0 &&
 	   val_send_packet_ops[*val_push_ptr].req_num < VAL_MAX_REQ_COALESCE) {
-		HRD_MOD_ADD(*val_push_ptr, MAX_BATCH_OPS_SIZE);
+		HRD_MOD_ADD(*val_push_ptr, VAL_SEND_OPS_SIZE);
 		val_send_packet_ops[*val_push_ptr].req_num = 0;
 		for(j = 0; j < VAL_MAX_REQ_COALESCE; j++)
 			val_send_packet_ops[*val_push_ptr].reqs[j].opcode = ST_EMPTY;

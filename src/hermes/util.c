@@ -357,63 +357,65 @@ void setup_ops(spacetime_op_t **ops,
     int i,j;
     *ops = memalign(4096, MAX_BATCH_OPS_SIZE * (sizeof(spacetime_op_t)));
     memset(*ops, 0, MAX_BATCH_OPS_SIZE * (sizeof(spacetime_op_t)));
-
     assert(ops != NULL);
 
     ///Network ops
 	///TODO should we memalign aswell?
-	*inv_recv_ops = (spacetime_inv_t*) malloc(MAX_BATCH_OPS_SIZE * INV_MAX_REQ_COALESCE * sizeof(spacetime_inv_t));
-	*ack_recv_ops = (spacetime_ack_t*) malloc(MAX_BATCH_OPS_SIZE * ACK_MAX_REQ_COALESCE * sizeof(spacetime_ack_t));
-    *val_recv_ops = (spacetime_val_t*) malloc(MAX_BATCH_OPS_SIZE * VAL_MAX_REQ_COALESCE * sizeof(spacetime_val_t)); /* Batch of incoming broadcasts for the Cache*/
+	*inv_recv_ops = (spacetime_inv_t*) malloc(INV_RECV_OPS_SIZE * sizeof(spacetime_inv_t));
+	*ack_recv_ops = (spacetime_ack_t*) malloc(ACK_RECV_OPS_SIZE * sizeof(spacetime_ack_t));
+    *val_recv_ops = (spacetime_val_t*) malloc(VAL_RECV_OPS_SIZE * sizeof(spacetime_val_t)); /* Batch of incoming broadcasts for the Cache*/
 	assert(*inv_recv_ops!= NULL && *ack_recv_ops!= NULL && *val_recv_ops!= NULL);
 
-    memset(*inv_recv_ops, 0, MAX_BATCH_OPS_SIZE * INV_MAX_REQ_COALESCE * sizeof(spacetime_inv_t));
-    memset(*ack_recv_ops, 0, MAX_BATCH_OPS_SIZE * ACK_MAX_REQ_COALESCE * sizeof(spacetime_ack_t));
-    memset(*val_recv_ops, 0, MAX_BATCH_OPS_SIZE * VAL_MAX_REQ_COALESCE * sizeof(spacetime_val_t));
-
-    *inv_send_packet_ops = (spacetime_inv_packet_t*) malloc(MAX_BATCH_OPS_SIZE * sizeof(spacetime_inv_packet_t));
-    *ack_send_packet_ops = (spacetime_ack_packet_t*) malloc(MAX_BATCH_OPS_SIZE * sizeof(spacetime_ack_packet_t));
-	*val_send_packet_ops = (spacetime_val_packet_t*) malloc(MAX_BATCH_OPS_SIZE * sizeof(spacetime_val_packet_t)); /* Batch of incoming broadcasts for the Cache*/
+    *inv_send_packet_ops = (spacetime_inv_packet_t*) malloc(INV_SEND_OPS_SIZE * sizeof(spacetime_inv_packet_t));
+    *ack_send_packet_ops = (spacetime_ack_packet_t*) malloc(ACK_SEND_OPS_SIZE * sizeof(spacetime_ack_packet_t));
+	*val_send_packet_ops = (spacetime_val_packet_t*) malloc(VAL_SEND_OPS_SIZE * sizeof(spacetime_val_packet_t)); /* Batch of incoming broadcasts for the Cache*/
 	assert(*inv_send_packet_ops != NULL && *ack_send_packet_ops != NULL && *val_send_packet_ops!= NULL);
 
-	memset(*inv_send_packet_ops, 0, MAX_BATCH_OPS_SIZE * sizeof(spacetime_inv_packet_t));
-	memset(*ack_send_packet_ops, 0, MAX_BATCH_OPS_SIZE * sizeof(spacetime_ack_packet_t));
-	memset(*val_send_packet_ops, 0, MAX_BATCH_OPS_SIZE * sizeof(spacetime_val_packet_t));
+    memset(*inv_recv_ops, 0, INV_RECV_OPS_SIZE * sizeof(spacetime_inv_t));
+    memset(*ack_recv_ops, 0, ACK_RECV_OPS_SIZE * sizeof(spacetime_ack_t));
+    memset(*val_recv_ops, 0, VAL_RECV_OPS_SIZE * sizeof(spacetime_val_t));
 
+	memset(*inv_send_packet_ops, 0, INV_SEND_OPS_SIZE * sizeof(spacetime_inv_packet_t));
+	memset(*ack_send_packet_ops, 0, ACK_SEND_OPS_SIZE * sizeof(spacetime_ack_packet_t));
+	memset(*val_send_packet_ops, 0, VAL_SEND_OPS_SIZE * sizeof(spacetime_val_packet_t));
 
-    for(i = 0; i < MAX_BATCH_OPS_SIZE * INV_MAX_REQ_COALESCE; i++)
+    for(i = 0; i < INV_RECV_OPS_SIZE; i++)
         (*inv_recv_ops)[i].opcode = ST_EMPTY;
 
-    for(i = 0; i < MAX_BATCH_OPS_SIZE * ACK_MAX_REQ_COALESCE; i++)
+    for(i = 0; i < ACK_RECV_OPS_SIZE; i++)
         (*ack_recv_ops)[i].opcode = ST_EMPTY;
 
-    for(i = 0; i < MAX_BATCH_OPS_SIZE * VAL_MAX_REQ_COALESCE; i++)
+    for(i = 0; i < VAL_RECV_OPS_SIZE; i++)
         (*val_recv_ops)[i].opcode = ST_EMPTY;
 
 	for(i = 0; i < MAX_BATCH_OPS_SIZE; i++) {
 		(*ops)[i].opcode = ST_EMPTY;
 		(*ops)[i].state = ST_EMPTY;
-
-        (*inv_send_packet_ops)[i].req_num = 0;
-        for(j = 0; j < INV_MAX_REQ_COALESCE; j++)
-            (*inv_send_packet_ops)[i].reqs[j].opcode = ST_EMPTY;
-        (*ack_send_packet_ops)[i].req_num = 0;
-        for(j = 0; j < ACK_MAX_REQ_COALESCE; j++)
-            (*ack_send_packet_ops)[i].reqs[j].opcode = ST_EMPTY;
-        (*val_send_packet_ops)[i].req_num = 0;
-        for(j = 0; j < VAL_MAX_REQ_COALESCE; j++)
-            (*val_send_packet_ops)[i].reqs[j].opcode = ST_EMPTY;
 	}
+
+    for(i = 0; i < INV_SEND_OPS_SIZE; i++) {
+        (*inv_send_packet_ops)[i].req_num = 0;
+        for (j = 0; j < INV_MAX_REQ_COALESCE; j++)
+            (*inv_send_packet_ops)[i].reqs[j].opcode = ST_EMPTY;
+    }
+    for(i = 0; i < ACK_SEND_OPS_SIZE; i++) {
+        (*ack_send_packet_ops)[i].req_num = 0;
+        for (j = 0; j < ACK_MAX_REQ_COALESCE; j++)
+            (*ack_send_packet_ops)[i].reqs[j].opcode = ST_EMPTY;
+    }
+    for(i = 0; i < VAL_SEND_OPS_SIZE; i++) {
+        (*val_send_packet_ops)[i].req_num = 0;
+        for (j = 0; j < VAL_MAX_REQ_COALESCE; j++)
+            (*val_send_packet_ops)[i].reqs[j].opcode = ST_EMPTY;
+    }
 }
 
 // Set up all coherence WRs
-void setup_WRs(struct ibv_send_wr *inv_send_wr, struct ibv_sge *inv_send_sgl,
-                    struct ibv_recv_wr *inv_recv_wr, struct ibv_sge *inv_recv_sgl,
+void setup_send_WRs(struct ibv_send_wr *inv_send_wr, struct ibv_sge *inv_send_sgl,
 					struct ibv_send_wr *ack_send_wr, struct ibv_sge *ack_send_sgl,
-                    struct ibv_recv_wr *ack_recv_wr, struct ibv_sge *ack_recv_sgl,
                     struct ibv_send_wr *val_send_wr, struct ibv_sge *val_send_sgl,
-                    struct ibv_recv_wr *val_recv_wr, struct ibv_sge *val_recv_sgl,
-					struct hrd_ctrl_blk *cb, uint16_t local_worker_id)
+                    struct ibv_mr *inv_mr, struct ibv_mr *ack_mr,
+                    struct ibv_mr *val_mr, uint16_t local_worker_id)
 {
     int i;
 
@@ -454,42 +456,97 @@ void setup_WRs(struct ibv_send_wr *inv_send_wr, struct ibv_sge *inv_send_sgl,
         inv_send_wr[i].sg_list = &inv_send_sgl[sgl_index];
         val_send_wr[i].sg_list = &val_send_sgl[sgl_index];
 
-        ///if (CLIENT_ENABLE_INLINING == 1) coh_send_wr[index].send_flags = IBV_SEND_INLINE;
-        inv_send_wr[i].send_flags = IBV_SEND_INLINE;
-        val_send_wr[i].send_flags = IBV_SEND_INLINE;
+        if (DISABLE_INV_INLINING) {
+            inv_send_sgl[sgl_index].lkey = inv_mr->lkey;
+            inv_send_wr[i].send_flags = 0;
+        } else
+            inv_send_wr[i].send_flags = IBV_SEND_INLINE;
+
+        if (DISABLE_VAL_INLINING) {
+            val_send_sgl[sgl_index].lkey = val_mr->lkey;
+            val_send_wr[i].send_flags = 0;
+        } else
+            val_send_wr[i].send_flags = IBV_SEND_INLINE;
 
         inv_send_wr[i].next = (i_mod_bcast == REMOTE_MACHINES - 1) ? NULL : &inv_send_wr[i + 1];
         val_send_wr[i].next = (i_mod_bcast == REMOTE_MACHINES - 1) ? NULL : &val_send_wr[i + 1];
     }
 
     //Send ACK  WRs
-    for(i = 0; i < MAX_SEND_ACK_WRS; i++){
-		ack_send_wr[i].wr.ud.remote_qkey = HRD_DEFAULT_QKEY;
+    for (i = 0; i < MAX_SEND_ACK_WRS; i++) {
+        ack_send_wr[i].wr.ud.remote_qkey = HRD_DEFAULT_QKEY;
         ack_send_sgl[i].length = sizeof(spacetime_ack_packet_t);
-		ack_send_wr[i].opcode = IBV_WR_SEND; // Attention!! there is no immediate here, cids do the job!
+        ack_send_wr[i].opcode = IBV_WR_SEND; // Attention!! there is no immediate here, cids do the job!
         ack_send_wr[i].num_sge = 1;
-		///change inline
-		ack_send_wr[i].sg_list = &ack_send_sgl[i];
-        ack_send_wr[i].send_flags = IBV_SEND_INLINE;
-	}
+        ///change inline
+        ack_send_wr[i].sg_list = &ack_send_sgl[i];
 
+        if (!DISABLE_ACK_INLINING)
+            ack_send_wr[i].send_flags = IBV_SEND_INLINE;
+        else {
+            ack_send_sgl[i].lkey = ack_mr->lkey;
+            ack_send_wr[i].send_flags = 0;
+        }
+    }
+}
+
+void setup_recv_WRs(struct ibv_recv_wr *inv_recv_wr, struct ibv_sge *inv_recv_sgl,
+                    struct ibv_recv_wr *ack_recv_wr, struct ibv_sge *ack_recv_sgl,
+                    struct ibv_recv_wr *val_recv_wr, struct ibv_sge *val_recv_sgl,
+					struct hrd_ctrl_blk *cb)
+{
+    int i;
     // Receives
 	for (i = 0; i < MAX_RECV_INV_WRS; i++) {
 		inv_recv_sgl[i].length = INV_RECV_REQ_SIZE;
         inv_recv_sgl[i].lkey = cb->dgram_buf_mr->lkey;
         inv_recv_wr[i].sg_list = &inv_recv_sgl[i];
         inv_recv_wr[i].num_sge = 1;
+        inv_recv_wr[i].next = (i == MAX_RECV_INV_WRS - 1) ? NULL : &inv_recv_wr[i + 1];
 	}
     for (i = 0; i < MAX_RECV_ACK_WRS; i++) {
 		ack_recv_sgl[i].length = ACK_RECV_REQ_SIZE;
         ack_recv_sgl[i].lkey = cb->dgram_buf_mr->lkey;
         ack_recv_wr[i].sg_list = &ack_recv_sgl[i];
         ack_recv_wr[i].num_sge = 1;
+        ack_recv_wr[i].next = (i == MAX_RECV_ACK_WRS - 1) ? NULL : &ack_recv_wr[i + 1];
 	}
     for (i = 0; i < MAX_RECV_VAL_WRS; i++) {
 		val_recv_sgl[i].length = VAL_RECV_REQ_SIZE;
         val_recv_sgl[i].lkey = cb->dgram_buf_mr->lkey;
         val_recv_wr[i].sg_list = &val_recv_sgl[i];
         val_recv_wr[i].num_sge = 1;
+        val_recv_wr[i].next = (i == MAX_RECV_VAL_WRS - 1) ? NULL : &val_recv_wr[i + 1];
 	}
 }
+void setup_incoming_buffs_and_post_initial_recvs(ud_req_inv_t *incoming_invs, ud_req_ack_t *incoming_acks,
+                                                 ud_req_val_t *incoming_vals,
+                                                 int *inv_push_recv_ptr, int *ack_push_recv_ptr, int *val_push_recv_ptr,
+                                                 struct ibv_recv_wr *inv_recv_wr, struct ibv_recv_wr *ack_recv_wr,
+                                                 struct ibv_recv_wr *val_recv_wr,
+                                                 struct ibv_recv_wr *crd_recv_wr, struct hrd_ctrl_blk *cb,
+                                                 uint16_t worker_lid)
+{
+    int i
+    //init recv buffs as empty (not need for CRD since CRD msgs are (immediate) header-only
+	for(i = 0; i < RECV_INV_Q_DEPTH; i++)
+		incoming_invs[i].packet.req_num = 0;
+	for(i = 0; i < RECV_ACK_Q_DEPTH; i++)
+		incoming_acks[i].packet.req_num = 0;
+	for(i = 0; i < RECV_VAL_Q_DEPTH; i++)
+		incoming_vals[i].packet.req_num = 0;
+
+    if(ENABLE_POST_RECV_PRINTS && ENABLE_INV_PRINTS && worker_lid == 0)
+        yellow_printf("vvv Post Initial Receives: \033[31mINVs\033[0m %d\n", MAX_RECV_INV_WRS);
+    post_receives(cb, MAX_RECV_INV_WRS, ST_INV_BUFF, incoming_invs, inv_push_recv_ptr, inv_recv_wr);
+    if(ENABLE_POST_RECV_PRINTS && ENABLE_VAL_PRINTS && worker_lid == 0)
+        yellow_printf("vvv Post Initial Receives: \033[1m\033[32mVALs\033[0m %d\n", MAX_RECV_VAL_WRS);
+    post_receives(cb, MAX_RECV_VAL_WRS, ST_VAL_BUFF, incoming_vals, val_push_recv_ptr, ack_recv_wr);
+    if(ENABLE_POST_RECV_PRINTS && ENABLE_ACK_PRINTS && worker_lid == 0)
+        yellow_printf("vvv Post Initial Receives: \033[33mACKs\033[0m %d\n", MAX_RECV_ACK_WRS);
+    post_receives(cb, MAX_RECV_ACK_WRS, ST_ACK_BUFF, incoming_acks, ack_push_recv_ptr, val_recv_wr);
+    if(ENABLE_POST_RECV_PRINTS && ENABLE_CRD_PRINTS && worker_lid == 0)
+        yellow_printf("vvv Post Initial Receives: \033[1m\033[36mCRDs\033[0m %d\n", MAX_RECV_CRD_WRS);
+    post_credit_recvs(cb, crd_recv_wr, MAX_RECV_CRD_WRS);
+}
+

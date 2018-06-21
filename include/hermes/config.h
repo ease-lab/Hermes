@@ -6,7 +6,7 @@
 #define SPACETIME_CONFIG_H
 #include "hrd.h"
 
-#define ENABLE_ASSERTIONS 0
+#define ENABLE_ASSERTIONS 1
 #define MACHINE_NUM 3
 #define REMOTE_MACHINES (MACHINE_NUM - 1)
 #define GROUP_MEMBERSHIP_ARRAY_SIZE  CEILING(MACHINE_NUM, 8) //assuming uint8_t
@@ -16,10 +16,10 @@
 #define KV_SOCKET 0
 #define START_SPAWNING_THREADS_FROM_SOCKET 0
 #define WRITE_RATIO 1000
-#define MAX_BATCH_OPS_SIZE 100 //30 //5
-
+#define MAX_BATCH_OPS_SIZE 200 //30 //5
+#define BATCH_POST_RECVS_TO_NIC 1
 //DEBUG
-#define DISABLE_VALS 0
+#define DISABLE_VALS_FOR_DEBUGGING 0
 #define KEY_NUM 0 //use 0 to disable
 
 //TRACE
@@ -31,10 +31,23 @@
 /*-------------------------------------------------
 ----------------- REQ COALESCING -------------------
 --------------------------------------------------*/
-#define MAX_REQ_COALESCE 4
+//#define MAX_REQ_COALESCE 20
+//#define INV_MAX_REQ_COALESCE MAX_REQ_COALESCE
+//#define ACK_MAX_REQ_COALESCE MAX_REQ_COALESCE
+//#define VAL_MAX_REQ_COALESCE MAX_REQ_COALESCE
+
+#define MAX_REQ_COALESCE 10
 #define INV_MAX_REQ_COALESCE MAX_REQ_COALESCE
-#define ACK_MAX_REQ_COALESCE MAX_REQ_COALESCE
-#define VAL_MAX_REQ_COALESCE MAX_REQ_COALESCE
+#define ACK_MAX_REQ_COALESCE (2 * MAX_REQ_COALESCE)
+#define VAL_MAX_REQ_COALESCE (2 * MAX_REQ_COALESCE)
+
+/*-------------------------------------------------
+----------------- REQ INLINING --------------------
+--------------------------------------------------*/
+#define DISABLE_INLINING 0
+#define DISABLE_INV_INLINING ((DISABLE_INLINING || sizeof(spacetime_inv_packet_t) >= 188) ? 1 : 0)
+#define DISABLE_ACK_INLINING ((DISABLE_INLINING || sizeof(spacetime_ack_packet_t) >= 188) ? 1 : 0)
+#define DISABLE_VAL_INLINING ((DISABLE_INLINING || sizeof(spacetime_val_packet_t) >= 188) ? 1 : 0)
 
 /*-------------------------------------------------
 -----------------FLOW CONTROL---------------------
@@ -88,15 +101,10 @@
 #define TOTAL_WORKER_UD_QPs 4
 
 //RECV Depths
-#define RECV_INV_Q_DEPTH (MAX_RECV_INV_WRS)
-#define RECV_ACK_Q_DEPTH (MAX_RECV_ACK_WRS)
-#define RECV_VAL_Q_DEPTH (MAX_RECV_VAL_WRS)
-#define RECV_CRD_Q_DEPTH (MAX_RECV_CRD_WRS)
-
-//#define RECV_INV_Q_DEPTH (2 * MAX_RECV_INV_WRS)
-//#define RECV_ACK_Q_DEPTH (2 * MAX_RECV_ACK_WRS)
-//#define RECV_VAL_Q_DEPTH (2 * MAX_RECV_VAL_WRS)
-//#define RECV_CRD_Q_DEPTH (2 * MAX_RECV_CRD_WRS)
+#define RECV_INV_Q_DEPTH MAX_RECV_INV_WRS
+#define RECV_ACK_Q_DEPTH MAX_RECV_ACK_WRS
+#define RECV_VAL_Q_DEPTH MAX_RECV_VAL_WRS
+#define RECV_CRD_Q_DEPTH MAX_RECV_CRD_WRS
 
 //SEND Depths
 #define SEND_INV_Q_DEPTH ((INV_SS_GRANULARITY * REMOTE_MACHINES) * 2)
@@ -110,6 +118,20 @@
                          (64))  //CREDITS are header-only (inlined)
 
 /*-------------------------------------------------
+----------------- SEND/RECV OPS SIZE --------------
+--------------------------------------------------*/
+#define INV_SEND_OPS_SIZE (DISABLE_INLINING == 1 ? 2 * MAX_BATCH_OPS_SIZE : MAX_BATCH_OPS_SIZE)
+#define ACK_SEND_OPS_SIZE (DISABLE_INLINING == 1 ? 2 * MAX_BATCH_OPS_SIZE : MAX_BATCH_OPS_SIZE)
+#define VAL_SEND_OPS_SIZE (DISABLE_INLINING == 1 ? 2 * MAX_BATCH_OPS_SIZE : MAX_BATCH_OPS_SIZE)
+//
+//#define INV_RECV_OPS_SIZE (INV_CREDITS * REMOTE_MACHINES * INV_MAX_REQ_COALESCE)
+//#define ACK_RECV_OPS_SIZE (ACK_CREDITS * REMOTE_MACHINES * ACK_MAX_REQ_COALESCE)
+//#define VAL_RECV_OPS_SIZE (VAL_CREDITS * REMOTE_MACHINES * VAL_MAX_REQ_COALESCE)
+
+#define INV_RECV_OPS_SIZE (MAX_BATCH_OPS_SIZE * INV_MAX_REQ_COALESCE)
+#define ACK_RECV_OPS_SIZE (MAX_BATCH_OPS_SIZE * ACK_MAX_REQ_COALESCE)
+#define VAL_RECV_OPS_SIZE (MAX_BATCH_OPS_SIZE * VAL_MAX_REQ_COALESCE)
+/*-------------------------------------------------
 -----------------PRINTS (DBG)---------------------
 --------------------------------------------------*/
 #define MAX_THREADS_TO_PRINT 1
@@ -120,14 +142,14 @@
 #define ENABLE_CREDIT_PRINTS 0
 #define ENABLE_POST_RECV_PRINTS 0
 #define ENABLE_BATCH_OP_PRINTS 0
-#define ENABLE_INV_PRINTS 1
+#define ENABLE_INV_PRINTS 0
 #define ENABLE_ACK_PRINTS 0
-#define ENABLE_VAL_PRINTS 1
+#define ENABLE_VAL_PRINTS 0
 #define ENABLE_CRD_PRINTS 0
 
 //Stats
 #define EXIT_ON_PRINT 1
-#define PRINT_NUM 5
+#define PRINT_NUM 3
 #define MEASURE_LATENCY 0
 #define DUMP_STATS_2_FILE 0
 #define ENABLE_STAT_COUNTING 1
