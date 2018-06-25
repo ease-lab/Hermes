@@ -520,14 +520,13 @@ void setup_recv_WRs(struct ibv_recv_wr *inv_recv_wr, struct ibv_sge *inv_recv_sg
 	}
 }
 void setup_incoming_buffs_and_post_initial_recvs(ud_req_inv_t *incoming_invs, ud_req_ack_t *incoming_acks,
-                                                 ud_req_val_t *incoming_vals,
-                                                 int *inv_push_recv_ptr, int *ack_push_recv_ptr, int *val_push_recv_ptr,
+                                                 ud_req_val_t *incoming_vals, int *inv_push_recv_ptr,
+                                                 int *ack_push_recv_ptr, int *val_push_recv_ptr,
                                                  struct ibv_recv_wr *inv_recv_wr, struct ibv_recv_wr *ack_recv_wr,
-                                                 struct ibv_recv_wr *val_recv_wr,
-                                                 struct ibv_recv_wr *crd_recv_wr, struct hrd_ctrl_blk *cb,
-                                                 uint16_t worker_lid)
+                                                 struct ibv_recv_wr *val_recv_wr, struct ibv_recv_wr *crd_recv_wr,
+                                                 struct hrd_ctrl_blk *cb, uint16_t worker_lid)
 {
-    int i
+    int i;
     //init recv buffs as empty (not need for CRD since CRD msgs are (immediate) header-only
 	for(i = 0; i < RECV_INV_Q_DEPTH; i++)
 		incoming_invs[i].packet.req_num = 0;

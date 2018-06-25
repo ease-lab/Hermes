@@ -128,7 +128,7 @@ void mica_insert_one(struct mica_kv *kv,
 
 	/* Data copied: key, opcode, val_len, value */
 	int len_to_copy = sizeof(struct mica_key) + sizeof(uint8_t) +
-		sizeof(uint8_t) + op->val_len;
+		sizeof(uint8_t) + KVS_VALUE_SIZE; ///op->val_len;
 
 	/* Ensure that we don't wrap around in the *virtual* log space even
 	 * after 8-byte alignment below.*/

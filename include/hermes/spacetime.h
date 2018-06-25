@@ -24,7 +24,7 @@
 //#define SPACETIME_NUM_KEYS (500 * 1000)
 //#define SPACETIME_NUM_KEYS (1 * 1000 * 1000)
 #define SPACETIME_NUM_BKTS (1 * 1024 * 1024)
-//#define SPACETIME_NUM_BKTS (16 * 1024 * 1024)
+//#define SPACETIME_NUM_BKTS (2 * 1024 * 1024)
 
 ///WARNING the monotonically increasing assigned numbers to States are used for comparisons (do not reorder / change numbers)
 //States
@@ -95,7 +95,7 @@
 #define ST_OP_HEARTBEAT 151
 #define ST_OP_SUSPICION 152
 
-#define ST_VALUE_SIZE (HERD_VALUE_SIZE - sizeof(spacetime_object_meta))
+#define ST_VALUE_SIZE (KVS_VALUE_SIZE - sizeof(spacetime_object_meta))
 
 //receive_buff_types
 #define ST_INV_BUFF 161
@@ -266,11 +266,11 @@ struct spacetime_trace_command {
 
 void spacetime_init(int spacetime_id, int num_threads);
 void spacetime_populate_fixed_len(struct spacetime_kv* kv,  int n,  int val_len);
-void spacetime_batch_ops(int op_num, spacetime_op_t **ops, int thread_id, uint32_t refilled_ops_debug_cnt,
-                         uint32_t* ref_ops_dbg_array_cnt);
-void spacetime_batch_invs(int op_num, spacetime_inv_t **op, int thread_id);
-void spacetime_batch_acks(int op_num, spacetime_ack_t **op, spacetime_op_t* read_write_op, int thread_id);
-void spacetime_batch_vals(int op_num, spacetime_val_t **op, int thread_id);
+void batch_ops_to_KVS(int op_num, spacetime_op_t **ops, int thread_id, uint32_t refilled_ops_debug_cnt,
+                      uint32_t *ref_ops_dbg_array_cnt);
+void batch_invs_to_KVS(int op_num, spacetime_inv_t **op, int thread_id);
+void batch_acks_to_KVS(int op_num, spacetime_ack_t **op, spacetime_op_t *read_write_op, int thread_id);
+void batch_vals_to_KVS(int op_num, spacetime_val_t **op, int thread_id);
 void group_membership_init(void);
 //uint8_t is_last_ack(uint8_t const * gathered_acks);
 

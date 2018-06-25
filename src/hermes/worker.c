@@ -133,7 +133,7 @@ void *run_worker(void *arg){
 			for(i = 0; i < MAX_BATCH_OPS_SIZE; i++)
 				assert(ops[i].opcode == ST_OP_PUT || ops[i].opcode == ST_OP_GET);
 
-		spacetime_batch_ops(MAX_BATCH_OPS_SIZE, &ops, worker_lid, refill_ops_debug_cnt, refilled_ops_debug_cnt);
+		batch_ops_to_KVS(MAX_BATCH_OPS_SIZE, &ops, worker_lid, refill_ops_debug_cnt, refilled_ops_debug_cnt);
 
 
 		if (WRITE_RATIO > 0) {
@@ -156,11 +156,14 @@ void *run_worker(void *arg){
 									 &inv_push_recv_ptr, inv_recv_wr, credits, worker_lid);
 
 			if(inv_ops_i > 0) {
-				spacetime_batch_invs(inv_ops_i, &inv_recv_ops, worker_lid);
+				batch_invs_to_KVS(inv_ops_i, &inv_recv_ops, worker_lid);
 
 				///~~~~~~~~~~~~~~~~~~~~~~ACKS~~~~~~~~~~~~~~~~~~~~~~~~~~~
 				issue_acks(inv_recv_ops, ack_send_packet_ops, &ack_push_send_ptr, &send_ack_tx, ack_send_wr,
 						   ack_send_sgl, credits, cb, worker_lid, &credit_debug_cnt);
+				if(ENABLE_ASSERTIONS)
+					for(i = 0; i < INV_RECV_OPS_SIZE; i++)
+						assert(inv_recv_ops[i].opcode == ST_EMPTY);
 				inv_ops_i = 0;
 			}
 
@@ -175,7 +178,7 @@ void *run_worker(void *arg){
 													   &credit_debug_cnt, &val_br_tx, crd_recv_wr, worker_lid);
 
 			if(ack_ops_i > 0){
-				spacetime_batch_acks(ack_ops_i, &ack_recv_ops, ops, worker_lid);
+				batch_acks_to_KVS(ack_ops_i, &ack_recv_ops, ops, worker_lid);
 				if(ENABLE_ASSERTIONS)
 					for(i = 0; i < MAX_BATCH_OPS_SIZE; i++)
 						assert(ops[i].state == ST_BUFFERED_IN_PROGRESS_REPLAY ||
@@ -190,6 +193,9 @@ void *run_worker(void *arg){
 					has_outstanding_vals = broadcasts_vals(ack_recv_ops, val_send_packet_ops, &val_push_send_ptr,
 														   val_send_wr, val_send_sgl, credits, cb, crd_recv_wc,
 														   &credit_debug_cnt, &val_br_tx, crd_recv_wr, worker_lid);
+                if(ENABLE_ASSERTIONS && has_outstanding_vals == 0)
+					for(i = 0; i < ACK_RECV_OPS_SIZE; i++)
+						assert(ack_recv_ops[i].opcode == ST_EMPTY);
 				ack_ops_i = 0;
 			}
 			if(!DISABLE_VALS_FOR_DEBUGGING) {
@@ -199,11 +205,14 @@ void *run_worker(void *arg){
 										 &val_push_recv_ptr, val_recv_wr, credits, worker_lid);
 
 				if (val_ops_i > 0) {
-					spacetime_batch_vals(val_ops_i, &val_recv_ops, worker_lid);
+					batch_vals_to_KVS(val_ops_i, &val_recv_ops, worker_lid);
 
 					///~~~~~~~~~~~~~~~~~~~~~~CREDITS~~~~~~~~~~~~~~~~~~~~~~~~~~~
 					issue_credits(val_recv_ops, &send_crd_tx, crd_send_wr,
 								  credits, cb, worker_lid, &credit_debug_cnt);
+					if(ENABLE_ASSERTIONS )
+						for(i = 0; i < VAL_RECV_OPS_SIZE; i++)
+							assert(val_recv_ops[i].opcode == ST_EMPTY);
 					val_ops_i = 0;
 				}
 			}

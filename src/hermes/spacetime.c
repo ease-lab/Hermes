@@ -52,7 +52,7 @@ static inline uint8_t is_last_ack(uint8_t const * gathered_acks, int worker_lid)
 		if (ENABLE_ASSERTIONS) {
 			debug_cntr++;
 			if (debug_cntr == M_4) {
-				printf("Worker %u stuck on a local read \n", worker_lid);
+				printf("Worker %u stuck on a lock-free read (is last ack)\n", worker_lid);
 				debug_cntr = 0;
 			}
 		}
@@ -91,13 +91,13 @@ void spacetime_init(int instance_id, int num_threads)
 	for(i = 0; i < num_threads; i++)
 		meta_reset(&kv.meta[i]);
 	mica_init(&kv.hash_table, instance_id, KV_SOCKET, SPACETIME_NUM_BKTS, HERD_LOG_CAP);
-	spacetime_populate_fixed_len(&kv, SPACETIME_NUM_KEYS, HERD_VALUE_SIZE);
+	spacetime_populate_fixed_len(&kv, SPACETIME_NUM_KEYS, KVS_VALUE_SIZE);
 }
 
 void spacetime_populate_fixed_len(struct spacetime_kv* kv, int n, int val_len)
 {
 	assert(n > 0);
-	assert(val_len > 0 && val_len <= MICA_MAX_VALUE);
+	assert(val_len > 0 && val_len <= KVS_VALUE_SIZE);
 
 	/* This is needed for the eviction message below to make sense */
 	assert(kv->hash_table.num_insert_op == 0 && kv->hash_table.num_index_evictions == 0);
@@ -133,8 +133,8 @@ void spacetime_populate_fixed_len(struct spacetime_kv* kv, int n, int val_len)
 }
 
 //TODO may merge all the batch_* func
-void spacetime_batch_ops(int op_num, spacetime_op_t **op, int thread_id,
-						 uint32_t refilled_ops_debug_cnt, uint32_t* ref_ops_dbg_array_cnt)
+void batch_ops_to_KVS(int op_num, spacetime_op_t **op, int thread_id,
+					  uint32_t refilled_ops_debug_cnt, uint32_t *ref_ops_dbg_array_cnt)
 {
 	int I, j;	/* I is batch index */
 	long long stalled_brces = 0;
@@ -327,7 +327,7 @@ void spacetime_batch_ops(int op_num, spacetime_op_t **op, int thread_id,
 								optik_unlock_decrement_version((spacetime_object_meta*) curr_meta);
 							} else {
 								curr_meta->state = (uint8_t) (curr_meta->state == INVALID_BUFF_STATE? WRITE_BUFF_STATE : WRITE_STATE);
-								memcpy(kv_value_ptr, (*op)[I].value, (*op)[I].val_len);
+								memcpy(kv_value_ptr, (*op)[I].value, ST_VALUE_SIZE);
 								kv_ptr[I]->val_len = (*op)[I].val_len + sizeof(spacetime_object_meta);
 								///update group membership mask
 								memcpy((void *) curr_meta->write_acks, (void *) group_membership.write_ack_init,
@@ -380,7 +380,7 @@ void spacetime_batch_ops(int op_num, spacetime_op_t **op, int thread_id,
 	}
 }
 
-void spacetime_batch_invs(int op_num, spacetime_inv_t **op, int thread_id)
+void batch_invs_to_KVS(int op_num, spacetime_inv_t **op, int thread_id)
 {
 	int I, j;	/* I is batch index */
 	long long stalled_brces = 0;
@@ -480,7 +480,7 @@ void spacetime_batch_invs(int op_num, spacetime_inv_t **op, int thread_id)
 						if (ENABLE_ASSERTIONS) {
 							debug_cntr++;
 							if (debug_cntr == M_4) {
-								printf("Worker %u stuck on a local read \n", thread_id);
+								printf("Worker %u stuck on a lock-free read (for INV)\n", thread_id);
 								debug_cntr = 0;
 							}
 						}
@@ -502,8 +502,8 @@ void spacetime_batch_invs(int op_num, spacetime_inv_t **op, int thread_id)
 								assert((*op)[I].val_len == ST_VALUE_SIZE);
 							kv_ptr[I]->val_len = (*op)[I].val_len + sizeof(spacetime_object_meta);
 							if(ENABLE_ASSERTIONS)
-								assert(kv_ptr[I]->val_len == HERD_VALUE_SIZE);
-							memcpy(kv_value_ptr, (*op)[I].value, (*op)[I].val_len);
+								assert(kv_ptr[I]->val_len == KVS_VALUE_SIZE);
+							memcpy(kv_value_ptr, (*op)[I].value, ST_VALUE_SIZE);
 							///Update state
 							switch(curr_meta->state) {
 								case VALID_STATE:
@@ -559,8 +559,8 @@ void spacetime_batch_invs(int op_num, spacetime_inv_t **op, int thread_id)
 	}
 }
 
-void spacetime_batch_acks(int op_num, spacetime_ack_t **op,
-						  spacetime_op_t* read_write_op, int thread_id)
+void batch_acks_to_KVS(int op_num, spacetime_ack_t **op,
+					   spacetime_op_t *read_write_op, int thread_id)
 {
     int complete_reqs_dbg_cnt = 0;
 	int I, j;	/* I is batch index */
@@ -659,7 +659,7 @@ void spacetime_batch_acks(int op_num, spacetime_ack_t **op,
 						if (ENABLE_ASSERTIONS) {
 							debug_cntr++;
 							if (debug_cntr == M_4) {
-								printf("Worker %u stuck on a local read \n", thread_id);
+								printf("Worker %u stuck on a lock-free read (for ACK)\n", thread_id);
 								debug_cntr = 0;
 							}
 						}
@@ -780,7 +780,7 @@ void spacetime_batch_acks(int op_num, spacetime_ack_t **op,
 		assert(REMOTE_MACHINES != 1 || complete_reqs_dbg_cnt == op_num);
 }
 
-void spacetime_batch_vals(int op_num, spacetime_val_t **op, int thread_id)
+void batch_vals_to_KVS(int op_num, spacetime_val_t **op, int thread_id)
 {
 	int I, j;	/* I is batch index */
 	long long stalled_brces = 0;
@@ -878,7 +878,7 @@ void spacetime_batch_vals(int op_num, spacetime_val_t **op, int thread_id)
 						if (ENABLE_ASSERTIONS) {
 							debug_cntr++;
 							if (debug_cntr == M_4) {
-								printf("Worker %u stuck on a local read \n", thread_id);
+								printf("Worker %u stuck on a lock-free read (for VAL)\n", thread_id);
 								debug_cntr = 0;
 							}
 						}

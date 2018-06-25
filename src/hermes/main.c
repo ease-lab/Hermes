@@ -98,6 +98,7 @@ int main(int argc, char *argv[]){
 	worker_needed_ah_ready = 0;
 	group_membership_init();
 	spacetime_init(machine_id, WORKERS_PER_MACHINE);
+	init_stats();
 
 	pthread_attr_init(&attr);
     int w_core ;
