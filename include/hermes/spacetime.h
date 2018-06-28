@@ -63,37 +63,24 @@
 #define ST_MISS 130
 #define ST_GET_STALL 131
 #define ST_PUT_STALL 132
-#define ST_INV_FAIL 133
-#define ST_ACK_FAIL 134
-#define ST_VAL_FAIL 135
-
-#define ST_GET_FAIL 136
-#define ST_PUT_FAIL 137
-#define ST_INV_OUT_OF_GROUP 138
+#define ST_PUT_COMPLETE_SEND_VALS 133
 
 
 //ops bucket states
 #define ST_EMPTY 140
 #define ST_NEW 141
-#define ST_BUFFERED 142
-#define ST_PROCESSED 143
 #define ST_COMPLETE 144
 #define ST_IN_PROGRESS_WRITE 145
 #define ST_BUFFERED_IN_PROGRESS_REPLAY 146
+#define ST_BUFFERED_REPLAY_SUCCESS 147
 
 // trace opcodes
-#define NOP 147
-
-//#define BUFFERED_READ 142
-//#define BUFFERED_WRITE 143
-//#define BUFFERED_READ_REPLAYED_WRITE 144
-//#define BUFFERED_WRITE_REPLAYED_WRITE 145
-//#define BUFFERED_READ_REPLAYED_IN_PROGRESS_WRITE 147
-//#define BUFFERED_WRITE_REPLAYED_IN_PROGRESS_WRITE 148
+#define NOP 148
 
 //others
 #define ST_OP_HEARTBEAT 151
 #define ST_OP_SUSPICION 152
+#define ST_INV_OUT_OF_GROUP 153
 
 #define ST_VALUE_SIZE (KVS_VALUE_SIZE - sizeof(spacetime_object_meta))
 
@@ -219,12 +206,13 @@ typedef struct {
 
 
 typedef struct{
+    uint8_t num_of_alive_remotes;
     uint8_t group_membership[GROUP_MEMBERSHIP_ARRAY_SIZE];
     uint8_t write_ack_init[GROUP_MEMBERSHIP_ARRAY_SIZE];
     spacetime_lock optik_lock;
 }spacetime_group_membership;
 
-struct spacetime_meta_stats { //TODO change this name
+struct spacetime_meta_stats {
     /* Stats */
     long long num_get_success;
     long long num_put_success;
@@ -266,12 +254,15 @@ struct spacetime_trace_command {
 
 void spacetime_init(int spacetime_id, int num_threads);
 void spacetime_populate_fixed_len(struct spacetime_kv* kv,  int n,  int val_len);
-void batch_ops_to_KVS(int op_num, spacetime_op_t **ops, int thread_id, uint32_t refilled_ops_debug_cnt,
-                      uint32_t *ref_ops_dbg_array_cnt);
+void batch_ops_to_KVS(int op_num, spacetime_op_t **ops, int thread_id, spacetime_group_membership curr_membership,
+                      uint32_t refilled_ops_debug_cnt, uint32_t *ref_ops_dbg_array_cnt);
 void batch_invs_to_KVS(int op_num, spacetime_inv_t **op, int thread_id);
 void batch_acks_to_KVS(int op_num, spacetime_ack_t **op, spacetime_op_t *read_write_op, int thread_id);
 void batch_vals_to_KVS(int op_num, spacetime_val_t **op, int thread_id);
+void complete_writes_and_replays_on_membership_change(int op_num, spacetime_op_t **op, int thread_id);
 void group_membership_init(void);
+void reconfigure_wrs(struct ibv_send_wr *inv_send_wr, struct ibv_send_wr *val_send_wr, uint16_t worker_lid);
+//void reconfigure_wrs(void);
 //uint8_t is_last_ack(uint8_t const * gathered_acks);
 
 static inline void
@@ -297,6 +288,7 @@ group_mem_timestamp_is_same_and_valid(uint32_t v1, uint32_t v2){
     return (v1 == v2 && v1 % 2 == 0);
 }
 
+extern volatile spacetime_group_membership group_membership;
 
 
 #endif //HERMES_SPACETIME_H

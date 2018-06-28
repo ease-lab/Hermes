@@ -1,4 +1,5 @@
 #include <spacetime.h>
+#include <optik_mod.h>
 #include "util.h"
 #include "inline-util.h"
 
@@ -80,29 +81,28 @@ void *run_worker(void *arg){
 		ack_push_recv_ptr = 0, ack_pull_recv_ptr = -1,
 		val_push_recv_ptr = 0, val_pull_recv_ptr = -1;
 	int inv_push_send_ptr = 0, ack_push_send_ptr =  0, val_push_send_ptr = 0;
-
+	spacetime_group_membership last_group_membership = *((spacetime_group_membership*) &group_membership);
+	struct spacetime_trace_command *trace;
+	trace_init(&trace, worker_gid);
 	setup_recv_WRs(inv_recv_wr,inv_recv_sgl,ack_recv_wr,ack_recv_sgl,val_recv_wr,val_recv_sgl,cb);
     /* Post receives, we need to do this early */
     if(WRITE_RATIO > 0)
 		setup_incoming_buffs_and_post_initial_recvs(incoming_invs, incoming_acks, incoming_vals, &inv_push_recv_ptr,
 													&ack_push_recv_ptr, &val_push_recv_ptr, inv_recv_wr,
 													ack_recv_wr, val_recv_wr, crd_recv_wr, cb, worker_lid);
-
 	setup_qps(worker_gid, cb);
 	setup_credits(credits, cb, crd_send_wr, &send_crd_sgl, crd_recv_wr, &recv_crd_sgl);
     setup_send_WRs(inv_send_wr, inv_send_sgl, ack_send_wr, ack_send_sgl, val_send_wr,
 				   val_send_sgl, inv_mr, ack_mr, val_mr, worker_lid);
+	//TODO only for testing
+//    reconfigure_wrs(inv_send_wr, val_send_wr, worker_lid);
 
 	int i = 0, inv_ops_i = 0, ack_ops_i = 0, val_ops_i = 0;
 	uint32_t refilled_ops_debug_cnt[MAX_BATCH_OPS_SIZE] = {0};///TODO only for debug
 	uint32_t trace_iter = 0, credit_debug_cnt = 0, refill_ops_debug_cnt = 0;
-	long long int rolling_iter = 0; /* For throughput measurement */
 	long long int inv_br_tx = 0, val_br_tx = 0, send_ack_tx = 0, send_crd_tx = 0;
 	uint16_t rolling_inv_index = 0;
 	uint8_t has_outstanding_vals = 0;
-	struct spacetime_trace_command *trace;
-	trace_init(&trace, worker_gid);
-
 	/* -----------------------------------------------------
 	--------------Start the main Loop-----------------------
 	---------------------------------------------------------*/
@@ -133,14 +133,15 @@ void *run_worker(void *arg){
 			for(i = 0; i < MAX_BATCH_OPS_SIZE; i++)
 				assert(ops[i].opcode == ST_OP_PUT || ops[i].opcode == ST_OP_GET);
 
-		batch_ops_to_KVS(MAX_BATCH_OPS_SIZE, &ops, worker_lid, refill_ops_debug_cnt, refilled_ops_debug_cnt);
+		batch_ops_to_KVS(MAX_BATCH_OPS_SIZE, &ops, worker_lid, last_group_membership,
+						 refill_ops_debug_cnt, refilled_ops_debug_cnt);
 
 
 		if (WRITE_RATIO > 0) {
 			///~~~~~~~~~~~~~~~~~~~~~~INVS~~~~~~~~~~~~~~~~~~~~~~~~~~~
-			broadcasts_invs(ops, inv_send_packet_ops, &inv_push_send_ptr, inv_send_wr,
-							inv_send_sgl, credits, cb, &inv_br_tx,
-							worker_lid, &credit_debug_cnt, &rolling_inv_index);
+			broadcast_invs(ops, inv_send_packet_ops, &inv_push_send_ptr, inv_send_wr,
+						   inv_send_sgl, credits, cb, &inv_br_tx,
+						   worker_lid, &credit_debug_cnt, &rolling_inv_index);
 
 			if(ENABLE_ASSERTIONS)
 				for(i = 0; i < MAX_BATCH_OPS_SIZE; i++)
@@ -173,9 +174,9 @@ void *run_worker(void *arg){
 										 &ack_ops_i, cb->dgram_recv_cq[ACK_UD_QP_ID], ack_recv_wc, cb,
 										 &ack_push_recv_ptr, ack_recv_wr, credits, worker_lid);
 			else
-				has_outstanding_vals = broadcasts_vals(ack_recv_ops, val_send_packet_ops, &val_push_send_ptr,
-													   val_send_wr, val_send_sgl, credits, cb, crd_recv_wc,
-													   &credit_debug_cnt, &val_br_tx, crd_recv_wr, worker_lid);
+				has_outstanding_vals = broadcast_vals(ack_recv_ops, val_send_packet_ops, &val_push_send_ptr,
+													  val_send_wr, val_send_sgl, credits, cb, crd_recv_wc,
+													  &credit_debug_cnt, &val_br_tx, crd_recv_wr, worker_lid);
 
 			if(ack_ops_i > 0){
 				batch_acks_to_KVS(ack_ops_i, &ack_recv_ops, ops, worker_lid);
@@ -190,9 +191,9 @@ void *run_worker(void *arg){
 
 				///~~~~~~~~~~~~~~~~~~~~~~VALS~~~~~~~~~~~~~~~~~~~~~~~~~~~
 				if(!DISABLE_VALS_FOR_DEBUGGING)
-					has_outstanding_vals = broadcasts_vals(ack_recv_ops, val_send_packet_ops, &val_push_send_ptr,
-														   val_send_wr, val_send_sgl, credits, cb, crd_recv_wc,
-														   &credit_debug_cnt, &val_br_tx, crd_recv_wr, worker_lid);
+					has_outstanding_vals = broadcast_vals(ack_recv_ops, val_send_packet_ops, &val_push_send_ptr,
+														  val_send_wr, val_send_sgl, credits, cb, crd_recv_wc,
+														  &credit_debug_cnt, &val_br_tx, crd_recv_wr, worker_lid);
                 if(ENABLE_ASSERTIONS && has_outstanding_vals == 0)
 					for(i = 0; i < ACK_RECV_OPS_SIZE; i++)
 						assert(ack_recv_ops[i].opcode == ST_EMPTY);
@@ -216,9 +217,19 @@ void *run_worker(void *arg){
 					val_ops_i = 0;
 				}
 			}
+			/*
+			if(group_membership_has_changed(&last_group_membership, worker_lid) == 1){
+				reconfigure_wrs(inv_send_wr, val_send_wr, worker_lid);
+				complete_writes_and_replays_on_membership_change(MAX_BATCH_OPS_SIZE, &ops, worker_lid);
+				broadcast_vals_on_membership_change(ops, val_send_packet_ops, &val_push_send_ptr,
+													val_send_wr, val_send_sgl, credits, cb, crd_recv_wc,
+													&credit_debug_cnt, &val_br_tx, crd_recv_wr, worker_lid);
+			}
+			 */
 		}
-		rolling_iter++;
+		w_stats[worker_lid].total_loops++;
 	}
 	return NULL;
 }
+
 

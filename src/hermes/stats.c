@@ -57,11 +57,16 @@ void *print_stats(void* no_arg){
             all_stats.received_acks_avg_coalesing[i] = w_stats[i].received_acks_per_worker / (double) w_stats[i].received_packet_acks_per_worker;
             all_stats.received_vals_avg_coalesing[i] = w_stats[i].received_vals_per_worker / (double) w_stats[i].received_packet_vals_per_worker;
             all_stats.received_crds_avg_coalesing[i] = w_stats[i].received_crds_per_worker / (double) w_stats[i].received_packet_crds_per_worker;
-            yellow_printf("W%d: %.2f MIOPS, Inv coal: %.2f, Ack coal: %.2f, Val coal: %.2f, crd coal: %.2f (total reqs %d)\n", i,
+
+            all_stats.percentage_of_wasted_loops[i] = w_stats[i].wasted_loops / (double) w_stats[i].total_loops * 100;
+            all_stats.completed_reqs_per_loop[i] = curr_w_stats[i].completed_ops_per_worker / (double) w_stats[i].total_loops;
+            cyan_printf("W%d: ",i);
+            yellow_printf("%.2f MIOPS, Coalescing{Inv: %.2f, Ack: %.2f, Val: %.2f, Crd: %.2f}\n",
                           all_stats.xput_per_worker[i],
                           all_stats.issued_invs_avg_coalesing[i], all_stats.issued_acks_avg_coalesing[i],
-                          all_stats.issued_vals_avg_coalesing[i], all_stats.issued_crds_avg_coalesing[i],
-                          curr_w_stats[i].completed_ops_per_worker );
+                          all_stats.issued_vals_avg_coalesing[i], all_stats.issued_crds_avg_coalesing[i]);
+            yellow_printf("\t wasted_loops: %.2f%, reqs per loop: %.2f, total reqs %d\n", all_stats.percentage_of_wasted_loops[i],
+                          all_stats.completed_reqs_per_loop[i], curr_w_stats[i].completed_ops_per_worker);
         }
         green_printf("SYSTEM MIOPS: %.2f \n", total_throughput);
         printf("---------------------------------------\n");

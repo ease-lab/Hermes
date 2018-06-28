@@ -42,6 +42,7 @@ struct worker_stats { // 2 cache lines
     long long stalled_time_per_worker;
 
     long long wasted_loops;
+	long long total_loops;
     double empty_reqs_per_trace;
     long long cold_keys_per_trace;
     double tot_empty_reqs_per_trace;
@@ -58,6 +59,9 @@ struct stats {
 	double received_acks_avg_coalesing[WORKERS_PER_MACHINE];
 	double received_vals_avg_coalesing[WORKERS_PER_MACHINE];
 	double received_crds_avg_coalesing[WORKERS_PER_MACHINE];
+
+	double percentage_of_wasted_loops[WORKERS_PER_MACHINE];
+	double completed_reqs_per_loop[WORKERS_PER_MACHINE];
 //	long long issued_packet_acks_per_worker;
     double batch_size_per_worker[WORKERS_PER_MACHINE];
     double empty_reqs_per_worker[WORKERS_PER_MACHINE];

@@ -170,6 +170,8 @@ char* code_to_str(uint8_t code)
             return "ST_PUT_COMPLETE";
         case ST_BUFFERED_REPLAY:
             return "ST_BUFFERED_REPLAY";
+        case ST_BUFFERED_REPLAY_SUCCESS:
+            return "ST_BUFFERED_REPLAY_SUCCESS";
         case ST_INV_SUCCESS:
             return "ST_INV_SUCCESS";
         case ST_ACK_SUCCESS:
@@ -186,16 +188,8 @@ char* code_to_str(uint8_t code)
             return "ST_GET_STALL";
         case ST_PUT_STALL:
             return "ST_PUT_STALL";
-        case ST_INV_FAIL:
-            return "ST_INV_FAIL";
-        case ST_ACK_FAIL:
-            return "ST_ACK_FAIL";
-        case ST_VAL_FAIL:
-            return "ST_VAL_FAIL";
-        case ST_GET_FAIL:
-            return "ST_GET_FAIL";
-        case ST_PUT_FAIL:
-            return "ST_PUT_FAIL";
+        case ST_PUT_COMPLETE_SEND_VALS:
+            return "ST_PUT_COMPLETE_SEND_VALS";
         case ST_INV_OUT_OF_GROUP:
             return "ST_INV_OUT_OF_GROUP";
         //Ops bucket states
@@ -205,14 +199,10 @@ char* code_to_str(uint8_t code)
             return "ST_NEW";
         case ST_IN_PROGRESS_WRITE:
             return "ST_IN_PROGRESS_WRITE";
-        case ST_BUFFERED:
-            return "ST_BUFFERED";
         case ST_BUFFERED_IN_PROGRESS_REPLAY:
             return "ST_BUFFERED_IN_PROGRESS_REPLAY";
         case ST_COMPLETE:
             return "ST_COMPLETE";
-        case ST_PROCESSED:
-            return "ST_PROCESSED";
         case ST_INV_BUFF:
             return "ST_INV_BUFF";
         case ST_ACK_BUFF:
@@ -223,18 +213,6 @@ char* code_to_str(uint8_t code)
             return "ST_CRD_BUFF";
         case NOP:
             return "NOP";
-//        case BUFFERED_READ:
-//            return "BUFFERED_READ";
-//        case BUFFERED_WRITE:
-//            return "BUFFERED_WRITE";
-//        case BUFFERED_READ_REPLAYED_WRITE:
-//            return "BUFFERED_READ_REPLAYED_WRITE";
-//        case BUFFERED_WRITE_REPLAYED_WRITE:
-//            return "BUFFERED_WRITE_REPLAYED_WRITE";
-//        case BUFFERED_READ_REPLAYED_IN_PROGRESS_WRITE:
-//            return "BUFFERED_READ_REPLAYED_IN_PROGRESS_WRITE";
-//        case BUFFERED_WRITE_REPLAYED_IN_PROGRESS_WRITE:
-//            return "BUFFERED_WRITE_REPLAYED_IN_PROGRESS_WRITE";
         //Failure related
         case ST_OP_HEARTBEAT:
             return "ST_OP_HEARTBEAT";
@@ -417,7 +395,8 @@ void setup_send_WRs(struct ibv_send_wr *inv_send_wr, struct ibv_sge *inv_send_sg
                     struct ibv_mr *inv_mr, struct ibv_mr *ack_mr,
                     struct ibv_mr *val_mr, uint16_t local_worker_id)
 {
-    int i;
+    int i, i_mod_bcast, sgl_index;
+    uint16_t rm_id;
 
     //Broadcast (INV / VAL) sgls
     for (i = 0; i < MAX_PCIE_BCAST_BATCH; i++) {
@@ -429,14 +408,13 @@ void setup_send_WRs(struct ibv_send_wr *inv_send_wr, struct ibv_sge *inv_send_sg
     assert(MAX_MSGS_IN_PCIE_BCAST_BATCH == MAX_SEND_INV_WRS);
     assert(MAX_MSGS_IN_PCIE_BCAST_BATCH == MAX_SEND_VAL_WRS);
     for (i = 0; i < MAX_MSGS_IN_PCIE_BCAST_BATCH; i++) {
-        int i_mod_bcast = i % REMOTE_MACHINES;
-        int sgl_index = i / REMOTE_MACHINES;
-        uint16_t rm_id;
+        i_mod_bcast = i % REMOTE_MACHINES;
+        sgl_index = i / REMOTE_MACHINES;
         if (i_mod_bcast < machine_id) rm_id = (uint16_t) i_mod_bcast;
         else rm_id = (uint16_t) ((i_mod_bcast + 1) % MACHINE_NUM);
         uint16_t rm_worker_gid = (uint16_t) (rm_id * WORKERS_PER_MACHINE + local_worker_id);
 //        printf("index: %d, rm machine: %d, rm_worker_gid %d, sgl_index %d\n", i, rm_id, rm_worker_gid, sgl_index);
-
+//        printf("Conf: Remotes: %d\n", rm_worker_gid);
         inv_send_wr[i].wr.ud.ah = remote_worker_qps[rm_worker_gid][INV_UD_QP_ID].ah;
         val_send_wr[i].wr.ud.ah = remote_worker_qps[rm_worker_gid][VAL_UD_QP_ID].ah;
 
