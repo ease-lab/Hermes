@@ -35,19 +35,13 @@ int main(int argc, char *argv[]){
 
 	assert(MACHINE_NUM < TIE_BREAKER_ID_EMPTY);
 	assert(MACHINE_NUM < LAST_WRITER_ID_EMPTY);
-	assert(MAX_BATCH_OPS_SIZE < WRITE_BUFF_EMPTY); /// 1B write_buffer_index and 255 is used as "empty" value
+	assert(MAX_BATCH_OPS_SIZE < ST_OP_BUFFER_INDEX_EMPTY); /// 1B write_buffer_index and 255 is used as "empty" value
 
     ///Make sure that assigned numbers to States are monotonically increasing with the following order
 	assert(VALID_STATE < INVALID_STATE);
 	assert(INVALID_STATE < INVALID_WRITE_STATE);
-	assert(INVALID_WRITE_STATE < INVALID_BUFF_STATE);
-	assert(INVALID_BUFF_STATE < INVALID_WRITE_BUFF_STATE);
-	assert(INVALID_WRITE_BUFF_STATE < WRITE_STATE);
-	assert(WRITE_STATE < WRITE_BUFF_STATE);
-	assert(WRITE_BUFF_STATE < REPLAY_STATE);
-	assert(REPLAY_STATE < REPLAY_BUFF_STATE);
-	assert(REPLAY_BUFF_STATE < REPLAY_WRITE_STATE);
-	assert(REPLAY_WRITE_STATE < REPLAY_WRITE_BUFF_STATE);
+	assert(INVALID_WRITE_STATE < WRITE_STATE);
+	assert(WRITE_STATE < REPLAY_STATE);
 //	green_printf("UD size: %d ibv_grh + crd size: %d \n", sizeof(ud_req_crd_t), sizeof(struct ibv_grh) + sizeof(spacetime_crd_t));
 //	assert(sizeof(ud_req_crd_t) == sizeof(struct ibv_grh) + sizeof(spacetime_crd_t)); ///CRD --> 48 Bytes instead of 43
 

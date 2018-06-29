@@ -364,7 +364,7 @@ broadcast_invs(spacetime_op_t *ops, spacetime_inv_packet_t *inv_send_packet_ops,
 	// traverse all of the ops to find invs
 	for (i = 0; i < MAX_BATCH_OPS_SIZE; i++) {
 		index = (uint16_t) ((i + *rolling_index) % MAX_BATCH_OPS_SIZE);
-		if (ops[index].state != ST_PUT_SUCCESS && ops[index].state != ST_BUFFERED_REPLAY)
+		if (ops[index].state != ST_PUT_SUCCESS && ops[index].state != ST_REPLAY_SUCCESS)
 			continue;
 
 		//Check for credits
@@ -390,9 +390,9 @@ broadcast_invs(spacetime_op_t *ops, spacetime_inv_packet_t *inv_send_packet_ops,
 				   (machine_id + 1) % MACHINE_NUM);
 		//Change state of op
 		if(ops[index].state == ST_PUT_SUCCESS)
-			ops[index].state = ST_IN_PROGRESS_WRITE;
-		else if(ops[index].state == ST_BUFFERED_REPLAY)
-			ops[index].state = ST_BUFFERED_IN_PROGRESS_REPLAY;
+			ops[index].state = ST_IN_PROGRESS_PUT;
+		else if(ops[index].state == ST_REPLAY_SUCCESS)
+			ops[index].state = ST_IN_PROGRESS_REPLAY;
 		else assert(0);
 
 		// Create the broadcast messages
@@ -714,7 +714,7 @@ check_val_credits(uint8_t credits[][MACHINE_NUM], struct hrd_ctrl_blk *cb,
 	return true;
 }
 static inline void
-forge_bcast_val_wrs(void* op, spacetime_val_packet_t* val_packet_send_op,
+forge_bcast_val_wrs(spacetime_ack_t* ack_op, spacetime_val_packet_t* val_packet_send_op,
 					struct ibv_send_wr* send_val_wr,
 					struct ibv_sge* send_val_sgl, struct hrd_ctrl_blk* cb,
 					long long* total_val_bcasts, uint16_t br_i, uint16_t worker_lid)
@@ -723,8 +723,8 @@ forge_bcast_val_wrs(void* op, spacetime_val_packet_t* val_packet_send_op,
 	if(ENABLE_ASSERTIONS)
 		assert(sizeof(spacetime_ack_t) == sizeof(spacetime_val_t));
 
-	//WARNING op is used to forge from both spacetime_ack_t and spacetime_op_t (when failures occur)--> do not change those structs
-	memcpy(&val_packet_send_op->reqs[val_packet_send_op->req_num], op, sizeof(spacetime_val_t));
+	//WARNING ack_op is used to forge from both spacetime_ack_t and spacetime_op_t (when failures occur)--> do not change those structs
+	memcpy(&val_packet_send_op->reqs[val_packet_send_op->req_num], ack_op, sizeof(spacetime_val_t));
 	val_packet_send_op->reqs[val_packet_send_op->req_num].opcode = ST_OP_VAL;
 	val_packet_send_op->reqs[val_packet_send_op->req_num].sender = (uint8_t) machine_id;
 	val_packet_send_op->req_num++;
@@ -803,7 +803,7 @@ batch_vals_2_NIC(struct ibv_send_wr *send_val_wr, struct ibv_sge *send_val_sgl,
 static inline uint8_t
 broadcast_vals(spacetime_ack_t *ack_ops, spacetime_val_packet_t *val_send_packet_ops, int *val_push_ptr,
 			   struct ibv_send_wr *send_val_wr, struct ibv_sge *send_val_sgl,
-			   uint8_t **credits, struct hrd_ctrl_blk *cb,
+			   uint8_t credits[][MACHINE_NUM], struct hrd_ctrl_blk *cb,
 			   struct ibv_wc *credit_wc, uint32_t *credit_debug_cnt,
 			   long long *br_tx, struct ibv_recv_wr *credit_recv_wr, uint16_t worker_lid)
 {
@@ -882,87 +882,87 @@ broadcast_vals(spacetime_ack_t *ack_ops, spacetime_val_packet_t *val_send_packet
 	return has_outstanding_vals;
 }
 
-
-static inline uint8_t
-broadcast_vals_on_membership_change
-				(spacetime_op_t* ops, spacetime_val_packet_t* val_send_packet_ops,
-				int* val_push_ptr, struct ibv_send_wr* send_val_wr, struct ibv_sge* send_val_sgl,
-				uint8_t credits[TOTAL_WORKER_UD_QPs][MACHINE_NUM], struct hrd_ctrl_blk* cb,
-				struct ibv_wc* credit_wc, uint32_t* credit_debug_cnt, long long* br_tx,
-				struct ibv_recv_wr* credit_recv_wr, uint16_t worker_lid)
-{
-	uint16_t i = 0, br_i = 0, j, total_vals_in_batch = 0;
-	uint8_t has_outstanding_vals = 0;
-
-	if(ENABLE_ASSERTIONS)
-		assert(val_send_packet_ops[*val_push_ptr].req_num == 0);
-
-	// traverse all of the ops to find bcasts
-	for (i = 0; i < MAX_BATCH_OPS_SIZE; i++) {
-		if(ops[i].state != ST_BUFFERED_REPLAY_SUCCESS &&
-		   ops[i].state != ST_PUT_COMPLETE_SEND_VALS)
-			continue;
-
-		// if not enough credits for a Broadcast
-		if (!check_val_credits(credits, cb, credit_wc, credit_recv_wr, credit_debug_cnt, worker_lid)){
-			has_outstanding_vals = 1;
-			break;
-		}
-
-		for (j = 0; j < MACHINE_NUM; j++)
-			credits[VAL_UD_QP_ID][j]--;
-
-		if (ENABLE_CREDIT_PRINTS && ENABLE_VAL_PRINTS && worker_lid < MAX_THREADS_TO_PRINT)
-			printf("$$$ Credits[W%d]: \033[1m\033[32mVALs\033[0m \033[31mdecremented\033[0m to %d (for machine %d)\n",
-				   worker_lid, credits[VAL_UD_QP_ID][(machine_id + 1) % MACHINE_NUM],
-				   (machine_id + 1) % MACHINE_NUM);
-
-		if(ops[i].state == ST_PUT_COMPLETE_SEND_VALS)
-			ops[i].state = ST_PUT_COMPLETE;
-		else
-			ops[i].state = ST_NEW;
-
-		// Create the broadcast messages
-		forge_bcast_val_wrs(&ops[i], &val_send_packet_ops[*val_push_ptr], send_val_wr,
-							send_val_sgl, cb, br_tx, br_i, worker_lid);
-		total_vals_in_batch++;
-
-		if(val_send_packet_ops[*val_push_ptr].req_num == VAL_MAX_REQ_COALESCE) {
-			br_i++;
-			if (br_i == MAX_PCIE_BCAST_BATCH) {
-				batch_vals_2_NIC(send_val_wr, send_val_sgl, cb, br_i,
-								 total_vals_in_batch, worker_lid);
-				br_i = 0;
-				total_vals_in_batch = 0;
-			}
-//			HRD_MOD_ADD(*val_push_ptr, VAL_SEND_OPS_SIZE);
-			HRD_MOD_ADD(*val_push_ptr, VAL_SEND_OPS_SIZE / REMOTE_MACHINES * group_membership.num_of_alive_remotes); //got to the next "packet" + dealing with failutes
-			//Reset data left from previous bcasts after ibv_post_send to avoid sending reseted data
-			val_send_packet_ops[*val_push_ptr].req_num = 0;
-			for(j = 0; j < VAL_MAX_REQ_COALESCE; j++)
-				val_send_packet_ops[*val_push_ptr].reqs[j].opcode = ST_EMPTY;
-		}
-	}
-
-	if(val_send_packet_ops[*val_push_ptr].req_num > 0 &&
-	   val_send_packet_ops[*val_push_ptr].req_num < VAL_MAX_REQ_COALESCE)
-		br_i++;
-
-	if(br_i > 0)
-		batch_vals_2_NIC(send_val_wr, send_val_sgl, cb, br_i,
-						 total_vals_in_batch, worker_lid);
-
-	//Reset data left from previous bcasts
-	if(val_send_packet_ops[*val_push_ptr].req_num > 0 &&
-	   val_send_packet_ops[*val_push_ptr].req_num < VAL_MAX_REQ_COALESCE) {
-//		HRD_MOD_ADD(*val_push_ptr, VAL_SEND_OPS_SIZE);
-		HRD_MOD_ADD(*val_push_ptr, VAL_SEND_OPS_SIZE / REMOTE_MACHINES * group_membership.num_of_alive_remotes); //got to the next "packet" + dealing with failutes
-		val_send_packet_ops[*val_push_ptr].req_num = 0;
-		for(j = 0; j < VAL_MAX_REQ_COALESCE; j++)
-			val_send_packet_ops[*val_push_ptr].reqs[j].opcode = ST_EMPTY;
-	}
-	return has_outstanding_vals;
-}
+//
+//static inline uint8_t
+//broadcast_vals_on_membership_change
+//				(spacetime_op_t* ops, spacetime_val_packet_t* val_send_packet_ops,
+//				int* val_push_ptr, struct ibv_send_wr* send_val_wr, struct ibv_sge* send_val_sgl,
+//				uint8_t credits[][MACHINE_NUM], struct hrd_ctrl_blk* cb,
+//				struct ibv_wc* credit_wc, uint32_t* credit_debug_cnt, long long* br_tx,
+//				struct ibv_recv_wr* credit_recv_wr, uint16_t worker_lid)
+//{
+//	uint16_t i = 0, br_i = 0, j, total_vals_in_batch = 0;
+//	uint8_t has_outstanding_vals = 0;
+//
+//	if(ENABLE_ASSERTIONS)
+//		assert(val_send_packet_ops[*val_push_ptr].req_num == 0);
+//
+//	// traverse all of the ops to find bcasts
+//	for (i = 0; i < MAX_BATCH_OPS_SIZE; i++) {
+//		if(ops[i].state != ST_REPLAY_COMPLETE &&
+//		   ops[i].state != ST_PUT_COMPLETE_SEND_VALS)
+//			continue;
+//
+//		// if not enough credits for a Broadcast
+//		if (!check_val_credits(credits, cb, credit_wc, credit_recv_wr, credit_debug_cnt, worker_lid)){
+//			has_outstanding_vals = 1;
+//			break;
+//		}
+//
+//		for (j = 0; j < MACHINE_NUM; j++)
+//			credits[VAL_UD_QP_ID][j]--;
+//
+//		if (ENABLE_CREDIT_PRINTS && ENABLE_VAL_PRINTS && worker_lid < MAX_THREADS_TO_PRINT)
+//			printf("$$$ Credits[W%d]: \033[1m\033[32mVALs\033[0m \033[31mdecremented\033[0m to %d (for machine %d)\n",
+//				   worker_lid, credits[VAL_UD_QP_ID][(machine_id + 1) % MACHINE_NUM],
+//				   (machine_id + 1) % MACHINE_NUM);
+//
+//		if(ops[i].state == ST_PUT_COMPLETE_SEND_VALS)
+//			ops[i].state = ST_PUT_COMPLETE;
+//		else
+//			ops[i].state = ST_NEW;
+//
+//		// Create the broadcast messages
+//		forge_bcast_val_wrs(&ops[i], &val_send_packet_ops[*val_push_ptr], send_val_wr,
+//							send_val_sgl, cb, br_tx, br_i, worker_lid);
+//		total_vals_in_batch++;
+//
+//		if(val_send_packet_ops[*val_push_ptr].req_num == VAL_MAX_REQ_COALESCE) {
+//			br_i++;
+//			if (br_i == MAX_PCIE_BCAST_BATCH) {
+//				batch_vals_2_NIC(send_val_wr, send_val_sgl, cb, br_i,
+//								 total_vals_in_batch, worker_lid);
+//				br_i = 0;
+//				total_vals_in_batch = 0;
+//			}
+////			HRD_MOD_ADD(*val_push_ptr, VAL_SEND_OPS_SIZE);
+//			HRD_MOD_ADD(*val_push_ptr, VAL_SEND_OPS_SIZE / REMOTE_MACHINES * group_membership.num_of_alive_remotes); //got to the next "packet" + dealing with failutes
+//			//Reset data left from previous bcasts after ibv_post_send to avoid sending reseted data
+//			val_send_packet_ops[*val_push_ptr].req_num = 0;
+//			for(j = 0; j < VAL_MAX_REQ_COALESCE; j++)
+//				val_send_packet_ops[*val_push_ptr].reqs[j].opcode = ST_EMPTY;
+//		}
+//	}
+//
+//	if(val_send_packet_ops[*val_push_ptr].req_num > 0 &&
+//	   val_send_packet_ops[*val_push_ptr].req_num < VAL_MAX_REQ_COALESCE)
+//		br_i++;
+//
+//	if(br_i > 0)
+//		batch_vals_2_NIC(send_val_wr, send_val_sgl, cb, br_i,
+//						 total_vals_in_batch, worker_lid);
+//
+//	//Reset data left from previous bcasts
+//	if(val_send_packet_ops[*val_push_ptr].req_num > 0 &&
+//	   val_send_packet_ops[*val_push_ptr].req_num < VAL_MAX_REQ_COALESCE) {
+////		HRD_MOD_ADD(*val_push_ptr, VAL_SEND_OPS_SIZE);
+//		HRD_MOD_ADD(*val_push_ptr, VAL_SEND_OPS_SIZE / REMOTE_MACHINES * group_membership.num_of_alive_remotes); //got to the next "packet" + dealing with failutes
+//		val_send_packet_ops[*val_push_ptr].req_num = 0;
+//		for(j = 0; j < VAL_MAX_REQ_COALESCE; j++)
+//			val_send_packet_ops[*val_push_ptr].reqs[j].opcode = ST_EMPTY;
+//	}
+//	return has_outstanding_vals;
+//}
 
 /* ---------------------------------------------------------------------------
 ------------------------------------CRDs--------------------------------------
@@ -1136,19 +1136,18 @@ refill_ops(uint32_t* trace_iter, uint16_t worker_lid,
 			if(first_iter_has_passed[worker_lid] == 1){
 				assert(ops[i].opcode == ST_OP_PUT || ops[i].opcode == ST_OP_GET);
 				assert(ops[i].state == ST_PUT_COMPLETE ||
-					   ops[i].state == ST_GET_SUCCESS ||
+					   ops[i].state == ST_GET_COMPLETE ||
 					   ops[i].state == ST_PUT_SUCCESS ||
-					   ops[i].state == ST_IN_PROGRESS_WRITE ||
+					   ops[i].state == ST_IN_PROGRESS_PUT ||
 					   ops[i].state == ST_PUT_STALL ||
 					   ops[i].state == ST_GET_STALL);
 			}
 		}
 		if (first_iter_has_passed[worker_lid] == 0 ||
-			ops[i].state == ST_PUT_COMPLETE || ops[i].state == ST_GET_SUCCESS) {
+			ops[i].state == ST_PUT_COMPLETE || ops[i].state == ST_GET_COMPLETE) {
 			if(first_iter_has_passed[worker_lid] != 0) {
 				if (ENABLE_REQ_PRINTS && worker_lid < MAX_THREADS_TO_PRINT)
-					green_printf(
-							"W%d--> Key Hash:%" PRIu64 "\n\t\tType: %s, version %d, tie-b: %d, value(len-%d): %c\n",
+					green_printf("W%d--> Key Hash:%" PRIu64 "\n\t\tType: %s, version %d, tie-b: %d, value(len-%d): %c\n",
 							worker_lid, ((uint64_t *) &ops[i].key)[0],
 							code_to_str(ops[i].state), ops[i].version,
 							ops[i].tie_breaker_id, ops[i].val_len, ops[i].value[0]);

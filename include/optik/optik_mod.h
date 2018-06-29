@@ -160,12 +160,12 @@ typedef volatile struct
     uint8_t lock;
     uint8_t state;
     uint8_t write_acks[GROUP_MEMBERSHIP_ARRAY_SIZE];
-    uint8_t replay_acks;
-    uint8_t write_buffer_index; //TODO change to a pointer for a buffer >= 256
+    uint8_t op_buffer_index; //TODO change to a pointer for a buffer >= 256
     uint8_t last_writer_id;
     uint8_t tie_breaker_id;
+    uint8_t last_local_write_tie_breaker_id;
     uint32_t version;  /// for lock-free reads & as part of timestamp:{version|tie_breaker_id}
-    uint32_t last_writer_version;  /// for lock-free reads & as part of timestamp:{version|tie_breaker_id}
+    uint32_t last_local_write_version;  /// for lock-free reads & as part of timestamp:{version|tie_breaker_id}
 } spacetime_object_meta;
 
 typedef volatile struct

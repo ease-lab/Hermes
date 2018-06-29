@@ -44,7 +44,7 @@ void extended_meta_reset(struct extended_spacetime_meta_stats* meta)
 	meta_reset(&meta->metadata);
 }
 
-static inline uint8_t is_last_ack(uint8_t const * gathered_acks, int worker_lid)
+static inline uint8_t is_last_ack(uint8_t const * gathered_acks, spacetime_group_membership curr_g_membership, int worker_lid)
 {
 	//lock_free read of group membership & comparison with gathered acks
 	int i = 0;
@@ -62,10 +62,14 @@ static inline uint8_t is_last_ack(uint8_t const * gathered_acks, int worker_lid)
 	} while (!(group_mem_timestamp_is_same_and_valid(
 			curr_membership.optik_lock.version,
 			group_membership.optik_lock.version)));
-	for(i = 0; i < GROUP_MEMBERSHIP_ARRAY_SIZE; i++)
+    for(i = 0; i < GROUP_MEMBERSHIP_ARRAY_SIZE; i++)
 		if((gathered_acks[i] & curr_membership.group_membership[i]) !=
 		   curr_membership.group_membership[i])
 			return 0;
+//	for(i = 0; i < GROUP_MEMBERSHIP_ARRAY_SIZE; i++)
+//		if((gathered_acks[i] & curr_g_membership.group_membership[i]) !=
+//		   curr_g_membership.group_membership[i])
+//			return 0;
 	return 1;
 }
 
@@ -75,7 +79,7 @@ void spacetime_object_meta_init(spacetime_object_meta* ol)
 	ol->last_writer_id = LAST_WRITER_ID_EMPTY;
 	ol->version = 0;
 	ol->state = VALID_STATE;
-	ol->write_buffer_index = WRITE_BUFF_EMPTY;
+	ol->op_buffer_index = ST_OP_BUFFER_INDEX_EMPTY;
 	ol->lock = OPTIK_FREE;
 }
 
@@ -139,7 +143,6 @@ void batch_ops_to_KVS(int op_num, spacetime_op_t **op, int thread_id, spacetime_
 					  uint32_t refilled_ops_debug_cnt, uint32_t *ref_ops_dbg_array_cnt)
 {
 	int I, j;	/* I is batch index */
-	long long stalled_brces = 0;
 #if SPACETIME_DEBUG == 1
 	//assert(kv.hash_table != NULL);
 	assert(op != NULL);
@@ -163,9 +166,9 @@ void batch_ops_to_KVS(int op_num, spacetime_op_t **op, int thread_id, spacetime_
 	 * for both GETs and PUTs.
 	 */
 	for(I = 0; I < op_num; I++) {
-		if ((*op)[I].state == ST_IN_PROGRESS_WRITE ||
-			(*op)[I].state == ST_BUFFERED_IN_PROGRESS_REPLAY ||
-			(*op)[I].state == ST_BUFFERED_REPLAY ||
+		if ((*op)[I].state == ST_IN_PROGRESS_PUT ||
+			(*op)[I].state == ST_IN_PROGRESS_REPLAY ||
+			(*op)[I].state == ST_REPLAY_SUCCESS ||
 			(*op)[I].state == ST_PUT_SUCCESS) continue;
 //			cyan_printf("Ops[%d]=== hash(1st 8B):%" PRIu64 "\n", I, ((uint64_t *) &(*op)[I].key)[1]);
 		bkt[I] = (*op)[I].key.bkt & kv.hash_table.bkt_mask;
@@ -178,16 +181,15 @@ void batch_ops_to_KVS(int op_num, spacetime_op_t **op, int thread_id, spacetime_
 	}
 
 	for(I = 0; I < op_num; I++) {
-		if ((*op)[I].state == ST_IN_PROGRESS_WRITE ||
-			(*op)[I].state == ST_BUFFERED_IN_PROGRESS_REPLAY ||
-			(*op)[I].state == ST_BUFFERED_REPLAY ||
+		if ((*op)[I].state == ST_IN_PROGRESS_PUT ||
+			(*op)[I].state == ST_IN_PROGRESS_REPLAY ||
+			(*op)[I].state == ST_REPLAY_SUCCESS ||
 			(*op)[I].state == ST_PUT_SUCCESS) continue;
 		for(j = 0; j < 8; j++) {
 			if(bkt_ptr[I]->slots[j].in_use == 1 &&
 			   bkt_ptr[I]->slots[j].tag == tag[I]) {
 				uint64_t log_offset = bkt_ptr[I]->slots[j].offset &
 									  kv.hash_table.log_mask;
-
 				/*
 				 * We can interpret the log entry as mica_op, even though it
 				 * may not contain the full MICA_MAX_VALUE value.
@@ -211,17 +213,15 @@ void batch_ops_to_KVS(int op_num, spacetime_op_t **op, int thread_id, spacetime_
 	// the following variables used to validate atomicity between a lock-free read of an object
 	spacetime_object_meta prev_meta;
 	for(I = 0; I < op_num; I++) {
-		if ((*op)[I].state == ST_IN_PROGRESS_WRITE ||
-			(*op)[I].state == ST_BUFFERED_IN_PROGRESS_REPLAY ||
-			(*op)[I].state == ST_BUFFERED_REPLAY ||
+		if ((*op)[I].state == ST_IN_PROGRESS_PUT ||
+			(*op)[I].state == ST_IN_PROGRESS_REPLAY ||
+			(*op)[I].state == ST_REPLAY_SUCCESS ||
 			(*op)[I].state == ST_PUT_SUCCESS) continue;
 		if(kv_ptr[I] != NULL) {
 			/* We had a tag match earlier. Now compare log entry. */
 			long long *key_ptr_log = (long long *) kv_ptr[I];
 			long long *key_ptr_req = (long long *) &(*op)[I].key;
 
-//			if(key_ptr_log[0] == key_ptr_req[0] &&
-//			   key_ptr_log[1] == key_ptr_req[1]) { //Key Found 16 Byte keys
 			if(key_ptr_log[1] == key_ptr_req[0]){ //Key Found 8 Byte keys
 				key_in_store[I] = 1;
 
@@ -238,14 +238,12 @@ void batch_ops_to_KVS(int op_num, spacetime_op_t **op, int thread_id, spacetime_
 						switch(curr_meta->state) {
 							case VALID_STATE:
 								memcpy((*op)[I].value, kv_value_ptr, ST_VALUE_SIZE);
-								(*op)[I].state = ST_GET_SUCCESS;
+								(*op)[I].state = ST_GET_COMPLETE;
+								(*op)[I].val_len = kv_ptr[I]->val_len - sizeof(spacetime_object_meta);
 								break;
-//							case INVALID_BUFF_STATE:
-//							case INVALID_WRITE_BUFF_STATE:
-//								///CHANGED for failures
-							case WRITE_BUFF_STATE:
-							case REPLAY_BUFF_STATE:
-							case REPLAY_WRITE_BUFF_STATE:
+							case INVALID_WRITE_STATE:
+							case WRITE_STATE:
+							case REPLAY_STATE:
 								(*op)[I].state = ST_GET_STALL;
 								break;
 							default:
@@ -254,78 +252,44 @@ void batch_ops_to_KVS(int op_num, spacetime_op_t **op, int thread_id, spacetime_
 								switch(curr_meta->state) {
 									case VALID_STATE:
 										memcpy((*op)[I].value, kv_value_ptr, ST_VALUE_SIZE);
-										(*op)[I].state = ST_GET_SUCCESS;
-										break;
-									case WRITE_BUFF_STATE:
-									case REPLAY_BUFF_STATE:
-									case REPLAY_WRITE_BUFF_STATE:
-										(*op)[I].state = ST_GET_STALL;
-										break;
-									case INVALID_BUFF_STATE:
-									case INVALID_WRITE_BUFF_STATE:
-                                        if(writer_is_alive(curr_membership, curr_meta->last_writer_id))
-											(*op)[I].state = ST_GET_STALL;
-                                        else{
-											(*op)[I].state = ST_BUFFERED_REPLAY;
-                                            curr_meta->state = (uint8_t) (curr_meta->state == INVALID_BUFF_STATE ?
-																		  REPLAY_BUFF_STATE : REPLAY_WRITE_BUFF_STATE);
-										}
-										break;
-									case INVALID_STATE:
-                                        if(writer_is_alive(curr_membership, curr_meta->last_writer_id)){
-											curr_meta->state = INVALID_BUFF_STATE;
-											(*op)[I].state = ST_GET_STALL;
-										} else{
-											curr_meta->state = REPLAY_BUFF_STATE;
-											(*op)[I].state = ST_BUFFERED_REPLAY;
-										}
+										(*op)[I].state = ST_GET_COMPLETE;
+										(*op)[I].val_len = kv_ptr[I]->val_len - sizeof(spacetime_object_meta);
 										break;
 									case INVALID_WRITE_STATE:
-										if(writer_is_alive(curr_membership, curr_meta->last_writer_id)){
-											curr_meta->state = INVALID_WRITE_BUFF_STATE;
-											(*op)[I].state = ST_GET_STALL;
-										} else{
-											curr_meta->state = REPLAY_WRITE_BUFF_STATE;
-											(*op)[I].state = ST_BUFFERED_REPLAY;
-										}
-										break;
 									case WRITE_STATE:
-										curr_meta->state = WRITE_BUFF_STATE;
-										break;
 									case REPLAY_STATE:
-										curr_meta->state = REPLAY_BUFF_STATE;
+										(*op)[I].state = ST_GET_STALL;
 										break;
-									case REPLAY_WRITE_STATE:
-										curr_meta->state = REPLAY_WRITE_BUFF_STATE;
+									case INVALID_STATE:
+										if(writer_is_alive(curr_membership, curr_meta->last_writer_id))
+											(*op)[I].state = ST_GET_STALL;
+										else if(curr_meta->op_buffer_index == ST_OP_BUFFER_INDEX_EMPTY){
+											///stall replay: until all acks from last write arrive
+											///on multiple threads we can't complete writes / replays on VAL
+											curr_meta->state = REPLAY_STATE;
+											if(ENABLE_ASSERTIONS)
+												assert(I < ST_OP_BUFFER_INDEX_EMPTY);
+											curr_meta->op_buffer_index = (uint8_t) I;
+											curr_meta->last_local_write_version = curr_meta->version - 1;
+											curr_meta->last_local_write_tie_breaker_id = curr_meta->tie_breaker_id;
+											(*op)[I].state = ST_REPLAY_SUCCESS;
+											(*op)[I].version = curr_meta->version - 1;
+											(*op)[I].tie_breaker_id = curr_meta->tie_breaker_id;
+											(*op)[I].val_len = ST_VALUE_SIZE;
+											memcpy((*op)[I].value, kv_value_ptr, ST_VALUE_SIZE);
+											///update group membership mask for replay acks
+											memcpy((void *) curr_meta->write_acks, (void *) curr_membership.write_ack_init,
+												   GROUP_MEMBERSHIP_ARRAY_SIZE);
+										}
 										break;
 									default:
 										printf("Wrong opcode %s\n",code_to_str(curr_meta->state));
 										assert(0);
 								}
-								if((*op)[I].state == ST_BUFFERED_REPLAY){
-									(*op)[I].version = curr_meta->version - 1;
-									(*op)[I].tie_breaker_id = curr_meta->tie_breaker_id;
-									(*op)[I].val_len = ST_VALUE_SIZE;
-									memcpy((*op)[I].value, kv_value_ptr, ST_VALUE_SIZE);
-									///update group membership mask for replay acks
-									memcpy((void *) curr_meta->replay_acks, (void *) curr_membership.write_ack_init,
-										   GROUP_MEMBERSHIP_ARRAY_SIZE);
-								}
 								optik_unlock_decrement_version(curr_meta);
-								if((*op)[I].state != ST_GET_SUCCESS && (*op)[I].state != ST_BUFFERED_REPLAY)
-									(*op)[I].state = ST_GET_STALL;
 								break;
 						}
 					} while (!is_same_version_and_valid(&prev_meta, curr_meta) && was_locked_read == 0);
-					if(refilled_ops_debug_cnt > M_4){
-						printf("State: %s, Version: %d tie-id: %d,\n", code_to_str(curr_meta->state), curr_meta->version, curr_meta->tie_breaker_id);
-					}
-					///TODO may need to put this inside the above criticial section
-					if((*op)[I].state == ST_GET_SUCCESS) {
-						(*op)[I].val_len = kv_ptr[I]->val_len - sizeof(spacetime_object_meta);
-						if (ENABLE_ASSERTIONS)
-							assert((*op)[I].val_len == ST_VALUE_SIZE);
-					}
 
 				} else if ((*op)[I].opcode == ST_OP_PUT){
 					if(ENABLE_ASSERTIONS)
@@ -333,7 +297,7 @@ void batch_ops_to_KVS(int op_num, spacetime_op_t **op, int thread_id, spacetime_
 					///Warning: even if a write is in progress write we may need to update the value of write_buffer_index
 					(*op)[I].state = ST_EMPTY;
 					optik_lock(curr_meta);
-					if(ENABLE_ASSERTIONS)
+					if(ENABLE_ASSERTIONS){
 						if(unlikely(ref_ops_dbg_array_cnt[I] > M_4)){
 							red_printf("Worker %d is stacked in %d\n", thread_id, I);
 							if(w_stats[thread_id].issued_invs_per_worker != w_stats[thread_id].received_acks_per_worker) {
@@ -349,87 +313,52 @@ void batch_ops_to_KVS(int op_num, spacetime_op_t **op, int thread_id, spacetime_
 											   j, ((uint64_t *) &(*op)[I].key)[0], code_to_str((*op)[j].state));
 							ref_ops_dbg_array_cnt[I] = 0;
 						}
-					if(ENABLE_ASSERTIONS && refilled_ops_debug_cnt > M_4)
-						yellow_printf("W%d--> Op[%d] | Key Hash:%" PRIu64 "\n\tOp: %s state: %s, version: %d, tie-breaker: %d, waits ack: %s\n",
-									  thread_id, I, ((uint64_t *) &(*op)[I].key)[0],
-									  code_to_str((*op)[I].state), code_to_str(curr_meta->state),
-									  curr_meta->version - 1, curr_meta->tie_breaker_id,
-									  curr_meta->write_buffer_index != WRITE_BUFF_EMPTY ? "y":"n");
+						if(unlikely(refilled_ops_debug_cnt > M_4))
+							yellow_printf("W%d--> Op[%d] | Key Hash:%" PRIu64 "\n\tOp: %s state: %s, version: %d, tie-breaker: %d, waits ack: %s\n",
+										  thread_id, I, ((uint64_t *) &(*op)[I].key)[0],
+										  code_to_str((*op)[I].state), code_to_str(curr_meta->state),
+										  curr_meta->version - 1, curr_meta->tie_breaker_id,
+										  curr_meta->op_buffer_index != ST_OP_BUFFER_INDEX_EMPTY ? "y":"n");
+					}
 
-					///TODO update the write_buff_index when move things from batch op in order to preserve session order
 					switch(curr_meta->state) {
 						case VALID_STATE:
 						case INVALID_STATE:
-						case INVALID_BUFF_STATE:
-							if(curr_meta->write_buffer_index != WRITE_BUFF_EMPTY){
+							if(curr_meta->op_buffer_index != ST_OP_BUFFER_INDEX_EMPTY){
 								///stall write: until all acks from last write arrive
+                                /// on multiple threads we can't complete writes / replays on VAL
 //                                printf("[W%d]-->State:%s version:%d, tie: %d, buff index: %d, last_write-version: %d, last_write-id: %d !\n",
 //									   thread_id, code_to_str(curr_meta->state), curr_meta->version - 1, curr_meta->tie_breaker_id,
-//										curr_meta->write_buffer_index, curr_meta->last_writer_version, curr_meta->last_writer_id);
+//										curr_meta->op_buffer_index, curr_meta->last_local_write_version, curr_meta->last_writer_id);
 								optik_unlock_decrement_version(curr_meta);
 							} else {
-								curr_meta->state = (uint8_t) (curr_meta->state == INVALID_BUFF_STATE? WRITE_BUFF_STATE : WRITE_STATE);
+								curr_meta->state = WRITE_STATE;
 								memcpy(kv_value_ptr, (*op)[I].value, ST_VALUE_SIZE);
 								kv_ptr[I]->val_len = (*op)[I].val_len + sizeof(spacetime_object_meta);
 								///update group membership mask
-								memcpy((void *) curr_meta->write_acks, (void *) group_membership.write_ack_init,
+								memcpy((void *) curr_meta->write_acks, (void *) curr_membership.write_ack_init,
 									   GROUP_MEMBERSHIP_ARRAY_SIZE);
 								if(ENABLE_ASSERTIONS)
-									assert(I < WRITE_BUFF_EMPTY);
-								curr_meta->write_buffer_index = (uint8_t) I;
-								curr_meta->last_writer_version = curr_meta->version + 1;
-								optik_unlock_write(curr_meta, (uint8) machine_id, &((*op)[I].version));
+									assert(I < ST_OP_BUFFER_INDEX_EMPTY);
+								curr_meta->op_buffer_index = (uint8_t) I;
+								curr_meta->last_local_write_version = curr_meta->version + 1;
+								curr_meta->last_local_write_tie_breaker_id = (uint8_t) machine_id;
+								optik_unlock_write(curr_meta, (uint8_t) machine_id, &((*op)[I].version));
 								(*op)[I].state = ST_PUT_SUCCESS;
 							}
 							break;
-
-						case WRITE_BUFF_STATE:
-						case REPLAY_BUFF_STATE:
-						case REPLAY_WRITE_BUFF_STATE:
+						case INVALID_WRITE_STATE:
+						case WRITE_STATE:
+						case REPLAY_STATE:
 							optik_unlock_decrement_version(curr_meta);
 							break;
-						default:
-							switch(curr_meta->state) {
-								case INVALID_WRITE_BUFF_STATE:
-                                    if(!writer_is_alive(curr_membership,curr_meta->last_writer_id)){
-										curr_meta->state = REPLAY_WRITE_BUFF_STATE;
-										(*op)[I].state = ST_BUFFERED_REPLAY;
-									}
-									break;
-								case INVALID_WRITE_STATE:
-									if(writer_is_alive(curr_membership,curr_meta->last_writer_id))
-										curr_meta->state = INVALID_WRITE_BUFF_STATE;
-									else{
-										curr_meta->state = REPLAY_WRITE_BUFF_STATE;
-										(*op)[I].state = ST_BUFFERED_REPLAY;
-									}
-									break;
-								case WRITE_STATE:
-									curr_meta->state = WRITE_BUFF_STATE;
-									break;
-								case REPLAY_STATE:
-									curr_meta->state = REPLAY_BUFF_STATE;
-									break;
-								case REPLAY_WRITE_STATE:
-									curr_meta->state = REPLAY_WRITE_BUFF_STATE;
-									break;
-								default: assert(0);
-							}
-                            if((*op)[I].state == ST_BUFFERED_REPLAY){
-									(*op)[I].version = curr_meta->version - 1;
-									(*op)[I].tie_breaker_id = curr_meta->tie_breaker_id;
-									(*op)[I].val_len = ST_VALUE_SIZE;
-									memcpy((*op)[I].value, kv_value_ptr, ST_VALUE_SIZE);
-									///update group membership mask for replay acks
-									memcpy((void *) curr_meta->replay_acks, (void *) curr_membership.write_ack_init,
-										   GROUP_MEMBERSHIP_ARRAY_SIZE);
-							}
-							optik_unlock_decrement_version(curr_meta);
+						default: assert(0);
 							break;
 					}
+					//Fill this deterministic stuff after releasing the lock
 					if((*op)[I].state == ST_PUT_SUCCESS)
 						(*op)[I].tie_breaker_id = (uint8_t) machine_id;
-					else if((*op)[I].state != ST_BUFFERED_REPLAY)
+					else
 						(*op)[I].state = ST_PUT_STALL;
 
 				}else assert(0);
@@ -442,10 +371,9 @@ void batch_ops_to_KVS(int op_num, spacetime_op_t **op, int thread_id, spacetime_
 	}
 }
 
-void batch_invs_to_KVS(int op_num, spacetime_inv_t **op, int thread_id)
+void batch_invs_to_KVS(int op_num, spacetime_inv_t **op, spacetime_op_t *read_write_op, int thread_id)
 {
 	int I, j;	/* I is batch index */
-	long long stalled_brces = 0;
 #if SPACETIME_DEBUG == 1
 	//assert(kv.hash_table != NULL);
 	assert(op != NULL);
@@ -520,7 +448,7 @@ void batch_invs_to_KVS(int op_num, spacetime_inv_t **op, int thread_id)
 	}
 
 	// the following variables used to validate atomicity between a lock-free read of an object
-	spacetime_object_meta prev_meta;
+	spacetime_object_meta lock_free_meta;
 	for(I = 0; I < op_num; I++) {
 		if(kv_ptr[I] != NULL) {
 			/* We had a tag match earlier. Now compare log entry. */
@@ -528,8 +456,6 @@ void batch_invs_to_KVS(int op_num, spacetime_inv_t **op, int thread_id)
 			long long *key_ptr_req = (long long *) &(*op)[I].key;
 
 
-//			if(key_ptr_log[0] == key_ptr_req[0] &&
-//			   key_ptr_log[1] == key_ptr_req[1]) { //Key Found 16 Byte keys
 			if(key_ptr_log[1] == key_ptr_req[0]){ //Key Found 8 Byte keys
 				key_in_store[I] = 1;
 
@@ -546,25 +472,25 @@ void batch_invs_to_KVS(int op_num, spacetime_inv_t **op, int thread_id)
 								debug_cntr = 0;
 							}
 						}
-						prev_meta = *curr_meta;
-					} while (!is_same_version_and_valid(&prev_meta, curr_meta));
+						lock_free_meta = *curr_meta;
+					} while (!is_same_version_and_valid(&lock_free_meta, curr_meta));
 					//lock and proceed iff remote.TS >= local.TS
-					//if inv TS >= local timestamp
+					//inv TS >= local timestamp
 					if(!timestamp_is_smaller((*op)[I].version,  (*op)[I].tie_breaker_id,
-											 prev_meta.version, prev_meta.tie_breaker_id)){
+											 lock_free_meta.version, lock_free_meta.tie_breaker_id)){
 						//Lock and check again if inv TS > local timestamp
 						optik_lock(curr_meta);
 						///Warning: use op.version + 1 bellow since optik_lock() increases curr_meta->version by 1
-						if(timestamp_is_smaller(curr_meta->version, curr_meta->tie_breaker_id,
-												(*op)[I].version + 1,   (*op)[I].tie_breaker_id)){
+						if(timestamp_is_smaller(curr_meta->version - 1, curr_meta->tie_breaker_id,
+												(*op)[I].version,   (*op)[I].tie_breaker_id)){
 //							printf("Received an invalidation with >= timestamp\n");
 							///Update Value, TS and last_writer_id
 							curr_meta->last_writer_id = (*op)[I].sender;
-							if(ENABLE_ASSERTIONS)
-								assert((*op)[I].val_len == ST_VALUE_SIZE);
 							kv_ptr[I]->val_len = (*op)[I].val_len + sizeof(spacetime_object_meta);
-							if(ENABLE_ASSERTIONS)
+							if(ENABLE_ASSERTIONS){
 								assert(kv_ptr[I]->val_len == KVS_VALUE_SIZE);
+								assert((*op)[I].val_len == ST_VALUE_SIZE);
+							}
 							memcpy(kv_value_ptr, (*op)[I].value, ST_VALUE_SIZE);
 							///Update state
 							switch(curr_meta->state) {
@@ -572,35 +498,28 @@ void batch_invs_to_KVS(int op_num, spacetime_inv_t **op, int thread_id)
 									curr_meta->state = INVALID_STATE;
 									break;
 								case INVALID_STATE:
-								case INVALID_BUFF_STATE:
 								case INVALID_WRITE_STATE:
-								case INVALID_WRITE_BUFF_STATE:
 									break;
 								case WRITE_STATE:
 									curr_meta->state = INVALID_WRITE_STATE;
 									break;
-								case WRITE_BUFF_STATE:
-									curr_meta->state = INVALID_WRITE_BUFF_STATE;
-									break;
 								case REPLAY_STATE:
 									curr_meta->state = INVALID_STATE;
-									break;
-								case REPLAY_BUFF_STATE:
-									curr_meta->state = INVALID_BUFF_STATE;
-									break;
-								case REPLAY_WRITE_STATE:
-									curr_meta->state = INVALID_WRITE_STATE;
-									break;
-								case REPLAY_WRITE_BUFF_STATE:
-									curr_meta->state = INVALID_WRITE_BUFF_STATE;
+									//recover the read
+									if(ENABLE_ASSERTIONS){
+										assert(curr_meta->op_buffer_index != ST_OP_BUFFER_INDEX_EMPTY);
+										assert(read_write_op[curr_meta->op_buffer_index].state == ST_IN_PROGRESS_REPLAY);
+										assert(((uint64_t *) &read_write_op[curr_meta->op_buffer_index].key)[0] == ((uint64_t *) &(*op)[I].key)[0]);
+									}
+									read_write_op[curr_meta->op_buffer_index].state = ST_NEW;
+									curr_meta->op_buffer_index = ST_OP_BUFFER_INDEX_EMPTY;
 									break;
 								default: assert(0);
 							}
-							curr_meta->last_writer_id = (*op)[I].sender;
 							optik_unlock(curr_meta, (*op)[I].tie_breaker_id, (*op)[I].version);
-						} else if(timestamp_is_equal(curr_meta->version, curr_meta->tie_breaker_id,
+						} else if(timestamp_is_equal(curr_meta->version - 1, curr_meta->tie_breaker_id,
 													 (*op)[I].version,   (*op)[I].tie_breaker_id)) {
-							if (curr_meta->state == WRITE_STATE || curr_meta->state == WRITE_BUFF_STATE)
+							if (curr_meta->state == WRITE_STATE)
 								(*op)[I].opcode = ST_INV_OUT_OF_GROUP;
 							curr_meta->last_writer_id = (*op)[I].sender;
 							optik_unlock(curr_meta, (*op)[I].tie_breaker_id, (*op)[I].version);
@@ -621,13 +540,10 @@ void batch_invs_to_KVS(int op_num, spacetime_inv_t **op, int thread_id)
 	}
 }
 
-void batch_acks_to_KVS(int op_num, spacetime_ack_t **op,
-					   spacetime_op_t *read_write_op, int thread_id)
+void batch_acks_to_KVS(int op_num, spacetime_ack_t **op, spacetime_op_t *read_write_op,
+					   spacetime_group_membership curr_membership, int thread_id)
 {
-    int complete_reqs_dbg_cnt = 0;
 	int I, j;	/* I is batch index */
-	long long stalled_brces = 0;
-	int completed_writes_debug_cnt = 0;
 #if SPACETIME_DEBUG == 1
 	//assert(kv.hash_table != NULL);
 	assert(op != NULL);
@@ -702,14 +618,12 @@ void batch_acks_to_KVS(int op_num, spacetime_ack_t **op,
 	// the following variables used to validate atomicity between a lock-free read of an object
 	spacetime_object_meta lock_free_read_meta;
 	for(I = 0; I < op_num; I++) {
-		int complete_buff_write = WRITE_BUFF_EMPTY;
+		int op_buff_indx = ST_OP_BUFFER_INDEX_EMPTY;
 		if(kv_ptr[I] != NULL) {
 			/* We had a tag match earlier. Now compare log entry. */
 			long long *key_ptr_log = (long long *) kv_ptr[I];
 			long long *key_ptr_req = (long long *) &(*op)[I].key;
 
-//			if(key_ptr_log[0] == key_ptr_req[0] &&
-//			   key_ptr_log[1] == key_ptr_req[1]) { //Key Found 16 Byte keys
 			if(key_ptr_log[1] == key_ptr_req[0]){ //Key Found 8 Byte keys
 				key_in_store[I] = 1;
 
@@ -727,84 +641,38 @@ void batch_acks_to_KVS(int op_num, spacetime_ack_t **op,
 						}
 						lock_free_read_meta = *curr_meta;
 					} while (!is_same_version_and_valid(&lock_free_read_meta, curr_meta));
-                    if(ENABLE_ASSERTIONS){
-//						if()
+
+                    if(ENABLE_ASSERTIONS)
 						assert(!timestamp_is_smaller(lock_free_read_meta.version, lock_free_read_meta.tie_breaker_id,
 													(*op)[I].version, (*op)[I].tie_breaker_id));
-					}
-					///lock and proceed iff remote.TS == local.TS or TS  == of local.last_write_TS
-					if(timestamp_is_equal(lock_free_read_meta.version, lock_free_read_meta.tie_breaker_id,
-										  (*op)[I].version, (*op)[I].tie_breaker_id) ||
-					   timestamp_is_equal(lock_free_read_meta.last_writer_version, (uint8_t) machine_id,
-										  (*op)[I].version,   (*op)[I].tie_breaker_id)){
-						///Lock and check again if ack TS == local timestamp
+
+					if(timestamp_is_equal((*op)[I].version,    (*op)[I].tie_breaker_id,
+										  lock_free_read_meta.last_local_write_version,
+										  lock_free_read_meta.last_local_write_tie_breaker_id)){
+						///Lock and check again if ack TS == last local write
 						optik_lock(curr_meta);
-						///Warning: use op.version + 1 bellow since optik_lock() increases curr_meta->version by 1
-						if(timestamp_is_equal(curr_meta->version, curr_meta->tie_breaker_id,
-											  (*op)[I].version + 1,   (*op)[I].tie_breaker_id)){
-							//ACK with TS == local.TS
-							switch(curr_meta->state) {
-								case VALID_STATE:
-								case INVALID_STATE:
-								case INVALID_BUFF_STATE:
-								case INVALID_WRITE_STATE:
-								case INVALID_WRITE_BUFF_STATE:
-									break;///Findout which states should have assert and which just break;
-								case WRITE_STATE:
-								case WRITE_BUFF_STATE:
-                                    complete_buff_write = curr_meta->write_buffer_index;
-                                    if(ENABLE_ASSERTIONS)
-										assert(complete_buff_write != WRITE_BUFF_EMPTY);
-                                    update_ack_bit_vector((*op)[I].sender, (uint8_t*) curr_meta->write_acks);
-									if (is_last_ack((uint8*)curr_meta->write_acks, thread_id)) { //if last Ack
-										curr_meta->write_buffer_index = WRITE_BUFF_EMPTY; //reset the write buff index
-										curr_meta->state = VALID_STATE;
-										(*op)[I].opcode = ST_LAST_ACK_SUCCESS;
-									}
-									break;
-								case REPLAY_STATE:
-								case REPLAY_BUFF_STATE:
-								case REPLAY_WRITE_STATE:
-								case REPLAY_WRITE_BUFF_STATE:
-									update_ack_bit_vector((*op)[I].sender, (uint8_t*) curr_meta->replay_acks);
-									if (is_last_ack((uint8*)curr_meta->replay_acks, thread_id)) { //if last Ack
-										curr_meta->state = VALID_STATE;
-										(*op)[I].opcode = ST_LAST_ACK_SUCCESS;
-									}
-									break;
-								default: assert(0);
-							}
-							///else if ACK is for the last local write --> complete local write
-						} else if(timestamp_is_equal(curr_meta->last_writer_version, (uint8_t) machine_id,
-													 (*op)[I].version,   (*op)[I].tie_breaker_id)){
-							update_ack_bit_vector((*op)[I].sender, (uint8_t*) curr_meta->write_acks);
-							if (is_last_ack((uint8_t*) curr_meta->write_acks, thread_id)) { //if last local write completed
-								complete_buff_write = curr_meta->write_buffer_index;
-								if(ENABLE_ASSERTIONS)
-									assert(complete_buff_write != WRITE_BUFF_EMPTY);
-								curr_meta->write_buffer_index = WRITE_BUFF_EMPTY; //reset the write buff index
-								(*op)[I].opcode = ST_LAST_ACK_PREV_WRITE_SUCCESS;
+                        if(timestamp_is_equal((*op)[I].version,    (*op)[I].tie_breaker_id,
+										  curr_meta->last_local_write_version,
+										  curr_meta->last_local_write_tie_breaker_id)) {
+							update_ack_bit_vector((*op)[I].sender, (uint8_t *) curr_meta->write_acks);
+							if (is_last_ack((uint8_t *) curr_meta->write_acks, curr_membership, thread_id)) { //if last local write completed
+								op_buff_indx = curr_meta->op_buffer_index;
 								switch (curr_meta->state) {
 									case VALID_STATE:
 									case INVALID_STATE:
-									case INVALID_BUFF_STATE:
-									case WRITE_STATE:
-									case WRITE_BUFF_STATE:
-									case REPLAY_STATE:
-									case REPLAY_BUFF_STATE:
-										///TODO check what happens here
+										(*op)[I].opcode = ST_LAST_ACK_NO_BCAST_SUCCESS;
+										curr_meta->op_buffer_index = ST_OP_BUFFER_INDEX_EMPTY; //reset the write buff index
 										break;
 									case INVALID_WRITE_STATE:
 										curr_meta->state = INVALID_STATE;
+										(*op)[I].opcode = ST_LAST_ACK_NO_BCAST_SUCCESS;
+										curr_meta->op_buffer_index = ST_OP_BUFFER_INDEX_EMPTY; //reset the write buff index
 										break;
-									case INVALID_WRITE_BUFF_STATE:
-										curr_meta->state = INVALID_BUFF_STATE;
-										break;
-									case REPLAY_WRITE_STATE:
-										curr_meta->state = REPLAY_STATE;
-										break;
-									case REPLAY_WRITE_BUFF_STATE:
-										curr_meta->state = REPLAY_BUFF_STATE;
+									case WRITE_STATE:
+									case REPLAY_STATE:
+										curr_meta->state = VALID_STATE;
+										(*op)[I].opcode = ST_LAST_ACK_SUCCESS;
+										curr_meta->op_buffer_index = ST_OP_BUFFER_INDEX_EMPTY; //reset the write buff index
 										break;
 									default:
 										assert(0);
@@ -813,24 +681,24 @@ void batch_acks_to_KVS(int op_num, spacetime_ack_t **op,
 						}
 						optik_unlock_decrement_version(curr_meta);
 					}
-					if(((*op)[I].opcode == ST_LAST_ACK_SUCCESS ||
-						(*op)[I].opcode == ST_LAST_ACK_PREV_WRITE_SUCCESS) &&
-					   complete_buff_write != WRITE_BUFF_EMPTY){
-						///completed write --> remove it from the ops buffer
+					if((*op)[I].opcode == ST_LAST_ACK_SUCCESS ||
+						(*op)[I].opcode == ST_LAST_ACK_NO_BCAST_SUCCESS){
+						///completed read / write --> remove it from the ops buffer
 						if(ENABLE_ASSERTIONS){
 //                            printf("ACK[%d]: Key Hash:%" PRIu64 " complete buff: %d\n\t op: %s, TS: %d | %d, sender: %d\n",
-//								   I, ((uint64_t *) &(*op)[I].key)[1], complete_buff_write, code_to_str((*op)[I].opcode),
+//								   I, ((uint64_t *) &(*op)[I].key)[1], op_buff_indx, code_to_str((*op)[I].opcode),
 //								   (*op)[I].version, (*op)[I].tie_breaker_id, (*op)[I].sender);
-							assert(read_write_op[complete_buff_write].state == ST_IN_PROGRESS_WRITE);
-                            assert(((uint64_t *) &read_write_op[complete_buff_write].key)[0] == ((uint64_t *) &(*op)[I].key)[0]);
+							assert(op_buff_indx != ST_OP_BUFFER_INDEX_EMPTY);
+							assert(read_write_op[op_buff_indx].state == ST_IN_PROGRESS_PUT ||
+								   read_write_op[op_buff_indx].state == ST_IN_PROGRESS_REPLAY);
+                            assert(((uint64_t *) &read_write_op[op_buff_indx].key)[0] == ((uint64_t *) &(*op)[I].key)[0]);
 						}
-						complete_reqs_dbg_cnt++;
-						completed_writes_debug_cnt++;
-						read_write_op[complete_buff_write].state = ST_PUT_COMPLETE;
-					} else if(((*op)[I].opcode == ST_LAST_ACK_SUCCESS ||
-						(*op)[I].opcode == ST_LAST_ACK_PREV_WRITE_SUCCESS) &&
-							complete_buff_write == WRITE_BUFF_EMPTY)
-                        assert(0);
+                        if(read_write_op[op_buff_indx].opcode == ST_OP_PUT)
+							read_write_op[op_buff_indx].state = ST_PUT_COMPLETE;
+                        else if(read_write_op[op_buff_indx].opcode == ST_OP_GET){
+							read_write_op[op_buff_indx].state = ST_GET_COMPLETE;
+						} else assert(0);
+					}
 				}
 			}
 			if((*op)[I].opcode != ST_LAST_ACK_SUCCESS)
@@ -838,17 +706,12 @@ void batch_acks_to_KVS(int op_num, spacetime_ack_t **op,
 		}
 		if(key_in_store[I] == 0) //KVS miss --> We get here if either tag or log key match failed
 			assert(0);
-
 	}
-
-	if(ENABLE_ASSERTIONS)
-		assert(REMOTE_MACHINES != 1 || complete_reqs_dbg_cnt == op_num);
 }
 
-void batch_vals_to_KVS(int op_num, spacetime_val_t **op, int thread_id)
+void batch_vals_to_KVS(int op_num, spacetime_val_t **op, spacetime_op_t *read_write_op, int thread_id)
 {
 	int I, j;	/* I is batch index */
-	long long stalled_brces = 0;
 #if SPACETIME_DEBUG == 1
 	//assert(kv.hash_table != NULL);
 	assert(op != NULL);
@@ -930,8 +793,6 @@ void batch_vals_to_KVS(int op_num, spacetime_val_t **op, int thread_id)
 			long long *key_ptr_log = (long long *) kv_ptr[I];
 			long long *key_ptr_req = (long long *) &(*op)[I].key;
 
-//			if(key_ptr_log[0] == key_ptr_req[0] &&
-//			   key_ptr_log[1] == key_ptr_req[1]) { //Key Found 16 Byte keys
 			if(key_ptr_log[1] == key_ptr_req[0]){ //Key Found 8 Byte keys
 				key_in_store[I] = 1;
 
@@ -955,26 +816,46 @@ void batch_vals_to_KVS(int op_num, spacetime_val_t **op, int thread_id)
 						///Lock and check again if still TS == local timestamp
 						optik_lock(curr_meta);
 						///Warning: use op.version + 1 bellow since optik_lock() increases curr_meta->version by 1
-						if(timestamp_is_equal(curr_meta->version, curr_meta->tie_breaker_id,
-											  (*op)[I].version + 1,   (*op)[I].tie_breaker_id)){
+						if(timestamp_is_equal(curr_meta->version - 1, curr_meta->tie_breaker_id,
+											  (*op)[I].version,   (*op)[I].tie_breaker_id)){
 //							printf("VAL with TS == local.TS\n");
 							switch(curr_meta->state) {
-								case WRITE_STATE:
-								case WRITE_BUFF_STATE:
-									assert(0); ///WARNING: this should not happen w/o failure suspicion of this node
-								case INVALID_WRITE_STATE:
-								case INVALID_WRITE_BUFF_STATE:
-								case REPLAY_WRITE_STATE:
-								case REPLAY_WRITE_BUFF_STATE:
 								case VALID_STATE:
+									break;
 								case INVALID_STATE:
-								case INVALID_BUFF_STATE:
+									break;
+								case WRITE_STATE: // I am out of group
+									assert(0); ///WARNING: this should not happen w/o this node removed from the group
+								case INVALID_WRITE_STATE:
+//                                    printf("Invalid Write state\n");
+//									//Complete write
+//									if(ENABLE_ASSERTIONS){
+//										assert(curr_meta->op_buffer_index != ST_OP_BUFFER_INDEX_EMPTY);
+//										if((((uint64_t *) &read_write_op[curr_meta->op_buffer_index].key)[0] != ((uint64_t *) &(*op)[I].key)[0]))
+//											green_printf("Key Hash:%" PRIu64 "\nOp  Hash:%" PRIu64 "\n",
+//												((uint64_t *) &read_write_op[curr_meta->op_buffer_index].key)[0], ((uint64_t *) &(*op)[I].key)[0]);
+//										assert(((uint64_t *) &read_write_op[curr_meta->op_buffer_index].key)[0] == ((uint64_t *) &(*op)[I].key)[0]);
+////										if(read_write_op[curr_meta->op_buffer_index].state != ST_IN_PROGRESS_PUT)
+////											printf("Code: %s\n", code_to_str(read_write_op[curr_meta->op_buffer_index].state));
+//										assert(read_write_op[curr_meta->op_buffer_index].state == ST_IN_PROGRESS_PUT ||
+//												read_write_op[curr_meta->op_buffer_index].state == ST_PUT_SUCCESS);
+//									}
+//									read_write_op[curr_meta->op_buffer_index].state = ST_PUT_COMPLETE;
+//									curr_meta->op_buffer_index = ST_OP_BUFFER_INDEX_EMPTY;
+									break;
 								case REPLAY_STATE:
-								case REPLAY_BUFF_STATE:
-									curr_meta->state = VALID_STATE;
+//                                    //Complete read
+//									if(ENABLE_ASSERTIONS){
+//										assert(curr_meta->op_buffer_index != ST_OP_BUFFER_INDEX_EMPTY);
+//										assert(read_write_op[curr_meta->op_buffer_index].state == ST_IN_PROGRESS_REPLAY);
+//										assert(((uint64_t *) &read_write_op[curr_meta->op_buffer_index].key)[0] == ((uint64_t *) &(*op)[I].key)[0]);
+//									}
+//									read_write_op[curr_meta->op_buffer_index].state = ST_GET_COMPLETE;
+//									curr_meta->op_buffer_index = ST_OP_BUFFER_INDEX_EMPTY;
 									break;
 								default: assert(0);
 							}
+							curr_meta->state = VALID_STATE;
 						}
 						optik_unlock_decrement_version(curr_meta);
 					}
@@ -987,7 +868,9 @@ void batch_vals_to_KVS(int op_num, spacetime_val_t **op, int thread_id)
 	}
 }
 
-void complete_writes_and_replays_on_membership_change(int op_num, spacetime_op_t **op, int thread_id)
+void complete_writes_and_replays_on_follower_removal(int op_num, spacetime_op_t **op,
+													 spacetime_group_membership curr_membership,
+													 int thread_id)
 {
 	int I, j;	/* I is batch index */
 	long long stalled_brces = 0;
@@ -1015,8 +898,8 @@ void complete_writes_and_replays_on_membership_change(int op_num, spacetime_op_t
 	 * for both GETs and PUTs.
 	 */
 	for(I = 0; I < op_num; I++) {
-		if ((*op)[I].state != ST_IN_PROGRESS_WRITE &&
-			(*op)[I].state != ST_BUFFERED_IN_PROGRESS_REPLAY) continue;
+		if ((*op)[I].state != ST_IN_PROGRESS_PUT &&
+			(*op)[I].state != ST_IN_PROGRESS_REPLAY) continue;
 //			cyan_printf("Ops[%d]=== hash(1st 8B):%" PRIu64 "\n", I, ((uint64_t *) &(*op)[I].key)[1]);
 		bkt[I] = (*op)[I].key.bkt & kv.hash_table.bkt_mask;
 		bkt_ptr[I] = &kv.hash_table.ht_index[bkt[I]];
@@ -1028,8 +911,8 @@ void complete_writes_and_replays_on_membership_change(int op_num, spacetime_op_t
 	}
 
 	for(I = 0; I < op_num; I++) {
-		if ((*op)[I].state != ST_IN_PROGRESS_WRITE &&
-			(*op)[I].state != ST_BUFFERED_IN_PROGRESS_REPLAY) continue;
+		if ((*op)[I].state != ST_IN_PROGRESS_PUT &&
+			(*op)[I].state != ST_IN_PROGRESS_REPLAY) continue;
 		for(j = 0; j < 8; j++) {
 			if(bkt_ptr[I]->slots[j].in_use == 1 &&
 			   bkt_ptr[I]->slots[j].tag == tag[I]) {
@@ -1059,15 +942,13 @@ void complete_writes_and_replays_on_membership_change(int op_num, spacetime_op_t
 	// the following variables used to validate atomicity between a lock-free read of an object
 	spacetime_object_meta lock_free_read_meta;
 	for(I = 0; I < op_num; I++) {
-		if ((*op)[I].state != ST_IN_PROGRESS_WRITE &&
-			(*op)[I].state != ST_BUFFERED_IN_PROGRESS_REPLAY) continue;
+		if ((*op)[I].state != ST_IN_PROGRESS_PUT &&
+			(*op)[I].state != ST_IN_PROGRESS_REPLAY) continue;
 		if(kv_ptr[I] != NULL) {
 			/* We had a tag match earlier. Now compare log entry. */
 			long long *key_ptr_log = (long long *) kv_ptr[I];
 			long long *key_ptr_req = (long long *) &(*op)[I].key;
 
-//			if(key_ptr_log[0] == key_ptr_req[0] &&
-//			   key_ptr_log[1] == key_ptr_req[1]) { //Key Found 16 Byte keys
 			if(key_ptr_log[1] == key_ptr_req[0]) { //Key Found 8 Byte keys
 				key_in_store[I] = 1;
 
@@ -1084,66 +965,42 @@ void complete_writes_and_replays_on_membership_change(int op_num, spacetime_op_t
 					}
 					lock_free_read_meta = *curr_meta;
 				} while (!is_same_version_and_valid(&lock_free_read_meta, curr_meta));
-				if(is_last_ack((uint8_t *) lock_free_read_meta.write_acks , thread_id) ||
-				   is_last_ack((uint8_t *) lock_free_read_meta.replay_acks, thread_id)) {
+
+				if(is_last_ack((uint8_t *) lock_free_read_meta.write_acks , curr_membership,  thread_id)) {
 					optik_lock(curr_meta);
-					if((*op)[I].state == ST_IN_PROGRESS_WRITE &&
-							is_last_ack((uint8_t *) curr_meta->write_acks, thread_id)){
+					if(is_last_ack((uint8_t *) curr_meta->write_acks, curr_membership, thread_id)){
 						if(ENABLE_ASSERTIONS)
-							assert(curr_meta->write_buffer_index == I);
+							assert(curr_meta->op_buffer_index == I);
+						curr_meta->op_buffer_index = ST_OP_BUFFER_INDEX_EMPTY; //reset the write buff index
 						switch (curr_meta->state) {
 							case VALID_STATE:
 							case INVALID_STATE:
-							case INVALID_BUFF_STATE:
                                 break;
 							case INVALID_WRITE_STATE:
+								if(ENABLE_ASSERTIONS) assert((*op)[I].state == ST_IN_PROGRESS_PUT);
+								(*op)[I].state = ST_PUT_COMPLETE;
 								curr_meta->state = INVALID_STATE;
 								break;
-							case INVALID_WRITE_BUFF_STATE:
-								curr_meta->state = INVALID_BUFF_STATE;
-								break;
 							case WRITE_STATE:
-							case WRITE_BUFF_STATE:
+                                if(ENABLE_ASSERTIONS) assert((*op)[I].state == ST_IN_PROGRESS_PUT);
 								curr_meta->state = VALID_STATE;
 								(*op)[I].version = curr_meta->version - 1; // -1 because of optik lock does version + 1
 								(*op)[I].tie_breaker_id = curr_meta->tie_breaker_id;
 								(*op)[I].state = ST_PUT_COMPLETE_SEND_VALS; ///ops state for sending VALs
 								break;
 							case REPLAY_STATE:
-							case REPLAY_BUFF_STATE:
-                                assert(0);
-							case REPLAY_WRITE_STATE:
-							case REPLAY_WRITE_BUFF_STATE:
+                                if(ENABLE_ASSERTIONS) assert((*op)[I].state == ST_IN_PROGRESS_REPLAY);
+								(*op)[I].state = ST_REPLAY_COMPLETE;
+								(*op)[I].version = curr_meta->version - 1; // -1 because of optik lock does version + 1
+								(*op)[I].tie_breaker_id = curr_meta->tie_breaker_id;
+								curr_meta->state = VALID_STATE;
 								break;
 							default:
 								assert(0);
 						}
-						curr_meta->write_buffer_index = WRITE_BUFF_EMPTY; //reset the write buff index
                         if((*op)[I].state != ST_PUT_COMPLETE_SEND_VALS)
 							(*op)[I].state = ST_PUT_COMPLETE;
 
-					}else if((*op)[I].state == ST_BUFFERED_IN_PROGRESS_REPLAY  &&
-							  is_last_ack((uint8_t *) curr_meta->replay_acks, thread_id)){
-						switch (curr_meta->state) {
-							case VALID_STATE:
-							case INVALID_STATE:
-							case INVALID_BUFF_STATE:
-							case INVALID_WRITE_STATE:
-							case INVALID_WRITE_BUFF_STATE:
-							case WRITE_STATE:
-							case WRITE_BUFF_STATE:
-                                assert(0);
-							case REPLAY_WRITE_STATE:
-							case REPLAY_WRITE_BUFF_STATE:
-							case REPLAY_STATE:
-							case REPLAY_BUFF_STATE:
-								(*op)[I].state = ST_BUFFERED_REPLAY_SUCCESS;
-								(*op)[I].version = curr_meta->version - 1; // -1 because of optik lock does version + 1
-								(*op)[I].tie_breaker_id = curr_meta->tie_breaker_id;
-								curr_meta->state = VALID_STATE;
-							default:
-								assert(0);
-						}
 					}
 					optik_unlock_decrement_version(curr_meta);
 				}

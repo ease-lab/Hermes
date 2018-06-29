@@ -31,14 +31,8 @@
 #define VALID_STATE 1
 #define INVALID_STATE 2
 #define INVALID_WRITE_STATE 3
-#define INVALID_BUFF_STATE 4
-#define INVALID_WRITE_BUFF_STATE 5
-#define WRITE_STATE 6
-#define WRITE_BUFF_STATE 7
-#define REPLAY_STATE 8
-#define REPLAY_BUFF_STATE 9
-#define REPLAY_WRITE_STATE 10
-#define REPLAY_WRITE_BUFF_STATE 11
+#define WRITE_STATE 4
+#define REPLAY_STATE 5
 
 //Input Opcodes
 #define ST_OP_GET 111
@@ -50,13 +44,13 @@
 
 
 //Response Opcodes
-#define ST_GET_SUCCESS 121
+#define ST_GET_COMPLETE 121
 #define ST_PUT_SUCCESS 122 //broadcast invs
-#define ST_BUFFERED_REPLAY 123 //broadcast invs
+#define ST_REPLAY_SUCCESS 123 //broadcast invs
 #define ST_INV_SUCCESS 124 //send ack
 #define ST_ACK_SUCCESS 125
 #define ST_LAST_ACK_SUCCESS 126        //complete local write
-#define ST_LAST_ACK_PREV_WRITE_SUCCESS 127        //complete local write
+#define ST_LAST_ACK_NO_BCAST_SUCCESS 127        //complete local write
 #define ST_PUT_COMPLETE 128 //broadcast invs
 #define ST_VAL_SUCCESS 129
 
@@ -70,9 +64,9 @@
 #define ST_EMPTY 140
 #define ST_NEW 141
 #define ST_COMPLETE 144
-#define ST_IN_PROGRESS_WRITE 145
-#define ST_BUFFERED_IN_PROGRESS_REPLAY 146
-#define ST_BUFFERED_REPLAY_SUCCESS 147
+#define ST_IN_PROGRESS_PUT 145
+#define ST_IN_PROGRESS_REPLAY 146
+#define ST_REPLAY_COMPLETE 147
 
 // trace opcodes
 #define NOP 148
@@ -90,7 +84,7 @@
 #define ST_VAL_BUFF 163
 #define ST_CRD_BUFF 164
 
-#define WRITE_BUFF_EMPTY 255
+#define ST_OP_BUFFER_INDEX_EMPTY 255
 #define LAST_WRITER_ID_EMPTY 255
 #define TIE_BREAKER_ID_EMPTY 255
 
@@ -256,10 +250,12 @@ void spacetime_init(int spacetime_id, int num_threads);
 void spacetime_populate_fixed_len(struct spacetime_kv* kv,  int n,  int val_len);
 void batch_ops_to_KVS(int op_num, spacetime_op_t **ops, int thread_id, spacetime_group_membership curr_membership,
                       uint32_t refilled_ops_debug_cnt, uint32_t *ref_ops_dbg_array_cnt);
-void batch_invs_to_KVS(int op_num, spacetime_inv_t **op, int thread_id);
-void batch_acks_to_KVS(int op_num, spacetime_ack_t **op, spacetime_op_t *read_write_op, int thread_id);
-void batch_vals_to_KVS(int op_num, spacetime_val_t **op, int thread_id);
-void complete_writes_and_replays_on_membership_change(int op_num, spacetime_op_t **op, int thread_id);
+void batch_invs_to_KVS(int op_num, spacetime_inv_t **op, spacetime_op_t *read_write_op, int thread_id);
+void batch_acks_to_KVS(int op_num, spacetime_ack_t **op, spacetime_op_t *read_write_op,
+                       spacetime_group_membership curr_membership, int thread_id);
+void batch_vals_to_KVS(int op_num, spacetime_val_t **op, spacetime_op_t *read_write_op, int thread_id);
+void complete_writes_and_replays_on_follower_removal(int op_num, spacetime_op_t **op,
+                                                     spacetime_group_membership curr_membership, int thread_id);
 void group_membership_init(void);
 void reconfigure_wrs(struct ibv_send_wr *inv_send_wr, struct ibv_send_wr *val_send_wr, uint16_t worker_lid);
 //void reconfigure_wrs(void);

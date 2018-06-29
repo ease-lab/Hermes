@@ -132,22 +132,10 @@ char* code_to_str(uint8_t code)
             return "INVALID_STATE";
         case INVALID_WRITE_STATE:
             return "INVALID_WRITE_STATE";
-        case INVALID_BUFF_STATE:
-            return "INVALID_BUFF_STATE";
-        case INVALID_WRITE_BUFF_STATE:
-            return "INVALID_WRITE_BUFF_STATE";
         case WRITE_STATE:
             return "WRITE_STATE";
-        case WRITE_BUFF_STATE:
-            return "WRITE_BUFF_STATE";
         case REPLAY_STATE:
             return "REPLAY_STATE";
-        case REPLAY_BUFF_STATE:
-            return "REPLAY_BUFF_STATE";
-        case REPLAY_WRITE_STATE:
-            return "REPLAY_WRITE_STATE";
-        case REPLAY_WRITE_BUFF_STATE:
-            return "REPLAY_WRITE_BUFF_STATE";
         //Input opcodes
         case ST_OP_GET:
             return "ST_OP_GET";
@@ -162,16 +150,16 @@ char* code_to_str(uint8_t code)
         case ST_OP_CRD:
             return "ST_OP_CRD";
         //Response opcodes
-        case ST_GET_SUCCESS:
-            return "ST_GET_SUCCESS";
+        case ST_GET_COMPLETE:
+            return "ST_GET_COMPLETE";
         case ST_PUT_SUCCESS:
             return "ST_PUT_SUCCESS";
         case ST_PUT_COMPLETE:
             return "ST_PUT_COMPLETE";
-        case ST_BUFFERED_REPLAY:
-            return "ST_BUFFERED_REPLAY";
-        case ST_BUFFERED_REPLAY_SUCCESS:
-            return "ST_BUFFERED_REPLAY_SUCCESS";
+        case ST_REPLAY_SUCCESS:
+            return "ST_REPLAY_SUCCESS";
+        case ST_REPLAY_COMPLETE:
+            return "ST_REPLAY_COMPLETE";
         case ST_INV_SUCCESS:
             return "ST_INV_SUCCESS";
         case ST_ACK_SUCCESS:
@@ -180,8 +168,8 @@ char* code_to_str(uint8_t code)
             return "ST_VAL_SUCCESS";
         case ST_LAST_ACK_SUCCESS:
             return "ST_LAST_ACK_SUCCESS";
-        case ST_LAST_ACK_PREV_WRITE_SUCCESS:
-            return "ST_LAST_ACK_PREV_WRITE_SUCCESS";
+        case ST_LAST_ACK_NO_BCAST_SUCCESS:
+            return "ST_LAST_ACK_NO_BCAST_SUCCESS";
         case ST_MISS:
             return "\033[31mST_MISS\033[0m";
         case ST_GET_STALL:
@@ -197,10 +185,10 @@ char* code_to_str(uint8_t code)
             return "ST_EMPTY";
         case ST_NEW:
             return "ST_NEW";
-        case ST_IN_PROGRESS_WRITE:
-            return "ST_IN_PROGRESS_WRITE";
-        case ST_BUFFERED_IN_PROGRESS_REPLAY:
-            return "ST_BUFFERED_IN_PROGRESS_REPLAY";
+        case ST_IN_PROGRESS_PUT:
+            return "ST_IN_PROGRESS_PUT";
+        case ST_IN_PROGRESS_REPLAY:
+            return "ST_IN_PROGRESS_REPLAY";
         case ST_COMPLETE:
             return "ST_COMPLETE";
         case ST_INV_BUFF:

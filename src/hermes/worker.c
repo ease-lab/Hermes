@@ -145,8 +145,8 @@ void *run_worker(void *arg){
 
 			if(ENABLE_ASSERTIONS)
 				for(i = 0; i < MAX_BATCH_OPS_SIZE; i++)
-					assert(ops[i].state == ST_BUFFERED_IN_PROGRESS_REPLAY ||
-						   ops[i].state == ST_IN_PROGRESS_WRITE ||
+					assert(ops[i].state == ST_IN_PROGRESS_REPLAY ||
+						   ops[i].state == ST_IN_PROGRESS_PUT ||
 						   ops[i].state == ST_PUT_SUCCESS ||
 						   ops[i].state == ST_PUT_STALL ||
 						   ops[i].opcode == ST_OP_GET);
@@ -157,7 +157,7 @@ void *run_worker(void *arg){
 									 &inv_push_recv_ptr, inv_recv_wr, credits, worker_lid);
 
 			if(inv_ops_i > 0) {
-				batch_invs_to_KVS(inv_ops_i, &inv_recv_ops, worker_lid);
+				batch_invs_to_KVS(inv_ops_i, &inv_recv_ops, ops, worker_lid);
 
 				///~~~~~~~~~~~~~~~~~~~~~~ACKS~~~~~~~~~~~~~~~~~~~~~~~~~~~
 				issue_acks(inv_recv_ops, ack_send_packet_ops, &ack_push_send_ptr, &send_ack_tx, ack_send_wr,
@@ -179,24 +179,25 @@ void *run_worker(void *arg){
 													  &credit_debug_cnt, &val_br_tx, crd_recv_wr, worker_lid);
 
 			if(ack_ops_i > 0){
-				batch_acks_to_KVS(ack_ops_i, &ack_recv_ops, ops, worker_lid);
+				batch_acks_to_KVS(ack_ops_i, &ack_recv_ops, ops, last_group_membership, worker_lid);
 				if(ENABLE_ASSERTIONS)
 					for(i = 0; i < MAX_BATCH_OPS_SIZE; i++)
-						assert(ops[i].state == ST_BUFFERED_IN_PROGRESS_REPLAY ||
-							   ops[i].state == ST_IN_PROGRESS_WRITE ||
+						assert(ops[i].state == ST_IN_PROGRESS_REPLAY ||
+							   ops[i].state == ST_IN_PROGRESS_PUT ||
 							   ops[i].state == ST_PUT_SUCCESS ||
 							   ops[i].state == ST_PUT_COMPLETE ||
 							   ops[i].state == ST_PUT_STALL ||
 							   ops[i].opcode == ST_OP_GET);
 
 				///~~~~~~~~~~~~~~~~~~~~~~VALS~~~~~~~~~~~~~~~~~~~~~~~~~~~
-				if(!DISABLE_VALS_FOR_DEBUGGING)
+				if(!DISABLE_VALS_FOR_DEBUGGING) {
 					has_outstanding_vals = broadcast_vals(ack_recv_ops, val_send_packet_ops, &val_push_send_ptr,
 														  val_send_wr, val_send_sgl, credits, cb, crd_recv_wc,
 														  &credit_debug_cnt, &val_br_tx, crd_recv_wr, worker_lid);
-                if(ENABLE_ASSERTIONS && has_outstanding_vals == 0)
-					for(i = 0; i < ACK_RECV_OPS_SIZE; i++)
-						assert(ack_recv_ops[i].opcode == ST_EMPTY);
+					if (ENABLE_ASSERTIONS && has_outstanding_vals == 0)
+						for (i = 0; i < ACK_RECV_OPS_SIZE; i++)
+							assert(ack_recv_ops[i].opcode == ST_EMPTY);
+				}
 				ack_ops_i = 0;
 			}
 			if(!DISABLE_VALS_FOR_DEBUGGING) {
@@ -206,7 +207,7 @@ void *run_worker(void *arg){
 										 &val_push_recv_ptr, val_recv_wr, credits, worker_lid);
 
 				if (val_ops_i > 0) {
-					batch_vals_to_KVS(val_ops_i, &val_recv_ops, worker_lid);
+					batch_vals_to_KVS(val_ops_i, &val_recv_ops, ops, worker_lid);
 
 					///~~~~~~~~~~~~~~~~~~~~~~CREDITS~~~~~~~~~~~~~~~~~~~~~~~~~~~
 					issue_credits(val_recv_ops, &send_crd_tx, crd_send_wr,
@@ -220,7 +221,7 @@ void *run_worker(void *arg){
 			/*
 			if(group_membership_has_changed(&last_group_membership, worker_lid) == 1){
 				reconfigure_wrs(inv_send_wr, val_send_wr, worker_lid);
-				complete_writes_and_replays_on_membership_change(MAX_BATCH_OPS_SIZE, &ops, worker_lid);
+				complete_writes_and_replays_on_follower_removal(MAX_BATCH_OPS_SIZE, &ops, worker_lid);
 				broadcast_vals_on_membership_change(ops, val_send_packet_ops, &val_push_send_ptr,
 													val_send_wr, val_send_sgl, credits, cb, crd_recv_wc,
 													&credit_debug_cnt, &val_br_tx, crd_recv_wr, worker_lid);
