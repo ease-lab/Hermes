@@ -191,6 +191,7 @@ char* code_to_str(uint8_t code)
             return "ST_IN_PROGRESS_REPLAY";
         case ST_COMPLETE:
             return "ST_COMPLETE";
+        //Buffer Types
         case ST_INV_BUFF:
             return "ST_INV_BUFF";
         case ST_ACK_BUFF:

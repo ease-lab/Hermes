@@ -16,6 +16,9 @@ static inline void
 poll_cq_for_credits(struct ibv_cq *credit_recv_cq, struct ibv_wc *credit_wc,
 					struct ibv_recv_wr* credit_recv_wr, struct hrd_ctrl_blk* cb,
 					uint8_t credits[][MACHINE_NUM], uint16_t worker_lid);
+
+static inline uint8_t
+node_is_in_membership(spacetime_group_membership last_group_membership, uint16_t node_id);
 /* ---------------------------------------------------------------------------
 ------------------------------------GENERIC-----------------------------------
 ---------------------------------------------------------------------------*/
@@ -55,15 +58,15 @@ post_receives(struct hrd_ctrl_blk *cb, uint16_t num_of_receives,
 	for(i = 0; i < num_of_receives; i++) {
 		next_buff_addr = ((uint8_t*) recv_buff) + (*push_ptr * req_size);
 		memset(next_buff_addr, 0, (size_t) req_size); //reset the buffer before posting the receive
-        if(BATCH_POST_RECVS_TO_NIC)
+		if(BATCH_POST_RECVS_TO_NIC)
 			recv_wr[i].sg_list->addr = (uintptr_t) next_buff_addr;
-        else
+		else
 			hrd_post_dgram_recv(cb->dgram_qp[qp_id], next_buff_addr,
 								req_size, cb->dgram_buf_mr->lkey);
 		HRD_MOD_ADD(*push_ptr, recv_q_depth);
 	}
 
-    if(BATCH_POST_RECVS_TO_NIC) {
+	if(BATCH_POST_RECVS_TO_NIC) {
 		recv_wr[num_of_receives - 1].next = NULL;
 		if (ENABLE_ASSERTIONS) {
 			for (i = 0; i < num_of_receives - 1; i++) {
@@ -77,7 +80,8 @@ post_receives(struct hrd_ctrl_blk *cb, uint16_t num_of_receives,
 		ret = ibv_post_recv(cb->dgram_qp[qp_id], &recv_wr[0], &bad_recv_wr);
 		CPE(ret, "ibv_post_recv error: posting recvs for credits before val bcast", ret);
 		//recover next ptr of last wr to NULL
-		recv_wr[num_of_receives - 1].next = (max_recv_wrs == num_of_receives - 1) ? NULL : &recv_wr[num_of_receives];
+		recv_wr[num_of_receives - 1].next = (max_recv_wrs == num_of_receives - 1) ?
+											NULL : &recv_wr[num_of_receives];
 	}
 }
 
@@ -91,9 +95,16 @@ poll_buff_and_post_recvs(void *incoming_buff, uint8_t buff_type, int *buf_pull_p
 {
 	void* next_packet_reqs, *recv_op_ptr, *next_req;
 	uint8_t *next_packet_req_num_ptr;
-	int index = 0, recv_q_depth = 0, max_credits = 0, i = 0, j = 0, packets_polled = 0, reqs_polled = 0;
+	int index = 0, recv_q_depth = 0, max_credits = 0, i = 0, j = 0,
+			packets_polled = 0, reqs_polled = 0;
 	uint8_t qp_credits_to_inc = 0, sender = 0;
 	size_t req_size = 0;
+    if(ENABLE_ASSERTIONS){
+		if(*ops_push_ptr != 0)
+			printf("Poll buff: %s, reqs_polled: %d, *ops_push: %d\n",
+				   code_to_str(buff_type), reqs_polled, *ops_push_ptr);
+		assert(*ops_push_ptr == 0);
+	}
 	switch(buff_type){
 		case ST_INV_BUFF:
 			qp_credits_to_inc = ACK_UD_QP_ID;
@@ -185,6 +196,9 @@ poll_buff_and_post_recvs(void *incoming_buff, uint8_t buff_type, int *buf_pull_p
 
 		if(ENABLE_ASSERTIONS){
 			assert(credits[qp_credits_to_inc][sender] <= max_credits);
+            if(reqs_polled != *ops_push_ptr)
+				printf("Poll buff: %s, reqs_polled: %d, *ops_push: %d\n",
+					   code_to_str(buff_type), reqs_polled, *ops_push_ptr);
 			assert(reqs_polled == *ops_push_ptr);
 		}
 	}
@@ -271,7 +285,6 @@ forge_bcast_inv_wrs(spacetime_op_t* op, spacetime_inv_packet_t* inv_send_op,
 
 	if(inv_send_op->req_num == 1) {
 		send_inv_sgl[br_i].addr = (uint64_t) (uintptr_t) inv_send_op;
-//		int br_i_x_remotes = br_i * REMOTE_MACHINES;
 		int br_i_x_remotes = br_i * group_membership.num_of_alive_remotes;
 		if(DISABLE_INV_INLINING)
 			send_inv_wr[br_i_x_remotes].send_flags = 0;
@@ -309,14 +322,12 @@ batch_invs_2_NIC(struct ibv_send_wr *send_inv_wr, struct ibv_sge *send_inv_sgl,
 	struct ibv_send_wr *bad_send_wr;
 
 	w_stats[worker_lid].issued_packet_invs_per_worker += br_i;
-//	send_inv_wr[br_i * REMOTE_MACHINES - 1].next = NULL;
 	send_inv_wr[br_i * group_membership.num_of_alive_remotes - 1].next = NULL;
 	if (ENABLE_ASSERTIONS) {
 		int sgl_index = 0;
-//		for (j = 0; j < br_i * REMOTE_MACHINES - 1; j++) {
-//			sgl_index = j / REMOTE_MACHINES;
 		for (j = 0; j < br_i * group_membership.num_of_alive_remotes - 1; j++) {
 			sgl_index = j / group_membership.num_of_alive_remotes;
+//			sgl_index = j / REMOTE_MACHINES;
 			assert(send_inv_wr[j].num_sge == 1);
 			assert(send_inv_wr[j].next == &send_inv_wr[j + 1]);
 			assert(DISABLE_INV_INLINING || send_inv_wr[j].opcode == IBV_SEND_INLINE | IBV_SEND_SIGNALED);
@@ -352,7 +363,8 @@ broadcast_invs(spacetime_op_t *ops, spacetime_inv_packet_t *inv_send_packet_ops,
 			   int *inv_push_ptr, struct ibv_send_wr *send_inv_wr,
 			   struct ibv_sge *send_inv_sgl, uint8_t credits[][MACHINE_NUM],
 			   struct hrd_ctrl_blk *cb, long long *total_inv_bcasts,
-			   uint16_t worker_lid, uint32_t *credit_debug_cnt, uint16_t *rolling_index)
+			   uint16_t worker_lid, spacetime_group_membership last_g_membership,
+			   int* node_missing_credits, uint32_t* credits_missing, uint16_t *rolling_index)
 {
 	uint8_t missing_credits = 0;
 	uint16_t i = 0, br_i = 0, j = 0, total_invs_in_batch = 0, index = 0;
@@ -370,24 +382,29 @@ broadcast_invs(spacetime_op_t *ops, spacetime_inv_packet_t *inv_send_packet_ops,
 		//Check for credits
 		for (j = 0; j < MACHINE_NUM; j++) {
 			if (j == machine_id) continue; // skip the local machine
+            if (!node_is_in_membership(last_g_membership, j)) continue; //skip machine which is removed from group
 			if (credits[INV_UD_QP_ID][j] == 0) {
 				missing_credits = 1;
 				*rolling_index = index;
-				(*credit_debug_cnt)++;
+				credits_missing[j]++;
+                if(unlikely(credits_missing[j] > M_1))
+					*node_missing_credits = j;
 				break;
-			}
+			}else
+				credits_missing[j] = 0;
 		}
 		// if not enough credits for a Broadcast
 		if (missing_credits == 1) break;
-		*credit_debug_cnt = 0;
 
-		for (j = 0; j < MACHINE_NUM; j++)
+		for (j = 0; j < MACHINE_NUM; j++){
+			if (j == machine_id) continue; // skip the local machine
+			if (!node_is_in_membership(last_g_membership, j)) continue; //skip machine which is removed from group
 			credits[INV_UD_QP_ID][j]--;
+            if (ENABLE_CREDIT_PRINTS && ENABLE_INV_PRINTS && worker_lid < MAX_THREADS_TO_PRINT)
+				printf("$$$ Credits[W%d]: \033[31mINVs\033[0m \033[31mdecremented\033[0m to %d (for machine %d)\n",
+					   worker_lid, credits[INV_UD_QP_ID][j], j);
+		}
 
-		if (ENABLE_CREDIT_PRINTS && ENABLE_INV_PRINTS && worker_lid < MAX_THREADS_TO_PRINT)
-			printf("$$$ Credits[W%d]: \033[31mINVs\033[0m \033[31mdecremented\033[0m to %d (for machine %d)\n",
-				   worker_lid, credits[INV_UD_QP_ID][(machine_id + 1) % MACHINE_NUM],
-				   (machine_id + 1) % MACHINE_NUM);
 		//Change state of op
 		if(ops[index].state == ST_PUT_SUCCESS)
 			ops[index].state = ST_IN_PROGRESS_PUT;
@@ -408,7 +425,6 @@ broadcast_invs(spacetime_op_t *ops, spacetime_inv_packet_t *inv_send_packet_ops,
 				br_i = 0;
 				total_invs_in_batch = 0;
 			}
-//			HRD_MOD_ADD(*inv_push_ptr, INV_SEND_OPS_SIZE); //got to the next "packet"
 			HRD_MOD_ADD(*inv_push_ptr, INV_SEND_OPS_SIZE / REMOTE_MACHINES * group_membership.num_of_alive_remotes); //got to the next "packet" + dealing with failutes
 			//Reset data left from previous bcasts after ibv_post_send to avoid sending reseted data
 			inv_send_packet_ops[*inv_push_ptr].req_num = 0;
@@ -429,13 +445,11 @@ broadcast_invs(spacetime_op_t *ops, spacetime_inv_packet_t *inv_send_packet_ops,
 	//Move to next packet and reset data left from previous bcasts
 	if(inv_send_packet_ops[*inv_push_ptr].req_num > 0 &&
 	   inv_send_packet_ops[*inv_push_ptr].req_num < INV_MAX_REQ_COALESCE) {
-//		HRD_MOD_ADD(*inv_push_ptr, INV_SEND_OPS_SIZE);
 		HRD_MOD_ADD(*inv_push_ptr, INV_SEND_OPS_SIZE / REMOTE_MACHINES * group_membership.num_of_alive_remotes); //got to the next "packet" + dealing with failutes
 		inv_send_packet_ops[*inv_push_ptr].req_num = 0;
 		for(j = 0; j < INV_MAX_REQ_COALESCE; j++)
 			inv_send_packet_ops[*inv_push_ptr].reqs[j].opcode = ST_EMPTY;
 	}
-
 }
 
 /* ---------------------------------------------------------------------------
@@ -531,7 +545,7 @@ static inline void
 issue_acks(spacetime_inv_t *inv_recv_ops, spacetime_ack_packet_t* ack_send_packet_ops,
 		   int* ack_push_ptr, long long int* send_ack_tx, struct ibv_send_wr *send_ack_wr,
 		   struct ibv_sge *send_ack_sgl, uint8_t credits[][MACHINE_NUM],
-		   struct hrd_ctrl_blk *cb,  uint16_t worker_lid, uint32_t* credit_debug_cnt)
+		   struct hrd_ctrl_blk *cb,  uint16_t worker_lid)
 {
 	uint16_t i = 0, total_acks_in_batch = 0, j = 0, send_ack_packets = 0;
 	uint8_t last_ack_dst = 255;
@@ -554,7 +568,6 @@ issue_acks(spacetime_inv_t *inv_recv_ops, spacetime_ack_packet_t* ack_send_packe
 		if (credits[ACK_UD_QP_ID][inv_recv_ops[i].sender] == 0)
 			assert(0); // we should always have credits for acks
 
-		*credit_debug_cnt = 0;
 		//reduce credits
 		credits[ACK_UD_QP_ID][inv_recv_ops[i].sender]--;
 		if (ENABLE_CREDIT_PRINTS && ENABLE_ACK_PRINTS && worker_lid < MAX_THREADS_TO_PRINT)
@@ -642,7 +655,6 @@ post_credit_recvs(struct hrd_ctrl_blk *cb, struct ibv_recv_wr *credit_recv_wr,
 }
 
 // Poll and increment credits
-///TODO I don't need to pass the whole credit array just the VAL_UD_QP_ID
 static inline void
 poll_cq_for_credits(struct ibv_cq *credit_recv_cq, struct ibv_wc *credit_wc,
 					struct ibv_recv_wr* credit_recv_wr, struct hrd_ctrl_blk* cb,
@@ -686,35 +698,42 @@ poll_cq_for_credits(struct ibv_cq *credit_recv_cq, struct ibv_wc *credit_wc,
 static inline bool
 check_val_credits(uint8_t credits[][MACHINE_NUM], struct hrd_ctrl_blk *cb,
 				  struct ibv_wc *credit_wc, struct ibv_recv_wr* credit_recv_wr,
-				  uint32_t *credit_debug_cnt, uint16_t worker_lid)
+                  spacetime_group_membership last_g_membership,
+				  int* node_missing_credits, uint32_t *credits_missing,  uint16_t worker_lid)
 {
 	uint16_t poll_for_credits = 0, j;
 	for (j = 0; j < MACHINE_NUM; j++) {
 		if (j == machine_id) continue; // skip the local machine
+		if (!node_is_in_membership(last_g_membership, j)) continue; //skip machine which is removed from group
 		if (credits[VAL_UD_QP_ID][j] == 0) {
 			poll_for_credits = 1;
 			break;
-		}
+		}else
+			credits_missing[j] = 0;
 	}
+
 	if (poll_for_credits == 1) {
 		poll_cq_for_credits(cb->dgram_recv_cq[CRD_UD_QP_ID], credit_wc, credit_recv_wr, cb, credits, worker_lid);
 		// We polled for credits, if we did not find enough just break
 		for (j = 0; j < MACHINE_NUM; j++) {
 			if (j == machine_id) continue; // skip the local machine
+			if (!node_is_in_membership(last_g_membership, j)) continue; //skip machine which is removed from group
 			if (credits[VAL_UD_QP_ID][j] == 0) {
-				(*credit_debug_cnt)++;
+//				credits_missing[j]++;
+//				if(unlikely(credits_missing[j] > M_1))
+//					*node_missing_credits = j;
 				return false;
-			}
+			}else
+				credits_missing[j] = 0;
 		}
 	}
 
-	if(poll_for_credits == 1)
-		return false;
-	*credit_debug_cnt = 0;
-	return true;
+	return poll_for_credits == 1 ? false : true;
 }
+
 static inline void
-forge_bcast_val_wrs(spacetime_ack_t* ack_op, spacetime_val_packet_t* val_packet_send_op,
+//forge_bcast_val_wrs(spacetime_ack_t* op, spacetime_val_packet_t* val_packet_send_op,
+forge_bcast_val_wrs(void* op, spacetime_val_packet_t* val_packet_send_op,
 					struct ibv_send_wr* send_val_wr,
 					struct ibv_sge* send_val_sgl, struct hrd_ctrl_blk* cb,
 					long long* total_val_bcasts, uint16_t br_i, uint16_t worker_lid)
@@ -724,7 +743,7 @@ forge_bcast_val_wrs(spacetime_ack_t* ack_op, spacetime_val_packet_t* val_packet_
 		assert(sizeof(spacetime_ack_t) == sizeof(spacetime_val_t));
 
 	//WARNING ack_op is used to forge from both spacetime_ack_t and spacetime_op_t (when failures occur)--> do not change those structs
-	memcpy(&val_packet_send_op->reqs[val_packet_send_op->req_num], ack_op, sizeof(spacetime_val_t));
+	memcpy(&val_packet_send_op->reqs[val_packet_send_op->req_num], op, sizeof(spacetime_val_t));
 	val_packet_send_op->reqs[val_packet_send_op->req_num].opcode = ST_OP_VAL;
 	val_packet_send_op->reqs[val_packet_send_op->req_num].sender = (uint8_t) machine_id;
 	val_packet_send_op->req_num++;
@@ -732,7 +751,6 @@ forge_bcast_val_wrs(spacetime_ack_t* ack_op, spacetime_val_packet_t* val_packet_
 	w_stats[worker_lid].issued_vals_per_worker++;
 
 	if(val_packet_send_op->req_num == 1) {
-//		int br_i_x_remotes = br_i * REMOTE_MACHINES;
 		int br_i_x_remotes = br_i * group_membership.num_of_alive_remotes;
 		send_val_sgl[br_i].addr = (uint64_t) (uintptr_t) val_packet_send_op;
 		if(DISABLE_VAL_INLINING)
@@ -772,15 +790,13 @@ batch_vals_2_NIC(struct ibv_send_wr *send_val_wr, struct ibv_sge *send_val_sgl,
 	int j = 0, ret;
 	struct ibv_send_wr *bad_send_wr;
 
-    w_stats[worker_lid].issued_packet_vals_per_worker += br_i;
-//	send_val_wr[br_i * REMOTE_MACHINES - 1].next = NULL;
+	w_stats[worker_lid].issued_packet_vals_per_worker += br_i;
 	send_val_wr[br_i * group_membership.num_of_alive_remotes - 1].next = NULL;
 	if (ENABLE_ASSERTIONS) {
 		int sgl_index;
-//		for (j = 0; j < br_i * REMOTE_MACHINES - 1; j++) {
-//			sgl_index = j / REMOTE_MACHINES;
 		for (j = 0; j < br_i * group_membership.num_of_alive_remotes - 1; j++) {
 			sgl_index = j / group_membership.num_of_alive_remotes;
+//			sgl_index = j / REMOTE_MACHINES;
 			assert(send_val_wr[j].next == &send_val_wr[j + 1]);
 			assert(send_val_wr[j].num_sge == 1);
 			assert(DISABLE_VAL_INLINING || send_val_wr[j].opcode == IBV_SEND_INLINE | IBV_SEND_SIGNALED);
@@ -804,7 +820,8 @@ static inline uint8_t
 broadcast_vals(spacetime_ack_t *ack_ops, spacetime_val_packet_t *val_send_packet_ops, int *val_push_ptr,
 			   struct ibv_send_wr *send_val_wr, struct ibv_sge *send_val_sgl,
 			   uint8_t credits[][MACHINE_NUM], struct hrd_ctrl_blk *cb,
-			   struct ibv_wc *credit_wc, uint32_t *credit_debug_cnt,
+			   struct ibv_wc *credit_wc, spacetime_group_membership last_g_membership,
+			   int* node_missing_credits, uint32_t *credits_missing,
 			   long long *br_tx, struct ibv_recv_wr *credit_recv_wr, uint16_t worker_lid)
 {
 	uint16_t i = 0, br_i = 0, j, total_vals_in_batch = 0;
@@ -825,18 +842,20 @@ broadcast_vals(spacetime_ack_t *ack_ops, spacetime_val_packet_t *val_send_packet
 			assert(ack_ops[i].opcode == ST_LAST_ACK_SUCCESS);
 
 		// if not enough credits for a Broadcast
-		if (!check_val_credits(credits, cb, credit_wc, credit_recv_wr, credit_debug_cnt, worker_lid)){
+		if (!check_val_credits(credits, cb, credit_wc, credit_recv_wr, last_g_membership,
+							   node_missing_credits, credits_missing, worker_lid)){
 			has_outstanding_vals = 1;
 			break;
 		}
 
-		for (j = 0; j < MACHINE_NUM; j++)
+		for (j = 0; j < MACHINE_NUM; j++){
+			if (j == machine_id) continue; // skip the local machine
+			if (!node_is_in_membership(last_g_membership, j)) continue; //skip machine which is removed from group
 			credits[VAL_UD_QP_ID][j]--;
-
-		if (ENABLE_CREDIT_PRINTS && ENABLE_VAL_PRINTS && worker_lid < MAX_THREADS_TO_PRINT)
-			printf("$$$ Credits[W%d]: \033[1m\033[32mVALs\033[0m \033[31mdecremented\033[0m to %d (for machine %d)\n",
-				   worker_lid, credits[VAL_UD_QP_ID][(machine_id + 1) % MACHINE_NUM],
-				   (machine_id + 1) % MACHINE_NUM);
+            if (ENABLE_CREDIT_PRINTS && ENABLE_VAL_PRINTS && worker_lid < MAX_THREADS_TO_PRINT)
+				printf("$$$ Credits[W%d]: \033[1m\033[32mVALs\033[0m \033[31mdecremented\033[0m to %d (for machine %d)\n",
+					   worker_lid, credits[VAL_UD_QP_ID][j], j);
+		}
 
 		ack_ops[i].opcode = ST_EMPTY;
 
@@ -853,7 +872,6 @@ broadcast_vals(spacetime_ack_t *ack_ops, spacetime_val_packet_t *val_send_packet
 				br_i = 0;
 				total_vals_in_batch = 0;
 			}
-//			HRD_MOD_ADD(*val_push_ptr, VAL_SEND_OPS_SIZE);
 			HRD_MOD_ADD(*val_push_ptr, VAL_SEND_OPS_SIZE / REMOTE_MACHINES * group_membership.num_of_alive_remotes); //got to the next "packet" + dealing with failutes
 			//Reset data left from previous bcasts after ibv_post_send to avoid sending reseted data
 			val_send_packet_ops[*val_push_ptr].req_num = 0;
@@ -873,7 +891,6 @@ broadcast_vals(spacetime_ack_t *ack_ops, spacetime_val_packet_t *val_send_packet
 	//Reset data left from previous bcasts
 	if(val_send_packet_ops[*val_push_ptr].req_num > 0 &&
 	   val_send_packet_ops[*val_push_ptr].req_num < VAL_MAX_REQ_COALESCE) {
-//		HRD_MOD_ADD(*val_push_ptr, VAL_SEND_OPS_SIZE);
 		HRD_MOD_ADD(*val_push_ptr, VAL_SEND_OPS_SIZE / REMOTE_MACHINES * group_membership.num_of_alive_remotes); //got to the next "packet" + dealing with failutes
 		val_send_packet_ops[*val_push_ptr].req_num = 0;
 		for(j = 0; j < VAL_MAX_REQ_COALESCE; j++)
@@ -882,87 +899,89 @@ broadcast_vals(spacetime_ack_t *ack_ops, spacetime_val_packet_t *val_send_packet
 	return has_outstanding_vals;
 }
 
-//
-//static inline uint8_t
-//broadcast_vals_on_membership_change
-//				(spacetime_op_t* ops, spacetime_val_packet_t* val_send_packet_ops,
-//				int* val_push_ptr, struct ibv_send_wr* send_val_wr, struct ibv_sge* send_val_sgl,
-//				uint8_t credits[][MACHINE_NUM], struct hrd_ctrl_blk* cb,
-//				struct ibv_wc* credit_wc, uint32_t* credit_debug_cnt, long long* br_tx,
-//				struct ibv_recv_wr* credit_recv_wr, uint16_t worker_lid)
-//{
-//	uint16_t i = 0, br_i = 0, j, total_vals_in_batch = 0;
-//	uint8_t has_outstanding_vals = 0;
-//
-//	if(ENABLE_ASSERTIONS)
-//		assert(val_send_packet_ops[*val_push_ptr].req_num == 0);
-//
-//	// traverse all of the ops to find bcasts
-//	for (i = 0; i < MAX_BATCH_OPS_SIZE; i++) {
-//		if(ops[i].state != ST_REPLAY_COMPLETE &&
-//		   ops[i].state != ST_PUT_COMPLETE_SEND_VALS)
-//			continue;
-//
-//		// if not enough credits for a Broadcast
-//		if (!check_val_credits(credits, cb, credit_wc, credit_recv_wr, credit_debug_cnt, worker_lid)){
-//			has_outstanding_vals = 1;
-//			break;
-//		}
-//
-//		for (j = 0; j < MACHINE_NUM; j++)
-//			credits[VAL_UD_QP_ID][j]--;
-//
-//		if (ENABLE_CREDIT_PRINTS && ENABLE_VAL_PRINTS && worker_lid < MAX_THREADS_TO_PRINT)
-//			printf("$$$ Credits[W%d]: \033[1m\033[32mVALs\033[0m \033[31mdecremented\033[0m to %d (for machine %d)\n",
-//				   worker_lid, credits[VAL_UD_QP_ID][(machine_id + 1) % MACHINE_NUM],
-//				   (machine_id + 1) % MACHINE_NUM);
-//
-//		if(ops[i].state == ST_PUT_COMPLETE_SEND_VALS)
-//			ops[i].state = ST_PUT_COMPLETE;
-//		else
-//			ops[i].state = ST_NEW;
-//
-//		// Create the broadcast messages
-//		forge_bcast_val_wrs(&ops[i], &val_send_packet_ops[*val_push_ptr], send_val_wr,
-//							send_val_sgl, cb, br_tx, br_i, worker_lid);
-//		total_vals_in_batch++;
-//
-//		if(val_send_packet_ops[*val_push_ptr].req_num == VAL_MAX_REQ_COALESCE) {
-//			br_i++;
-//			if (br_i == MAX_PCIE_BCAST_BATCH) {
-//				batch_vals_2_NIC(send_val_wr, send_val_sgl, cb, br_i,
-//								 total_vals_in_batch, worker_lid);
-//				br_i = 0;
-//				total_vals_in_batch = 0;
-//			}
-////			HRD_MOD_ADD(*val_push_ptr, VAL_SEND_OPS_SIZE);
-//			HRD_MOD_ADD(*val_push_ptr, VAL_SEND_OPS_SIZE / REMOTE_MACHINES * group_membership.num_of_alive_remotes); //got to the next "packet" + dealing with failutes
-//			//Reset data left from previous bcasts after ibv_post_send to avoid sending reseted data
-//			val_send_packet_ops[*val_push_ptr].req_num = 0;
-//			for(j = 0; j < VAL_MAX_REQ_COALESCE; j++)
-//				val_send_packet_ops[*val_push_ptr].reqs[j].opcode = ST_EMPTY;
-//		}
-//	}
-//
-//	if(val_send_packet_ops[*val_push_ptr].req_num > 0 &&
-//	   val_send_packet_ops[*val_push_ptr].req_num < VAL_MAX_REQ_COALESCE)
-//		br_i++;
-//
-//	if(br_i > 0)
-//		batch_vals_2_NIC(send_val_wr, send_val_sgl, cb, br_i,
-//						 total_vals_in_batch, worker_lid);
-//
-//	//Reset data left from previous bcasts
-//	if(val_send_packet_ops[*val_push_ptr].req_num > 0 &&
-//	   val_send_packet_ops[*val_push_ptr].req_num < VAL_MAX_REQ_COALESCE) {
-////		HRD_MOD_ADD(*val_push_ptr, VAL_SEND_OPS_SIZE);
-//		HRD_MOD_ADD(*val_push_ptr, VAL_SEND_OPS_SIZE / REMOTE_MACHINES * group_membership.num_of_alive_remotes); //got to the next "packet" + dealing with failutes
-//		val_send_packet_ops[*val_push_ptr].req_num = 0;
-//		for(j = 0; j < VAL_MAX_REQ_COALESCE; j++)
-//			val_send_packet_ops[*val_push_ptr].reqs[j].opcode = ST_EMPTY;
-//	}
-//	return has_outstanding_vals;
-//}
+
+static inline uint8_t
+broadcast_vals_on_membership_change
+		(spacetime_op_t* ops, spacetime_val_packet_t* val_send_packet_ops,
+		 int* val_push_ptr, struct ibv_send_wr* send_val_wr, struct ibv_sge* send_val_sgl,
+		 uint8_t credits[][MACHINE_NUM], struct hrd_ctrl_blk* cb,
+		 struct ibv_wc* credit_wc, spacetime_group_membership last_g_membership,
+		 int* node_missing_credits, uint32_t* credits_missing,
+		 long long* br_tx, struct ibv_recv_wr* credit_recv_wr, uint16_t worker_lid)
+{
+	uint16_t i = 0, br_i = 0, j, total_vals_in_batch = 0;
+	uint8_t has_outstanding_vals = 0;
+
+	if(ENABLE_ASSERTIONS)
+		assert(val_send_packet_ops[*val_push_ptr].req_num == 0);
+
+	// traverse all of the ops to find bcasts
+	for (i = 0; i < MAX_BATCH_OPS_SIZE; i++) {
+		if(ops[i].state != ST_REPLAY_COMPLETE &&
+		   ops[i].state != ST_PUT_COMPLETE_SEND_VALS)
+			continue;
+
+		// if not enough credits for a Broadcast
+		if (!check_val_credits(credits, cb, credit_wc, credit_recv_wr, last_g_membership,
+							   node_missing_credits, credits_missing, worker_lid)){
+			has_outstanding_vals = 1;
+			break;
+		}
+
+		for (j = 0; j < MACHINE_NUM; j++){
+			if (j == machine_id) continue; // skip the local machine
+			if (!node_is_in_membership(last_g_membership, j)) continue; //skip machine which is removed from group
+			credits[VAL_UD_QP_ID][j]--;
+            if (ENABLE_CREDIT_PRINTS && ENABLE_VAL_PRINTS && worker_lid < MAX_THREADS_TO_PRINT)
+			printf("$$$ Credits[W%d]: \033[1m\033[32mVALs\033[0m \033[31mdecremented\033[0m to %d (for machine %d)\n",
+				   worker_lid, credits[VAL_UD_QP_ID][j], j);
+		}
+
+
+		if(ops[i].state == ST_PUT_COMPLETE_SEND_VALS)
+			ops[i].state = ST_PUT_COMPLETE;
+		else
+			ops[i].state = ST_NEW;
+
+		// Create the broadcast messages
+		forge_bcast_val_wrs(&ops[i], &val_send_packet_ops[*val_push_ptr], send_val_wr,
+							send_val_sgl, cb, br_tx, br_i, worker_lid);
+		total_vals_in_batch++;
+
+		if(val_send_packet_ops[*val_push_ptr].req_num == VAL_MAX_REQ_COALESCE) {
+			br_i++;
+			if (br_i == MAX_PCIE_BCAST_BATCH) {
+				batch_vals_2_NIC(send_val_wr, send_val_sgl, cb, br_i,
+								 total_vals_in_batch, worker_lid);
+				br_i = 0;
+				total_vals_in_batch = 0;
+			}
+			HRD_MOD_ADD(*val_push_ptr, VAL_SEND_OPS_SIZE / REMOTE_MACHINES * group_membership.num_of_alive_remotes); //got to the next "packet" + dealing with failutes
+			//Reset data left from previous bcasts after ibv_post_send to avoid sending reseted data
+			val_send_packet_ops[*val_push_ptr].req_num = 0;
+			for(j = 0; j < VAL_MAX_REQ_COALESCE; j++)
+				val_send_packet_ops[*val_push_ptr].reqs[j].opcode = ST_EMPTY;
+		}
+	}
+
+	if(val_send_packet_ops[*val_push_ptr].req_num > 0 &&
+	   val_send_packet_ops[*val_push_ptr].req_num < VAL_MAX_REQ_COALESCE)
+		br_i++;
+
+	if(br_i > 0)
+		batch_vals_2_NIC(send_val_wr, send_val_sgl, cb, br_i,
+						 total_vals_in_batch, worker_lid);
+
+	//Reset data left from previous bcasts
+	if(val_send_packet_ops[*val_push_ptr].req_num > 0 &&
+	   val_send_packet_ops[*val_push_ptr].req_num < VAL_MAX_REQ_COALESCE) {
+		HRD_MOD_ADD(*val_push_ptr, VAL_SEND_OPS_SIZE / REMOTE_MACHINES * group_membership.num_of_alive_remotes); //got to the next "packet" + dealing with failutes
+		val_send_packet_ops[*val_push_ptr].req_num = 0;
+		for(j = 0; j < VAL_MAX_REQ_COALESCE; j++)
+			val_send_packet_ops[*val_push_ptr].reqs[j].opcode = ST_EMPTY;
+	}
+	return has_outstanding_vals;
+}
 
 /* ---------------------------------------------------------------------------
 ------------------------------------CRDs--------------------------------------
@@ -1037,7 +1056,7 @@ batch_crds_2_NIC(struct ibv_send_wr *send_crd_wr, struct hrd_ctrl_blk *cb,
 static inline void
 issue_credits(spacetime_val_t *val_recv_ops, long long int* send_crd_tx,
 			  struct ibv_send_wr *send_crd_wr, uint8_t credits[][MACHINE_NUM],
-			  struct hrd_ctrl_blk *cb, uint16_t worker_lid, uint32_t* credit_debug_cnt)
+			  struct hrd_ctrl_blk *cb, uint16_t worker_lid)
 {
 	uint16_t i = 0, send_crd_packets = 0;
 	uint8_t credits_per_machine[MACHINE_NUM] = {0}, total_credits_to_send = 0;
@@ -1049,6 +1068,8 @@ issue_credits(spacetime_val_t *val_recv_ops, long long int* send_crd_tx,
 		   credits[CRD_UD_QP_ID][val_recv_ops[i].sender] == 0)
 			assert(0); //we should always have credits for CRDs
 
+//		*credit_debug_cnt = 0;
+
 		if(ENABLE_ASSERTIONS)
 			assert(credits_per_machine[val_recv_ops[i].sender] < 255);
 
@@ -1057,7 +1078,7 @@ issue_credits(spacetime_val_t *val_recv_ops, long long int* send_crd_tx,
 		if (ENABLE_CREDIT_PRINTS && ENABLE_CRD_PRINTS && worker_lid < MAX_THREADS_TO_PRINT)
 			printf("$$$ Credits[W%d]: \033[1m\033[36mCRDs\033[0m \033[31mdecremented\033[0m to %d (for machine %d)\n",
 				   worker_lid, credits[CRD_UD_QP_ID][val_recv_ops[i].sender], val_recv_ops[i].sender);
-		*credit_debug_cnt = 0;
+
 
 		credits_per_machine[val_recv_ops[i].sender]++;
 		//empty inv buffer
@@ -1086,11 +1107,34 @@ issue_credits(spacetime_val_t *val_recv_ops, long long int* send_crd_tx,
 /* ---------------------------------------------------------------------------
 ----------------------------------- MEMBERSHIP -------------------------------
 ---------------------------------------------------------------------------*/
+static inline void
+follower_removal(uint16_t failed_node_id)
+{
+    if(ENABLE_ASSERTIONS == 1){
+		assert(failed_node_id != machine_id);
+		assert(failed_node_id < MACHINE_NUM);
+	}
+	optik_lock_membership(&group_membership.optik_lock);
+    group_membership.write_ack_init  [failed_node_id / 8] |= (uint8_t) 1 << failed_node_id % 8;
+	group_membership.group_membership[failed_node_id / 8] &= ~((uint8_t) 1 << failed_node_id % 8);
+//	green_printf("Group mem. bit array: "BYTE_TO_BINARY_PATTERN" \n",
+//					   BYTE_TO_BINARY(group_membership.group_membership[0]));
+    group_membership.num_of_alive_remotes--;
+	optik_unlock_membership(&group_membership.optik_lock);
+
+	yellow_printf("Node: %d, Removed follower %d!\n", machine_id, machine_id + 1);
+
+	if(group_membership.num_of_alive_remotes < (MACHINE_NUM / 2)){
+		red_printf("Majority is down!\n");
+		exit(-1);
+	}
+}
+
 static inline uint8_t
 group_membership_has_changed(spacetime_group_membership* last_group_membership,
 							 uint16_t worker_lid)
 {
-    int i;
+	int i;
 	uint32_t debug_lock_free_membership_read_cntr = 0;
 	spacetime_group_membership lock_free_read_group_membership;
 	do { //Lock free read of group membership
@@ -1106,17 +1150,17 @@ group_membership_has_changed(spacetime_group_membership* last_group_membership,
 													 lock_free_read_group_membership.optik_lock.version)));
 	for(i = 0; i < GROUP_MEMBERSHIP_ARRAY_SIZE; i++)
 		if(lock_free_read_group_membership.group_membership[i] != last_group_membership->group_membership[i]){
-            *last_group_membership = lock_free_read_group_membership;
+			*last_group_membership = lock_free_read_group_membership;
 			return 1;
 		}
 	return 0;
 }
 
 static inline uint8_t
-writer_is_alive(spacetime_group_membership last_group_membership, uint16_t writer_id)
+node_is_in_membership(spacetime_group_membership last_group_membership, uint16_t node_id)
 {
-    if((last_group_membership.group_membership[writer_id / 8] >> (writer_id % 8)) % 2 == 1)
-			return 1;
+	if((last_group_membership.group_membership[node_id / 8] >> (node_id % 8)) % 2 == 1)
+		return 1;
 	return 0;
 }
 
@@ -1131,10 +1175,18 @@ refill_ops(uint32_t* trace_iter, uint16_t worker_lid,
 	static uint8_t first_iter_has_passed[WORKERS_PER_MACHINE] = { 0 };
 	int i = 0, refilled_ops = 0;
 	for(i = 0; i < MAX_BATCH_OPS_SIZE; i++) {
-
 		if(ENABLE_ASSERTIONS){
 			if(first_iter_has_passed[worker_lid] == 1){
+                if(!(ops[i].opcode == ST_OP_PUT || ops[i].opcode == ST_OP_GET))
+					printf("Code: %s\n",code_to_str(ops[i].opcode));
 				assert(ops[i].opcode == ST_OP_PUT || ops[i].opcode == ST_OP_GET);
+				if(!(ops[i].state == ST_PUT_COMPLETE ||
+					   ops[i].state == ST_GET_COMPLETE ||
+					   ops[i].state == ST_PUT_SUCCESS ||
+					   ops[i].state == ST_IN_PROGRESS_PUT ||
+					   ops[i].state == ST_PUT_STALL ||
+					   ops[i].state == ST_GET_STALL))
+					printf("State: %s\n",code_to_str(ops[i].state));
 				assert(ops[i].state == ST_PUT_COMPLETE ||
 					   ops[i].state == ST_GET_COMPLETE ||
 					   ops[i].state == ST_PUT_SUCCESS ||
@@ -1148,9 +1200,9 @@ refill_ops(uint32_t* trace_iter, uint16_t worker_lid,
 			if(first_iter_has_passed[worker_lid] != 0) {
 				if (ENABLE_REQ_PRINTS && worker_lid < MAX_THREADS_TO_PRINT)
 					green_printf("W%d--> Key Hash:%" PRIu64 "\n\t\tType: %s, version %d, tie-b: %d, value(len-%d): %c\n",
-							worker_lid, ((uint64_t *) &ops[i].key)[0],
-							code_to_str(ops[i].state), ops[i].version,
-							ops[i].tie_breaker_id, ops[i].val_len, ops[i].value[0]);
+								 worker_lid, ((uint64_t *) &ops[i].key)[0],
+								 code_to_str(ops[i].state), ops[i].version,
+								 ops[i].tie_breaker_id, ops[i].val_len, ops[i].value[0]);
 				ops[i].state = ST_EMPTY;
 				ops[i].opcode = ST_EMPTY;
 				w_stats[worker_lid].completed_ops_per_worker++;
@@ -1175,7 +1227,7 @@ refill_ops(uint32_t* trace_iter, uint16_t worker_lid,
 			refilled_per_ops_debug_cnt[i]++;
 	}
 
-    if(refilled_ops == 0)
+	if(refilled_ops == 0)
 		w_stats[worker_lid].wasted_loops++;
 
 	if(first_iter_has_passed[worker_lid] == 0)

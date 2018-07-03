@@ -199,6 +199,35 @@ optik_is_locked(spacetime_object_meta* ol)
 {
     return (ol->lock == OPTIK_LOCKED);
 }
+
+static inline int
+optik_lock_membership(spacetime_lock *ol)
+{
+    spacetime_lock ol_old;
+    do
+    {
+        while (1)
+        {
+            ol_old = *ol;
+            if (ol->lock != OPTIK_LOCKED)
+            {
+                break;
+            }
+            OPTIK_PAUSE();
+        }
+
+        OPTIK_STATS_TRYLOCK_CAS_INC();
+        if (CAS_U8(&ol->lock, 0, 1) == 0)
+        {
+            ol->version++;
+            //assert(ol->version % 2 == 1);
+            break;
+        }
+    }
+    while (1);
+    return 1;
+}
+
 static inline int
 optik_lock(spacetime_object_meta* ol)
 {
@@ -237,7 +266,6 @@ optik_unlock_write(spacetime_object_meta* ol, uint8_t cid, uint32_t* resp_versio
     ol->tie_breaker_id = cid;
     *resp_version = ++ol->version;
     COMPILER_NO_REORDER(ol->lock = OPTIK_FREE);
-
 }
 
 static inline void
@@ -245,6 +273,17 @@ optik_unlock_decrement_version(spacetime_object_meta* ol)
 {
     ol->version = --ol->version;
     assert(ol->version % 2 == 0);
+    COMPILER_NO_REORDER(ol->lock = OPTIK_FREE);
+}
+
+static inline void
+optik_unlock_membership(spacetime_lock* ol)
+{
+    if(ENABLE_ASSERTIONS){
+        assert(ol->lock == OPTIK_LOCKED);
+        assert(ol->version % 2 == 1);
+    }
+    ol->version++;
     COMPILER_NO_REORDER(ol->lock = OPTIK_FREE);
 }
 #endif	/* _H_OPTIK_ */

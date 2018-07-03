@@ -44,32 +44,15 @@ void extended_meta_reset(struct extended_spacetime_meta_stats* meta)
 	meta_reset(&meta->metadata);
 }
 
-static inline uint8_t is_last_ack(uint8_t const * gathered_acks, spacetime_group_membership curr_g_membership, int worker_lid)
+static inline uint8_t is_last_ack(uint8_t const * gathered_acks,
+								  spacetime_group_membership curr_g_membership,
+								  int worker_lid)
 {
-	//lock_free read of group membership & comparison with gathered acks
 	int i = 0;
-	spacetime_group_membership curr_membership;
-	uint32_t debug_cntr = 0;
-	do { //Lock free read of keys meta
-		if (ENABLE_ASSERTIONS) {
-			debug_cntr++;
-			if (debug_cntr == M_4) {
-				printf("Worker %u stuck on a lock-free read (is last ack)\n", worker_lid);
-				debug_cntr = 0;
-			}
-		}
-		curr_membership = *((spacetime_group_membership*) &group_membership);
-	} while (!(group_mem_timestamp_is_same_and_valid(
-			curr_membership.optik_lock.version,
-			group_membership.optik_lock.version)));
-    for(i = 0; i < GROUP_MEMBERSHIP_ARRAY_SIZE; i++)
-		if((gathered_acks[i] & curr_membership.group_membership[i]) !=
-		   curr_membership.group_membership[i])
+	for(i = 0; i < GROUP_MEMBERSHIP_ARRAY_SIZE; i++)
+		if((gathered_acks[i] & curr_g_membership.group_membership[i]) !=
+		   curr_g_membership.group_membership[i])
 			return 0;
-//	for(i = 0; i < GROUP_MEMBERSHIP_ARRAY_SIZE; i++)
-//		if((gathered_acks[i] & curr_g_membership.group_membership[i]) !=
-//		   curr_g_membership.group_membership[i])
-//			return 0;
 	return 1;
 }
 
@@ -139,7 +122,8 @@ void spacetime_populate_fixed_len(struct spacetime_kv* kv, int n, int val_len)
 }
 
 //TODO may merge all the batch_* func
-void batch_ops_to_KVS(int op_num, spacetime_op_t **op, int thread_id, spacetime_group_membership curr_membership,
+void batch_ops_to_KVS(int op_num, spacetime_op_t **op, int thread_id,
+					  spacetime_group_membership curr_membership,
 					  uint32_t refilled_ops_debug_cnt, uint32_t *ref_ops_dbg_array_cnt)
 {
 	int I, j;	/* I is batch index */
@@ -166,10 +150,11 @@ void batch_ops_to_KVS(int op_num, spacetime_op_t **op, int thread_id, spacetime_
 	 * for both GETs and PUTs.
 	 */
 	for(I = 0; I < op_num; I++) {
-		if ((*op)[I].state == ST_IN_PROGRESS_PUT ||
-			(*op)[I].state == ST_IN_PROGRESS_REPLAY ||
+		if ((*op)[I].state == ST_PUT_SUCCESS ||
 			(*op)[I].state == ST_REPLAY_SUCCESS ||
-			(*op)[I].state == ST_PUT_SUCCESS) continue;
+			(*op)[I].state == ST_IN_PROGRESS_PUT ||
+			(*op)[I].state == ST_IN_PROGRESS_REPLAY ||
+			(*op)[I].state == ST_PUT_COMPLETE_SEND_VALS) continue;
 //			cyan_printf("Ops[%d]=== hash(1st 8B):%" PRIu64 "\n", I, ((uint64_t *) &(*op)[I].key)[1]);
 		bkt[I] = (*op)[I].key.bkt & kv.hash_table.bkt_mask;
 		bkt_ptr[I] = &kv.hash_table.ht_index[bkt[I]];
@@ -181,10 +166,11 @@ void batch_ops_to_KVS(int op_num, spacetime_op_t **op, int thread_id, spacetime_
 	}
 
 	for(I = 0; I < op_num; I++) {
-		if ((*op)[I].state == ST_IN_PROGRESS_PUT ||
-			(*op)[I].state == ST_IN_PROGRESS_REPLAY ||
+		if ((*op)[I].state == ST_PUT_SUCCESS ||
 			(*op)[I].state == ST_REPLAY_SUCCESS ||
-			(*op)[I].state == ST_PUT_SUCCESS) continue;
+			(*op)[I].state == ST_IN_PROGRESS_PUT ||
+			(*op)[I].state == ST_IN_PROGRESS_REPLAY ||
+			(*op)[I].state == ST_PUT_COMPLETE_SEND_VALS) continue;
 		for(j = 0; j < 8; j++) {
 			if(bkt_ptr[I]->slots[j].in_use == 1 &&
 			   bkt_ptr[I]->slots[j].tag == tag[I]) {
@@ -213,10 +199,11 @@ void batch_ops_to_KVS(int op_num, spacetime_op_t **op, int thread_id, spacetime_
 	// the following variables used to validate atomicity between a lock-free read of an object
 	spacetime_object_meta prev_meta;
 	for(I = 0; I < op_num; I++) {
-		if ((*op)[I].state == ST_IN_PROGRESS_PUT ||
-			(*op)[I].state == ST_IN_PROGRESS_REPLAY ||
+		if ((*op)[I].state == ST_PUT_SUCCESS ||
 			(*op)[I].state == ST_REPLAY_SUCCESS ||
-			(*op)[I].state == ST_PUT_SUCCESS) continue;
+			(*op)[I].state == ST_IN_PROGRESS_PUT ||
+			(*op)[I].state == ST_IN_PROGRESS_REPLAY ||
+			(*op)[I].state == ST_PUT_COMPLETE_SEND_VALS) continue;
 		if(kv_ptr[I] != NULL) {
 			/* We had a tag match earlier. Now compare log entry. */
 			long long *key_ptr_log = (long long *) kv_ptr[I];
@@ -261,7 +248,7 @@ void batch_ops_to_KVS(int op_num, spacetime_op_t **op, int thread_id, spacetime_
 										(*op)[I].state = ST_GET_STALL;
 										break;
 									case INVALID_STATE:
-										if(writer_is_alive(curr_membership, curr_meta->last_writer_id))
+										if(node_is_in_membership(curr_membership, curr_meta->last_writer_id))
 											(*op)[I].state = ST_GET_STALL;
 										else if(curr_meta->op_buffer_index == ST_OP_BUFFER_INDEX_EMPTY){
 											///stall replay: until all acks from last write arrive
@@ -327,9 +314,6 @@ void batch_ops_to_KVS(int op_num, spacetime_op_t **op, int thread_id, spacetime_
 							if(curr_meta->op_buffer_index != ST_OP_BUFFER_INDEX_EMPTY){
 								///stall write: until all acks from last write arrive
                                 /// on multiple threads we can't complete writes / replays on VAL
-//                                printf("[W%d]-->State:%s version:%d, tie: %d, buff index: %d, last_write-version: %d, last_write-id: %d !\n",
-//									   thread_id, code_to_str(curr_meta->state), curr_meta->version - 1, curr_meta->tie_breaker_id,
-//										curr_meta->op_buffer_index, curr_meta->last_local_write_version, curr_meta->last_writer_id);
 								optik_unlock_decrement_version(curr_meta);
 							} else {
 								curr_meta->state = WRITE_STATE;
@@ -998,13 +982,12 @@ void complete_writes_and_replays_on_follower_removal(int op_num, spacetime_op_t 
 							default:
 								assert(0);
 						}
-                        if((*op)[I].state != ST_PUT_COMPLETE_SEND_VALS)
+                        if((*op)[I].state != ST_PUT_COMPLETE_SEND_VALS && (*op)[I].state != ST_REPLAY_COMPLETE)
 							(*op)[I].state = ST_PUT_COMPLETE;
 
 					}
 					optik_unlock_decrement_version(curr_meta);
 				}
-
 			}
 		}
 
@@ -1040,30 +1023,40 @@ void group_membership_init(void)
 
 //static inline void
 void
-reconfigure_wrs(struct ibv_send_wr *inv_send_wr, struct ibv_send_wr *val_send_wr,
-				uint16_t worker_lid)
+reconfigure_wrs(struct ibv_send_wr *inv_send_wr, struct ibv_sge *inv_send_sgl,
+				struct ibv_send_wr *val_send_wr, struct ibv_sge *val_send_sgl,
+				spacetime_group_membership last_g_membership, uint16_t worker_lid)
 //void reconfigure_wrs(void)
 {
-	int i = 0, i_mod_remotes, j, curr_machine_id;
+	int i_mod_remotes, sgl_index;
+	uint16_t curr_machine_id, i , j;
 	uint16_t rm_id, rm_worker_gid, rm_id_index = 0;
 	int remote_machine_ids[GROUP_MEMBERSHIP_ARRAY_SIZE * 8] = {0};
 	//first get all alive remote ids
-    for(i = 0; i < GROUP_MEMBERSHIP_ARRAY_SIZE; i++)
+	for(i = 0; i < GROUP_MEMBERSHIP_ARRAY_SIZE; i++){
 		for (j = 0; j < 8; j++){
-			curr_machine_id = i * 8 + j;
+			curr_machine_id = (uint16_t) (i * 8 + j);
 			if(curr_machine_id == machine_id) continue;
-			if((group_membership.group_membership[i] >> j) % 2 == 1)
+			if(node_is_in_membership(last_g_membership, curr_machine_id))
 				remote_machine_ids[rm_id_index++] = curr_machine_id;
 		}
+	}
 
-	for(i = 0; i < MAX_MSGS_IN_PCIE_BCAST_BATCH; i++){
+	green_printf("Alive Remotes: %d\n", last_g_membership.num_of_alive_remotes);
+	for(i = 0; i < rm_id_index; i++)
+		yellow_printf("Remote_machine[%d] = %d\n", i, remote_machine_ids[i]);
+
+	for(i = 0; i < MAX_PCIE_BCAST_BATCH * last_g_membership.num_of_alive_remotes; i++){
 		i_mod_remotes = i % group_membership.num_of_alive_remotes;
+		sgl_index = i / group_membership.num_of_alive_remotes;
         rm_worker_gid = (uint16_t) (remote_machine_ids[i_mod_remotes] * WORKERS_PER_MACHINE + worker_lid);
-//        printf("Reconf: Remotes: %d\n", rm_worker_gid);
 		inv_send_wr[i].wr.ud.ah = remote_worker_qps[rm_worker_gid][INV_UD_QP_ID].ah;
         val_send_wr[i].wr.ud.ah = remote_worker_qps[rm_worker_gid][VAL_UD_QP_ID].ah;
 
         inv_send_wr[i].wr.ud.remote_qpn = (uint32) remote_worker_qps[rm_worker_gid][INV_UD_QP_ID].qpn;
         val_send_wr[i].wr.ud.remote_qpn = (uint32) remote_worker_qps[rm_worker_gid][VAL_UD_QP_ID].qpn;
+
+		inv_send_wr[i].sg_list = &inv_send_sgl[sgl_index];
+		val_send_wr[i].sg_list = &val_send_sgl[sgl_index];
 	}
 }

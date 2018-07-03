@@ -257,12 +257,12 @@ void batch_vals_to_KVS(int op_num, spacetime_val_t **op, spacetime_op_t *read_wr
 void complete_writes_and_replays_on_follower_removal(int op_num, spacetime_op_t **op,
                                                      spacetime_group_membership curr_membership, int thread_id);
 void group_membership_init(void);
-void reconfigure_wrs(struct ibv_send_wr *inv_send_wr, struct ibv_send_wr *val_send_wr, uint16_t worker_lid);
-//void reconfigure_wrs(void);
-//uint8_t is_last_ack(uint8_t const * gathered_acks);
+void reconfigure_wrs(struct ibv_send_wr *inv_send_wr, struct ibv_sge *inv_send_sgl,
+                     struct ibv_send_wr *val_send_wr, struct ibv_sge *val_send_sgl,
+                     spacetime_group_membership last_g_membership, uint16_t worker_lid);
 
 static inline void
-update_ack_bit_vector(uint8_t sender_int_id, uint8_t* ack_bit_vector){
+update_ack_bit_vector(uint16_t sender_int_id, uint8_t* ack_bit_vector){
     if(ENABLE_ASSERTIONS == 1) assert(sender_int_id < MACHINE_NUM);
 	ack_bit_vector[sender_int_id / 8] |= (uint8_t) 1 << sender_int_id % 8;
 }

@@ -14,6 +14,7 @@
 volatile char worker_needed_ah_ready;
 volatile struct worker_stats w_stats[WORKERS_PER_MACHINE];
 volatile struct remote_qp remote_worker_qps[WORKER_NUM][TOTAL_WORKER_UD_QPs];
+volatile uint8_t missing_credits[WORKERS_PER_MACHINE][MACHINE_NUM] = {0};
 
 
 int main(int argc, char *argv[]){

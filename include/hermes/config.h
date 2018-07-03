@@ -10,13 +10,13 @@
 #define MACHINE_NUM 3
 #define REMOTE_MACHINES (MACHINE_NUM - 1)
 #define GROUP_MEMBERSHIP_ARRAY_SIZE  CEILING(MACHINE_NUM, 8) //assuming uint8_t
-#define WORKERS_PER_MACHINE 39
+#define WORKERS_PER_MACHINE 1
 #define USE_ALL_CORES 1
 #define ENABLE_HYPERTHREADING 1
 #define KV_SOCKET 0
 #define START_SPAWNING_THREADS_FROM_SOCKET 0
-#define WRITE_RATIO 500
-#define MAX_BATCH_OPS_SIZE 250 //30 //5
+#define WRITE_RATIO 1000
+#define MAX_BATCH_OPS_SIZE 100 //30 //5
 #define BATCH_POST_RECVS_TO_NIC 1
 //DEBUG
 #define DISABLE_VALS_FOR_DEBUGGING 0
@@ -32,17 +32,17 @@
 ----------------- REQ COALESCING -------------------
 --------------------------------------------------*/
 
-#define MAX_REQ_COALESCE 10
+#define MAX_REQ_COALESCE 1
 #define INV_MAX_REQ_COALESCE MAX_REQ_COALESCE
-//#define ACK_MAX_REQ_COALESCE MAX_REQ_COALESCE
-//#define VAL_MAX_REQ_COALESCE MAX_REQ_COALESCE
-#define ACK_MAX_REQ_COALESCE (3 * MAX_REQ_COALESCE)
-#define VAL_MAX_REQ_COALESCE (3 * MAX_REQ_COALESCE)
+#define ACK_MAX_REQ_COALESCE MAX_REQ_COALESCE
+#define VAL_MAX_REQ_COALESCE MAX_REQ_COALESCE
+//#define ACK_MAX_REQ_COALESCE (3 * MAX_REQ_COALESCE)
+//#define VAL_MAX_REQ_COALESCE (3 * MAX_REQ_COALESCE)
 
 /*-------------------------------------------------
 -----------------FLOW CONTROL---------------------
 --------------------------------------------------*/
-#define CREDITS_PER_REMOTE_WORKER 29 //MAX_BATCH_OPS_SIZE //(MAX_BATCH_OPS_SIZE / (MAX_REQ_COALESCE * 2)) //3 //60 //30
+#define CREDITS_PER_REMOTE_WORKER 5 //MAX_BATCH_OPS_SIZE //(MAX_BATCH_OPS_SIZE / (MAX_REQ_COALESCE * 2)) //3 //60 //30
 #define INV_CREDITS CREDITS_PER_REMOTE_WORKER
 #define ACK_CREDITS CREDITS_PER_REMOTE_WORKER
 #define VAL_CREDITS CREDITS_PER_REMOTE_WORKER
@@ -140,8 +140,8 @@
 #define ENABLE_POST_RECV_PRINTS 0
 #define ENABLE_BATCH_OP_PRINTS 0
 #define ENABLE_INV_PRINTS 1
-#define ENABLE_ACK_PRINTS 1
-#define ENABLE_VAL_PRINTS 1
+#define ENABLE_ACK_PRINTS 0
+#define ENABLE_VAL_PRINTS 0
 #define ENABLE_CRD_PRINTS 0
 
 //Stats
@@ -176,5 +176,6 @@ struct remote_qp {
 };
 
 extern volatile struct remote_qp remote_worker_qps[WORKER_NUM][TOTAL_WORKER_UD_QPs];
+extern volatile uint8_t missing_credits[WORKERS_PER_MACHINE][MACHINE_NUM];
 extern volatile char worker_needed_ah_ready;
 #endif //SPACETIME_CONFIG_H
