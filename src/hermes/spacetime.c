@@ -121,6 +121,135 @@ void spacetime_populate_fixed_len(struct spacetime_kv* kv, int n, int val_len)
 				  (double) kv->hash_table.num_index_evictions / kv->hash_table.num_insert_op);
 }
 
+
+uint8_t node_of_missing_ack(spacetime_group_membership curr_membership, uint8_t write_acks){
+	if(ENABLE_ASSERTIONS)
+		assert(MACHINE_NUM <= 8);
+	uint8_t k = 0;
+	uint8_t bitvector = curr_membership.group_membership[0] & ~write_acks;
+	while(k < 7 && bitvector % 2 == 0){
+		k++;
+		bitvector = bitvector >> 1;
+	}
+    if(ENABLE_ASSERTIONS)
+		assert(k >= 0 && k < MACHINE_NUM);
+	return k;
+}
+
+int find_failed_node(int op_num, spacetime_op_t **op, int thread_id,
+					  spacetime_group_membership curr_membership)
+{
+	int I, j;	/* I is batch index */
+#if SPACETIME_DEBUG == 1
+	//assert(kv.hash_table != NULL);
+	assert(op != NULL);
+	assert(op_num > 0 && op_num <= CACHE_BATCH_SIZE);
+	assert(resp != NULL);
+#endif
+
+#if SPACETIME_DEBUG == 2
+	for(I = 0; I < op_num; I++)
+		mica_print_op(&(*op)[I]);
+#endif
+	unsigned int bkt[MAX_BATCH_OPS_SIZE];
+	struct mica_bkt *bkt_ptr[MAX_BATCH_OPS_SIZE];
+	unsigned int tag[MAX_BATCH_OPS_SIZE];
+	int key_in_store[MAX_BATCH_OPS_SIZE];	/* Is this key in the datastore? */
+	struct mica_op *kv_ptr[MAX_BATCH_OPS_SIZE];	/* Ptr to KV item in log */
+
+
+	/*
+	 * We first lookup the key in the datastore. The first two @I loops work
+	 * for both GETs and PUTs.
+	 */
+	for(I = 0; I < op_num; I++) {
+		if ((*op)[I].state == ST_PUT_SUCCESS ||
+			(*op)[I].state == ST_REPLAY_SUCCESS ||
+			(*op)[I].state == ST_PUT_COMPLETE_SEND_VALS) continue;
+//			cyan_printf("Ops[%d]=== hash(1st 8B):%" PRIu64 "\n", I, ((uint64_t *) &(*op)[I].key)[1]);
+		bkt[I] = (*op)[I].key.bkt & kv.hash_table.bkt_mask;
+		bkt_ptr[I] = &kv.hash_table.ht_index[bkt[I]];
+		__builtin_prefetch(bkt_ptr[I], 0, 0);
+		tag[I] = (*op)[I].key.tag;
+
+		key_in_store[I] = 0;
+		kv_ptr[I] = NULL;
+	}
+
+	for(I = 0; I < op_num; I++) {
+		if ((*op)[I].state == ST_PUT_SUCCESS ||
+			(*op)[I].state == ST_REPLAY_SUCCESS ||
+			(*op)[I].state == ST_PUT_COMPLETE_SEND_VALS) continue;
+		for(j = 0; j < 8; j++) {
+			if(bkt_ptr[I]->slots[j].in_use == 1 &&
+			   bkt_ptr[I]->slots[j].tag == tag[I]) {
+				uint64_t log_offset = bkt_ptr[I]->slots[j].offset &
+									  kv.hash_table.log_mask;
+				/*
+				 * We can interpret the log entry as mica_op, even though it
+				 * may not contain the full MICA_MAX_VALUE value.
+				 */
+				kv_ptr[I] = (struct mica_op*) &kv.hash_table.ht_log[log_offset];
+
+				/* Small values (1--64 bytes) can span 2 cache lines */
+				__builtin_prefetch(kv_ptr[I], 0, 0);
+				__builtin_prefetch((uint8_t *) kv_ptr[I] + 64, 0, 0);
+
+				/* Detect if the head has wrapped around for this index entry */
+				if(kv.hash_table.log_head - bkt_ptr[I]->slots[j].offset >= kv.hash_table.log_cap) {
+					kv_ptr[I] = NULL;	/* If so, we mark it "not found" */
+				}
+
+				break;
+			}
+		}
+	}
+
+	// the following variables used to validate atomicity between a lock-free read of an object
+	for(I = 0; I < op_num; I++) {
+		if ((*op)[I].state == ST_PUT_SUCCESS ||
+			(*op)[I].state == ST_REPLAY_SUCCESS ||
+			(*op)[I].state == ST_PUT_COMPLETE_SEND_VALS) continue;
+		if(kv_ptr[I] != NULL) {
+			/* We had a tag match earlier. Now compare log entry. */
+			long long *key_ptr_log = (long long *) kv_ptr[I];
+			long long *key_ptr_req = (long long *) &(*op)[I].key;
+
+			if(key_ptr_log[1] == key_ptr_req[0]){ //Key Found 8 Byte keys
+				key_in_store[I] = 1;
+				spacetime_object_meta *curr_meta = (spacetime_object_meta *) kv_ptr[I]->value;
+//				printf("ops[%d]: (%s) ops-state %s state: %s\n", I, code_to_str((*op)[I].opcode),
+//					   code_to_str((*op)[I].state), code_to_str(curr_meta->state));
+				optik_lock(curr_meta);
+				switch (curr_meta->state) {
+					case VALID_STATE:
+					case INVALID_STATE:
+					case INVALID_WRITE_STATE:
+						break;
+					case WRITE_STATE:
+					case REPLAY_STATE:
+						optik_unlock_decrement_version(curr_meta);
+						return node_of_missing_ack(curr_membership, curr_meta->write_acks[0]);
+//							yellow_printf("Write acks bit array: "BYTE_TO_BINARY_PATTERN" \n",
+//										 BYTE_TO_BINARY(curr_meta->write_acks[0]));
+//                            printf("Node possibly stucked: %d!\n",
+//								   node_of_missing_ack(curr_membership, curr_meta->write_acks[0]));
+						break;
+					default:
+						break;
+				}
+                optik_unlock_decrement_version(curr_meta);
+			}
+		}
+
+		if(key_in_store[I] == 0)  //KVS miss --> We get here if either tag or log key match failed
+			assert(0);
+
+	}
+	return -1;
+}
+
+
 //TODO may merge all the batch_* func
 void batch_ops_to_KVS(int op_num, spacetime_op_t **op, int thread_id,
 					  spacetime_group_membership curr_membership,
@@ -558,7 +687,8 @@ void batch_acks_to_KVS(int op_num, spacetime_ack_t **op, spacetime_op_t *read_wr
         if(ENABLE_ASSERTIONS){
 			assert((*op)[I].version % 2 == 0);
             assert((*op)[I].opcode == ST_OP_ACK);
-			assert((*op)[I].tie_breaker_id == machine_id);
+			assert(group_membership.num_of_alive_remotes != REMOTE_MACHINES ||
+						   (*op)[I].tie_breaker_id == machine_id);
 			assert(REMOTE_MACHINES != 1 || (*op)[I].sender == REMOTE_MACHINES - machine_id);
 //			yellow_printf("ACKS: Ops[%d]vvv hash(1st 8B):%" PRIu64 " version: %d, tie: %d\n", I,
 //					   ((uint64_t *) &(*op)[I].key)[0], (*op)[I].version, (*op)[I].tie_breaker_id);
@@ -959,32 +1089,30 @@ void complete_writes_and_replays_on_follower_removal(int op_num, spacetime_op_t 
 						switch (curr_meta->state) {
 							case VALID_STATE:
 							case INVALID_STATE:
+								(*op)[I].state = ST_PUT_COMPLETE;
                                 break;
 							case INVALID_WRITE_STATE:
 								if(ENABLE_ASSERTIONS) assert((*op)[I].state == ST_IN_PROGRESS_PUT);
-								(*op)[I].state = ST_PUT_COMPLETE;
 								curr_meta->state = INVALID_STATE;
+								(*op)[I].state = ST_PUT_COMPLETE;
 								break;
 							case WRITE_STATE:
                                 if(ENABLE_ASSERTIONS) assert((*op)[I].state == ST_IN_PROGRESS_PUT);
 								curr_meta->state = VALID_STATE;
 								(*op)[I].version = curr_meta->version - 1; // -1 because of optik lock does version + 1
 								(*op)[I].tie_breaker_id = curr_meta->tie_breaker_id;
-								(*op)[I].state = ST_PUT_COMPLETE_SEND_VALS; ///ops state for sending VALs
+								(*op)[I].state = DISABLE_VALS_FOR_DEBUGGING == 1 ? ST_PUT_COMPLETE : ST_PUT_COMPLETE_SEND_VALS; ///ops state for sending VALs
 								break;
 							case REPLAY_STATE:
                                 if(ENABLE_ASSERTIONS) assert((*op)[I].state == ST_IN_PROGRESS_REPLAY);
-								(*op)[I].state = ST_REPLAY_COMPLETE;
+								curr_meta->state = VALID_STATE;
 								(*op)[I].version = curr_meta->version - 1; // -1 because of optik lock does version + 1
 								(*op)[I].tie_breaker_id = curr_meta->tie_breaker_id;
-								curr_meta->state = VALID_STATE;
+								(*op)[I].state = DISABLE_VALS_FOR_DEBUGGING == 1 ? ST_GET_COMPLETE : ST_REPLAY_COMPLETE; ///ops state for sending VALs
 								break;
 							default:
 								assert(0);
 						}
-                        if((*op)[I].state != ST_PUT_COMPLETE_SEND_VALS && (*op)[I].state != ST_REPLAY_COMPLETE)
-							(*op)[I].state = ST_PUT_COMPLETE;
-
 					}
 					optik_unlock_decrement_version(curr_meta);
 				}
@@ -1058,5 +1186,25 @@ reconfigure_wrs(struct ibv_send_wr *inv_send_wr, struct ibv_sge *inv_send_sgl,
 
 		inv_send_wr[i].sg_list = &inv_send_sgl[sgl_index];
 		val_send_wr[i].sg_list = &val_send_sgl[sgl_index];
+	}
+
+
+}
+
+void reset_bcast_send_buffers(spacetime_inv_packet_t *inv_send_packet_ops, int *inv_push_ptr,
+							  spacetime_val_packet_t *val_send_packet_ops, int *val_push_ptr)
+{
+	int i , j;
+	*inv_push_ptr = 0;
+	*val_push_ptr = 0;
+	for(i = 0; i < INV_SEND_OPS_SIZE; i++){
+        inv_send_packet_ops[i].req_num = 0;
+		for(j = 0; j < INV_MAX_REQ_COALESCE; j++)
+			inv_send_packet_ops[i].reqs[j].opcode = ST_EMPTY;
+	}
+    for(i = 0; i < VAL_SEND_OPS_SIZE; i++){
+        val_send_packet_ops[i].req_num = 0;
+		for(j = 0; j < VAL_MAX_REQ_COALESCE; j++)
+			val_send_packet_ops[i].reqs[j].opcode = ST_EMPTY;
 	}
 }

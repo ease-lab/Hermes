@@ -16,7 +16,7 @@
 #define KV_SOCKET 0
 #define START_SPAWNING_THREADS_FROM_SOCKET 0
 #define WRITE_RATIO 1000
-#define MAX_BATCH_OPS_SIZE 100 //30 //5
+#define MAX_BATCH_OPS_SIZE 10 //30 //5
 #define BATCH_POST_RECVS_TO_NIC 1
 //DEBUG
 #define DISABLE_VALS_FOR_DEBUGGING 0
@@ -42,7 +42,7 @@
 /*-------------------------------------------------
 -----------------FLOW CONTROL---------------------
 --------------------------------------------------*/
-#define CREDITS_PER_REMOTE_WORKER 5 //MAX_BATCH_OPS_SIZE //(MAX_BATCH_OPS_SIZE / (MAX_REQ_COALESCE * 2)) //3 //60 //30
+#define CREDITS_PER_REMOTE_WORKER 10 //MAX_BATCH_OPS_SIZE //(MAX_BATCH_OPS_SIZE / (MAX_REQ_COALESCE * 2)) //3 //60 //30
 #define INV_CREDITS CREDITS_PER_REMOTE_WORKER
 #define ACK_CREDITS CREDITS_PER_REMOTE_WORKER
 #define VAL_CREDITS CREDITS_PER_REMOTE_WORKER
@@ -176,6 +176,6 @@ struct remote_qp {
 };
 
 extern volatile struct remote_qp remote_worker_qps[WORKER_NUM][TOTAL_WORKER_UD_QPs];
-extern volatile uint8_t missing_credits[WORKERS_PER_MACHINE][MACHINE_NUM];
+extern volatile uint8_t node_suspicions[WORKERS_PER_MACHINE][MACHINE_NUM];
 extern volatile char worker_needed_ah_ready;
 #endif //SPACETIME_CONFIG_H

@@ -257,9 +257,14 @@ void batch_vals_to_KVS(int op_num, spacetime_val_t **op, spacetime_op_t *read_wr
 void complete_writes_and_replays_on_follower_removal(int op_num, spacetime_op_t **op,
                                                      spacetime_group_membership curr_membership, int thread_id);
 void group_membership_init(void);
+void reset_bcast_send_buffers(spacetime_inv_packet_t *inv_send_packet_ops, int *inv_push_ptr,
+                              spacetime_val_packet_t *val_send_packet_ops, int *val_push_ptr);
 void reconfigure_wrs(struct ibv_send_wr *inv_send_wr, struct ibv_sge *inv_send_sgl,
                      struct ibv_send_wr *val_send_wr, struct ibv_sge *val_send_sgl,
                      spacetime_group_membership last_g_membership, uint16_t worker_lid);
+
+int find_failed_node(int op_num, spacetime_op_t **op, int thread_id,
+                     spacetime_group_membership curr_membership);
 
 static inline void
 update_ack_bit_vector(uint16_t sender_int_id, uint8_t* ack_bit_vector){

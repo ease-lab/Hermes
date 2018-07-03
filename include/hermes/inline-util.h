@@ -161,7 +161,8 @@ poll_buff_and_post_recvs(void *incoming_buff, uint8_t buff_type, int *buf_pull_p
 						assert(((spacetime_ack_t*) next_packet_reqs)[j].version % 2 == 0);
 						assert(((spacetime_ack_t*) next_packet_reqs)[j].opcode == ST_OP_ACK);
 						assert(REMOTE_MACHINES != 1 || ((spacetime_ack_t*) next_packet_reqs)[j].sender == REMOTE_MACHINES - machine_id);
-						assert(((spacetime_ack_t*) next_packet_reqs)[j].tie_breaker_id == machine_id);
+						assert(group_membership.num_of_alive_remotes != REMOTE_MACHINES ||
+							   ((spacetime_ack_t*) next_packet_reqs)[j].tie_breaker_id == machine_id);
 					}
 				}
 				break;
@@ -371,7 +372,6 @@ broadcast_invs(spacetime_op_t *ops, spacetime_inv_packet_t *inv_send_packet_ops,
 
 	if(ENABLE_ASSERTIONS)
 		assert(inv_send_packet_ops[*inv_push_ptr].req_num == 0);
-
 
 	// traverse all of the ops to find invs
 	for (i = 0; i < MAX_BATCH_OPS_SIZE; i++) {
@@ -1184,14 +1184,22 @@ refill_ops(uint32_t* trace_iter, uint16_t worker_lid,
 					   ops[i].state == ST_GET_COMPLETE ||
 					   ops[i].state == ST_PUT_SUCCESS ||
 					   ops[i].state == ST_IN_PROGRESS_PUT ||
+					   ops[i].state == ST_REPLAY_COMPLETE ||
+					   ops[i].state == ST_REPLAY_SUCCESS ||
+					   ops[i].state == ST_IN_PROGRESS_REPLAY ||
+					   ops[i].state == ST_PUT_COMPLETE_SEND_VALS ||
 					   ops[i].state == ST_PUT_STALL ||
 					   ops[i].state == ST_GET_STALL))
 					printf("State: %s\n",code_to_str(ops[i].state));
 				assert(ops[i].state == ST_PUT_COMPLETE ||
 					   ops[i].state == ST_GET_COMPLETE ||
 					   ops[i].state == ST_PUT_SUCCESS ||
-					   ops[i].state == ST_IN_PROGRESS_PUT ||
+					   ops[i].state == ST_REPLAY_SUCCESS ||
 					   ops[i].state == ST_PUT_STALL ||
+					   ops[i].state == ST_REPLAY_COMPLETE ||
+					   ops[i].state == ST_IN_PROGRESS_PUT ||
+					   ops[i].state == ST_IN_PROGRESS_REPLAY ||
+					   ops[i].state == ST_PUT_COMPLETE_SEND_VALS ||
 					   ops[i].state == ST_GET_STALL);
 			}
 		}
