@@ -136,124 +136,86 @@ uint8_t node_of_missing_ack(spacetime_group_membership curr_membership, uint8_t 
 	return k;
 }
 
-int find_failed_node(int op_num, spacetime_op_t **op, int thread_id,
-					  spacetime_group_membership curr_membership)
+int find_failed_node(spacetime_op_t *op, int thread_id, spacetime_group_membership curr_membership)
 {
-	int I, j;	/* I is batch index */
 #if SPACETIME_DEBUG == 1
 	//assert(kv.hash_table != NULL);
 	assert(op != NULL);
-	assert(op_num > 0 && op_num <= CACHE_BATCH_SIZE);
+	assert(index > 0 && index <= CACHE_BATCH_SIZE);
 	assert(resp != NULL);
 #endif
 
 #if SPACETIME_DEBUG == 2
-	for(I = 0; I < op_num; I++)
+	for(I = 0; I < index; I++)
 		mica_print_op(&(*op)[I]);
 #endif
-	unsigned int bkt[MAX_BATCH_OPS_SIZE];
-	struct mica_bkt *bkt_ptr[MAX_BATCH_OPS_SIZE];
-	unsigned int tag[MAX_BATCH_OPS_SIZE];
-	int key_in_store[MAX_BATCH_OPS_SIZE];	/* Is this key in the datastore? */
-	struct mica_op *kv_ptr[MAX_BATCH_OPS_SIZE];	/* Ptr to KV item in log */
+	int i, suspected_node;	/* I is batch index */
+	unsigned int bkt;
+	struct mica_bkt *bkt_ptr;
+	unsigned int tag;
+	struct mica_op *kv_ptr;	/* Ptr to KV item in log */
 
-
+	assert(op->state == ST_IN_PROGRESS_REPLAY || op->state == ST_IN_PROGRESS_PUT);
 	/*
 	 * We first lookup the key in the datastore. The first two @I loops work
 	 * for both GETs and PUTs.
 	 */
-	for(I = 0; I < op_num; I++) {
-		if ((*op)[I].state == ST_PUT_SUCCESS ||
-			(*op)[I].state == ST_REPLAY_SUCCESS ||
-			(*op)[I].state == ST_PUT_COMPLETE_SEND_VALS) continue;
-//			cyan_printf("Ops[%d]=== hash(1st 8B):%" PRIu64 "\n", I, ((uint64_t *) &(*op)[I].key)[1]);
-		bkt[I] = (*op)[I].key.bkt & kv.hash_table.bkt_mask;
-		bkt_ptr[I] = &kv.hash_table.ht_index[bkt[I]];
-		__builtin_prefetch(bkt_ptr[I], 0, 0);
-		tag[I] = (*op)[I].key.tag;
+	bkt = op->key.bkt & kv.hash_table.bkt_mask;
+	bkt_ptr = &kv.hash_table.ht_index[bkt];
+	__builtin_prefetch(bkt_ptr, 0, 0);
+	tag = op->key.tag;
 
-		key_in_store[I] = 0;
-		kv_ptr[I] = NULL;
-	}
+	kv_ptr = NULL;
 
-	for(I = 0; I < op_num; I++) {
-		if ((*op)[I].state == ST_PUT_SUCCESS ||
-			(*op)[I].state == ST_REPLAY_SUCCESS ||
-			(*op)[I].state == ST_PUT_COMPLETE_SEND_VALS) continue;
-		for(j = 0; j < 8; j++) {
-			if(bkt_ptr[I]->slots[j].in_use == 1 &&
-			   bkt_ptr[I]->slots[j].tag == tag[I]) {
-				uint64_t log_offset = bkt_ptr[I]->slots[j].offset &
-									  kv.hash_table.log_mask;
-				/*
-				 * We can interpret the log entry as mica_op, even though it
-				 * may not contain the full MICA_MAX_VALUE value.
-				 */
-				kv_ptr[I] = (struct mica_op*) &kv.hash_table.ht_log[log_offset];
+	for(i = 0; i < 8; i++) {
+		if(bkt_ptr->slots[i].in_use == 1 &&
+		   bkt_ptr->slots[i].tag == tag) {
+			uint64_t log_offset = bkt_ptr->slots[i].offset &
+								  kv.hash_table.log_mask;
+			/*
+             * We can interpret the log entry as mica_op, even though it
+             * may not contain the full MICA_MAX_VALUE value.
+             */
+			kv_ptr = (struct mica_op*) &kv.hash_table.ht_log[log_offset];
 
-				/* Small values (1--64 bytes) can span 2 cache lines */
-				__builtin_prefetch(kv_ptr[I], 0, 0);
-				__builtin_prefetch((uint8_t *) kv_ptr[I] + 64, 0, 0);
+			/* Small values (1--64 bytes) can span 2 cache lines */
+			__builtin_prefetch(kv_ptr, 0, 0);
+			__builtin_prefetch((uint8_t *) kv_ptr + 64, 0, 0);
 
-				/* Detect if the head has wrapped around for this index entry */
-				if(kv.hash_table.log_head - bkt_ptr[I]->slots[j].offset >= kv.hash_table.log_cap) {
-					kv_ptr[I] = NULL;	/* If so, we mark it "not found" */
-				}
+			/* Detect if the head has wrapped around for this index entry */
+			if(kv.hash_table.log_head - bkt_ptr->slots[i].offset >= kv.hash_table.log_cap)
+				kv_ptr = NULL;	/* If so, we mark it "not found" */
 
-				break;
-			}
+			break;
 		}
 	}
 
-	// the following variables used to validate atomicity between a lock-free read of an object
-	for(I = 0; I < op_num; I++) {
-		if ((*op)[I].state == ST_PUT_SUCCESS ||
-			(*op)[I].state == ST_REPLAY_SUCCESS ||
-			(*op)[I].state == ST_PUT_COMPLETE_SEND_VALS) continue;
-		if(kv_ptr[I] != NULL) {
-			/* We had a tag match earlier. Now compare log entry. */
-			long long *key_ptr_log = (long long *) kv_ptr[I];
-			long long *key_ptr_req = (long long *) &(*op)[I].key;
+	if(kv_ptr != NULL) {
+		/* We had a tag match earlier. Now compare log entry. */
+		long long *key_ptr_log = (long long *) kv_ptr;
+		long long *key_ptr_req = (long long *) &op->key;
 
-			if(key_ptr_log[1] == key_ptr_req[0]){ //Key Found 8 Byte keys
-				key_in_store[I] = 1;
-				spacetime_object_meta *curr_meta = (spacetime_object_meta *) kv_ptr[I]->value;
-//				printf("ops[%d]: (%s) ops-state %s state: %s\n", I, code_to_str((*op)[I].opcode),
-//					   code_to_str((*op)[I].state), code_to_str(curr_meta->state));
-				optik_lock(curr_meta);
-				switch (curr_meta->state) {
-					case VALID_STATE:
-					case INVALID_STATE:
-					case INVALID_WRITE_STATE:
-						break;
-					case WRITE_STATE:
-					case REPLAY_STATE:
-						optik_unlock_decrement_version(curr_meta);
-						return node_of_missing_ack(curr_membership, curr_meta->write_acks[0]);
-//							yellow_printf("Write acks bit array: "BYTE_TO_BINARY_PATTERN" \n",
-//										 BYTE_TO_BINARY(curr_meta->write_acks[0]));
-//                            printf("Node possibly stucked: %d!\n",
-//								   node_of_missing_ack(curr_membership, curr_meta->write_acks[0]));
-						break;
-					default:
-						break;
-				}
-                optik_unlock_decrement_version(curr_meta);
-			}
+		if(key_ptr_log[1] == key_ptr_req[0]){ //Key Found 8 Byte keys
+			spacetime_object_meta *curr_meta = (spacetime_object_meta *) kv_ptr->value;
+			optik_lock(curr_meta);
+			suspected_node = node_of_missing_ack(curr_membership, curr_meta->write_acks[0]);
+//			printf("ops: (%s) ops-state %s state: %s\n", code_to_str(op->opcode),
+//				   code_to_str(op->state), code_to_str(curr_meta->state));
+//			yellow_printf("Write acks bit array: "BYTE_TO_BINARY_PATTERN" \n",
+//						  BYTE_TO_BINARY(curr_meta->write_acks[0]));
+			optik_unlock_decrement_version(curr_meta);
+			return suspected_node;
 		}
-
-		if(key_in_store[I] == 0)  //KVS miss --> We get here if either tag or log key match failed
-			assert(0);
-
 	}
+	assert(0); //key is not in store!
+
 	return -1;
 }
 
 
 //TODO may merge all the batch_* func
 void batch_ops_to_KVS(int op_num, spacetime_op_t **op, int thread_id,
-					  spacetime_group_membership curr_membership,
-					  uint32_t refilled_ops_debug_cnt, uint32_t *ref_ops_dbg_array_cnt)
+					  spacetime_group_membership curr_membership)
 {
 	int I, j;	/* I is batch index */
 #if SPACETIME_DEBUG == 1
@@ -413,30 +375,6 @@ void batch_ops_to_KVS(int op_num, spacetime_op_t **op, int thread_id,
 					///Warning: even if a write is in progress write we may need to update the value of write_buffer_index
 					(*op)[I].state = ST_EMPTY;
 					optik_lock(curr_meta);
-					if(ENABLE_ASSERTIONS){
-						if(unlikely(ref_ops_dbg_array_cnt[I] > M_4)){
-							red_printf("Worker %d is stacked in %d\n", thread_id, I);
-							if(w_stats[thread_id].issued_invs_per_worker != w_stats[thread_id].received_acks_per_worker) {
-								red_printf("\tCoordinator: issued_invs: %d received acks: %d, state: %s\n",
-										   w_stats[thread_id].issued_invs_per_worker,
-										   w_stats[thread_id].received_acks_per_worker, code_to_str(curr_meta->state));
-							}else
-								green_printf("\tCoordinator: issued_invs: %d received acks: %d, state: %s\n",
-											 w_stats[thread_id].issued_invs_per_worker, w_stats[thread_id].received_acks_per_worker, code_to_str(curr_meta->state));
-							for(j = 0; j < MAX_BATCH_OPS_SIZE; j++)
-								if(((uint64_t *) &(*op)[I].key)[0] == ((uint64_t *) &(*op)[j].key)[0])
-									red_printf("\t J: %d, hash(1st 8B):%" PRIu64 ", Op-State: %s\n",
-											   j, ((uint64_t *) &(*op)[I].key)[0], code_to_str((*op)[j].state));
-							ref_ops_dbg_array_cnt[I] = 0;
-						}
-						if(unlikely(refilled_ops_debug_cnt > M_4))
-							yellow_printf("W%d--> Op[%d] | Key Hash:%" PRIu64 "\n\tOp: %s state: %s, version: %d, tie-breaker: %d, waits ack: %s\n",
-										  thread_id, I, ((uint64_t *) &(*op)[I].key)[0],
-										  code_to_str((*op)[I].state), code_to_str(curr_meta->state),
-										  curr_meta->version - 1, curr_meta->tie_breaker_id,
-										  curr_meta->op_buffer_index != ST_OP_BUFFER_INDEX_EMPTY ? "y":"n");
-					}
-
 					switch(curr_meta->state) {
 						case VALID_STATE:
 						case INVALID_STATE:
@@ -821,6 +759,15 @@ void batch_acks_to_KVS(int op_num, spacetime_ack_t **op, spacetime_op_t *read_wr
 		if(key_in_store[I] == 0) //KVS miss --> We get here if either tag or log key match failed
 			assert(0);
 	}
+
+	if (ENABLE_ASSERTIONS)
+		for (I = 0; I < MAX_BATCH_OPS_SIZE; I++)
+			assert(read_write_op[I].opcode == ST_OP_GET ||
+				   read_write_op[I].state == ST_PUT_STALL ||
+				   read_write_op[I].state == ST_PUT_SUCCESS ||
+				   read_write_op[I].state == ST_PUT_COMPLETE ||
+				   read_write_op[I].state == ST_IN_PROGRESS_PUT ||
+				   read_write_op[I].state == ST_IN_PROGRESS_REPLAY);
 }
 
 void batch_vals_to_KVS(int op_num, spacetime_val_t **op, spacetime_op_t *read_write_op, int thread_id)
@@ -1169,10 +1116,12 @@ reconfigure_wrs(struct ibv_send_wr *inv_send_wr, struct ibv_sge *inv_send_sgl,
 				remote_machine_ids[rm_id_index++] = curr_machine_id;
 		}
 	}
-
-	green_printf("Alive Remotes: %d\n", last_g_membership.num_of_alive_remotes);
-	for(i = 0; i < rm_id_index; i++)
-		yellow_printf("Remote_machine[%d] = %d\n", i, remote_machine_ids[i]);
+	if(worker_lid == 0){
+		green_printf("Alive Remotes(%d): {", last_g_membership.num_of_alive_remotes);
+		for(i = 0; i < rm_id_index; i++)
+			yellow_printf(" %d,",remote_machine_ids[i]);
+		green_printf("}\n");
+	}
 
 	for(i = 0; i < MAX_PCIE_BCAST_BATCH * last_g_membership.num_of_alive_remotes; i++){
 		i_mod_remotes = i % group_membership.num_of_alive_remotes;

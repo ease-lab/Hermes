@@ -98,47 +98,30 @@ void *run_worker(void *arg){
 //    reconfigure_wrs(inv_send_wr, val_send_wr, worker_lid);
 
 	int i = 0, invs_polled = 0, acks_polled = 0, vals_polled = 0;
-	uint32_t refilled_ops_debug_cnt[MAX_BATCH_OPS_SIZE] = {0};///TODO only for debug
-	uint32_t trace_iter = 0, refill_ops_debug_cnt = 0;
-   	int node_missing_credits = -1;
+	int node_suspected = -1;
+	int stuck_op_index = -1;
 	uint32_t credits_missing[MACHINE_NUM];
+	uint32_t num_of_iters_serving_op[MAX_BATCH_OPS_SIZE] = {0};
+	uint32_t trace_iter = 0;
 	long long int inv_br_tx = 0, val_br_tx = 0, send_ack_tx = 0, send_crd_tx = 0;
 	uint16_t rolling_inv_index = 0;
 	uint8_t has_outstanding_vals = 0, has_outstanding_vals_from_membership_change = 0;
-	uint16_t k = 0, all_missing_credits;
+	uint16_t threads_suspecting_this_node;
 	/* -----------------------------------------------------
 	--------------Start the main Loop-----------------------
 	---------------------------------------------------------*/
 	while (true) {
 
+		refill_ops(&trace_iter, worker_lid, trace, ops, &stuck_op_index, num_of_iters_serving_op);
 
-		refill_ops(&trace_iter, worker_lid, trace, ops, &refill_ops_debug_cnt, refilled_ops_debug_cnt);
-
-		if(ENABLE_ASSERTIONS)
-			for(i = 0; i < MAX_BATCH_OPS_SIZE; i++)
-				assert(ops[i].opcode == ST_OP_PUT || ops[i].opcode == ST_OP_GET);
-
-		batch_ops_to_KVS(MAX_BATCH_OPS_SIZE, &ops, worker_lid, last_group_membership,
-						 refill_ops_debug_cnt, refilled_ops_debug_cnt);
-
+		batch_ops_to_KVS(MAX_BATCH_OPS_SIZE, &ops, worker_lid, last_group_membership);
 
 		if (WRITE_RATIO > 0) {
 			///~~~~~~~~~~~~~~~~~~~~~~INVS~~~~~~~~~~~~~~~~~~~~~~~~~~~
 			broadcast_invs(ops, inv_send_packet_ops, &inv_push_send_ptr, inv_send_wr,
 						   inv_send_sgl, credits, cb, &inv_br_tx,
-						   worker_lid, last_group_membership, &node_missing_credits,
+						   worker_lid, last_group_membership, &node_suspected,
 						   credits_missing, &rolling_inv_index);
-
-			if(ENABLE_ASSERTIONS)
-				for(i = 0; i < MAX_BATCH_OPS_SIZE; i++)
-					assert(ops[i].opcode == ST_OP_GET              ||
-						   ops[i].state == ST_PUT_STALL            ||
-						   ops[i].state == ST_PUT_SUCCESS          ||
-						   ops[i].state == ST_IN_PROGRESS_PUT      ||
-						   ops[i].state == ST_REPLAY_COMPLETE      ||
-						   ops[i].state == ST_IN_PROGRESS_REPLAY   ||
-						   ops[i].state == ST_PUT_COMPLETE_SEND_VALS);
-
 
 			///Poll for INVs
 			poll_buff_and_post_recvs(incoming_invs, ST_INV_BUFF, &inv_pull_recv_ptr, inv_recv_ops,
@@ -151,9 +134,6 @@ void *run_worker(void *arg){
 				///~~~~~~~~~~~~~~~~~~~~~~ACKS~~~~~~~~~~~~~~~~~~~~~~~~~~~
 				issue_acks(inv_recv_ops, ack_send_packet_ops, &ack_push_send_ptr, &send_ack_tx,
 						   ack_send_wr, ack_send_sgl, credits, cb, worker_lid);
-				if(ENABLE_ASSERTIONS)
-					for(i = 0; i < INV_RECV_OPS_SIZE; i++)
-						assert(inv_recv_ops[i].opcode == ST_EMPTY);
 				invs_polled = 0;
 			}
 
@@ -165,34 +145,20 @@ void *run_worker(void *arg){
 
 				if (acks_polled > 0) {
 					batch_acks_to_KVS(acks_polled, &ack_recv_ops, ops, last_group_membership, worker_lid);
-					if (ENABLE_ASSERTIONS)
-						for (i = 0; i < MAX_BATCH_OPS_SIZE; i++)
-							assert(ops[i].opcode == ST_OP_GET ||
-								   ops[i].state == ST_PUT_STALL ||
-								   ops[i].state == ST_PUT_SUCCESS ||
-								   ops[i].state == ST_PUT_COMPLETE ||
-								   ops[i].state == ST_IN_PROGRESS_PUT ||
-								   ops[i].state == ST_IN_PROGRESS_REPLAY);
 					acks_polled = 0;
 				}
 			}
 
 			if(!DISABLE_VALS_FOR_DEBUGGING) {
 				///~~~~~~~~~~~~~~~~~~~~~~ VALs ~~~~~~~~~~~~~~~~~~~~~~~~~~~
-                if(has_outstanding_vals_from_membership_change > 0){
+				if(has_outstanding_vals_from_membership_change > 0)
 					has_outstanding_vals_from_membership_change = broadcast_vals_on_membership_change(ops, val_send_packet_ops, &val_push_send_ptr,
-																		   val_send_wr, val_send_sgl, credits, cb, crd_recv_wc,
-                                                                           last_group_membership, &node_missing_credits,
-																		   credits_missing, &val_br_tx, crd_recv_wr, worker_lid);
-				}else {
+																									  val_send_wr, val_send_sgl, credits, cb, crd_recv_wc,
+																									  last_group_membership, &val_br_tx, crd_recv_wr, worker_lid);
+				else
 					has_outstanding_vals = broadcast_vals(ack_recv_ops, val_send_packet_ops, &val_push_send_ptr,
 														  val_send_wr, val_send_sgl, credits, cb, crd_recv_wc,
-														  last_group_membership, &node_missing_credits,
-														  credits_missing, &val_br_tx, crd_recv_wr, worker_lid);
-					if (ENABLE_ASSERTIONS && has_outstanding_vals == 0)
-						for (i = 0; i < ACK_RECV_OPS_SIZE; i++)
-							assert(ack_recv_ops[i].opcode == ST_EMPTY);
-				}
+														  last_group_membership, &val_br_tx, crd_recv_wr, worker_lid);
 
 				///Poll for Vals
 				poll_buff_and_post_recvs(incoming_vals, ST_VAL_BUFF, &val_pull_recv_ptr, val_recv_ops,
@@ -201,58 +167,25 @@ void *run_worker(void *arg){
 
 				if (vals_polled > 0) {
 					batch_vals_to_KVS(vals_polled, &val_recv_ops, ops, worker_lid);
-
 					///~~~~~~~~~~~~~~~~~~~~~~CREDITS~~~~~~~~~~~~~~~~~~~~~~~~~~~
 					issue_credits(val_recv_ops, &send_crd_tx, crd_send_wr, credits, cb, worker_lid);
-					if(ENABLE_ASSERTIONS )
-						for(i = 0; i < VAL_RECV_OPS_SIZE; i++)
-							assert(val_recv_ops[i].opcode == ST_EMPTY);
 					vals_polled = 0;
 				}
 			}
 
-			if (unlikely(refill_ops_debug_cnt > M_1)) {
-				node_missing_credits = find_failed_node(MAX_BATCH_OPS_SIZE, &ops, worker_lid, last_group_membership);
-				red_printf("Refill_ops is stuck--> node_suspicions: %d!\n", node_missing_credits);
-				refill_ops_debug_cnt = 0;
-            }
+			if (unlikely(stuck_op_index >= 0))
+				emulating_failre_detection(&stuck_op_index, ops, last_group_membership, num_of_iters_serving_op, worker_lid);
 
-			if (unlikely(node_missing_credits >= 0)) {
-				printf("Node node_suspicions: %d\n", node_missing_credits);
-                if(ENABLE_ASSERTIONS) {
-					assert(node_missing_credits < MACHINE_NUM);
-					assert(node_missing_credits != machine_id);
-					assert(node_is_in_membership(last_group_membership, (uint16_t) node_missing_credits));
-				}
-				red_printf("Worker %d misses credits for node %d\n", worker_lid, node_missing_credits);
-				red_printf("Inv Credits %d, Val credits %d\n",
-						   credits[INV_UD_QP_ID][node_missing_credits],
-						   credits[VAL_UD_QP_ID][node_missing_credits]);
-				node_suspicions[worker_lid][node_missing_credits] = 1;
-				all_missing_credits = 1;
-				for(k = 0; k < WORKERS_PER_MACHINE; k++)
-					if(node_suspicions[k][node_missing_credits] == 0)
-						all_missing_credits = 0;
-
-				if(all_missing_credits == 1)
-					follower_removal((uint16_t) node_missing_credits);
-
-				node_missing_credits = -1;
-			}
 
 			if(group_membership_has_changed(&last_group_membership, worker_lid) == 1){
-                printf("Group membership changed\n");
 				reconfigure_wrs(inv_send_wr, inv_send_sgl, val_send_wr, val_send_sgl,
 								last_group_membership, worker_lid);
 				reset_bcast_send_buffers(inv_send_packet_ops, &inv_push_send_ptr,
 										 val_send_packet_ops, &val_push_send_ptr);
-				printf("WRS_reconfigured\n");
 				complete_writes_and_replays_on_follower_removal(MAX_BATCH_OPS_SIZE, &ops, last_group_membership, worker_lid);
 				has_outstanding_vals_from_membership_change = broadcast_vals_on_membership_change(ops, val_send_packet_ops, &val_push_send_ptr,
 																		   val_send_wr, val_send_sgl, credits, cb, crd_recv_wc,
-                                                                           last_group_membership, &node_missing_credits,
-																		   credits_missing, &val_br_tx, crd_recv_wr, worker_lid);
-
+                                                                           last_group_membership, &val_br_tx, crd_recv_wr, worker_lid);
 			}
 		}
 		w_stats[worker_lid].total_loops++;

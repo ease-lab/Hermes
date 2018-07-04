@@ -248,8 +248,7 @@ struct spacetime_trace_command {
 
 void spacetime_init(int spacetime_id, int num_threads);
 void spacetime_populate_fixed_len(struct spacetime_kv* kv,  int n,  int val_len);
-void batch_ops_to_KVS(int op_num, spacetime_op_t **ops, int thread_id, spacetime_group_membership curr_membership,
-                      uint32_t refilled_ops_debug_cnt, uint32_t *ref_ops_dbg_array_cnt);
+void batch_ops_to_KVS(int op_num, spacetime_op_t **ops, int thread_id, spacetime_group_membership curr_membership);
 void batch_invs_to_KVS(int op_num, spacetime_inv_t **op, spacetime_op_t *read_write_op, int thread_id);
 void batch_acks_to_KVS(int op_num, spacetime_ack_t **op, spacetime_op_t *read_write_op,
                        spacetime_group_membership curr_membership, int thread_id);
@@ -263,7 +262,7 @@ void reconfigure_wrs(struct ibv_send_wr *inv_send_wr, struct ibv_sge *inv_send_s
                      struct ibv_send_wr *val_send_wr, struct ibv_sge *val_send_sgl,
                      spacetime_group_membership last_g_membership, uint16_t worker_lid);
 
-int find_failed_node(int op_num, spacetime_op_t **op, int thread_id,
+int find_failed_node(spacetime_op_t *op, int thread_id,
                      spacetime_group_membership curr_membership);
 
 static inline void

@@ -18,7 +18,7 @@ poll_cq_for_credits(struct ibv_cq *credit_recv_cq, struct ibv_wc *credit_wc,
 					uint8_t credits[][MACHINE_NUM], uint16_t worker_lid);
 
 static inline uint8_t
-node_is_in_membership(spacetime_group_membership last_group_membership, uint16_t node_id);
+node_is_in_membership(spacetime_group_membership last_group_membership, int node_id);
 /* ---------------------------------------------------------------------------
 ------------------------------------GENERIC-----------------------------------
 ---------------------------------------------------------------------------*/
@@ -338,7 +338,8 @@ batch_invs_2_NIC(struct ibv_send_wr *send_inv_wr, struct ibv_sge *send_inv_sgl,
 			for(k = 0; k < ((spacetime_inv_packet_t *) send_inv_sgl[sgl_index].addr)->req_num; k ++){
 				assert(((spacetime_inv_packet_t *) send_inv_sgl[sgl_index].addr)->reqs[k].opcode == ST_OP_INV);
 				assert(((spacetime_inv_packet_t *) send_inv_sgl[sgl_index].addr)->reqs[k].sender == machine_id);
-				assert(((spacetime_inv_packet_t *) send_inv_sgl[sgl_index].addr)->reqs[k].tie_breaker_id == machine_id);
+				assert(group_membership.num_of_alive_remotes != REMOTE_MACHINES ||
+					   ((spacetime_inv_packet_t *) send_inv_sgl[sgl_index].addr)->reqs[k].tie_breaker_id == machine_id);
 			}
 //			green_printf("Ops[%d]--> hash(1st 8B):%" PRIu64 "\n",
 //						 j, ((uint64_t *) &((spacetime_inv_packet_t*) send_inv_sgl[sgl_index].addr)->reqs[0].key)[1]);
@@ -450,6 +451,17 @@ broadcast_invs(spacetime_op_t *ops, spacetime_inv_packet_t *inv_send_packet_ops,
 		for(j = 0; j < INV_MAX_REQ_COALESCE; j++)
 			inv_send_packet_ops[*inv_push_ptr].reqs[j].opcode = ST_EMPTY;
 	}
+
+	if(ENABLE_ASSERTIONS)
+		for(i = 0; i < MAX_BATCH_OPS_SIZE; i++)
+			assert(ops[i].opcode == ST_OP_GET              ||
+				   ops[i].state == ST_PUT_STALL            ||
+				   ops[i].state == ST_PUT_SUCCESS          ||
+				   ops[i].state == ST_IN_PROGRESS_PUT      ||
+				   ops[i].state == ST_REPLAY_COMPLETE      ||
+				   ops[i].state == ST_IN_PROGRESS_REPLAY   ||
+				   ops[i].state == ST_PUT_COMPLETE_SEND_VALS);
+
 }
 
 /* ---------------------------------------------------------------------------
@@ -634,6 +646,10 @@ issue_acks(spacetime_inv_t *inv_recv_ops, spacetime_ack_packet_t* ack_send_packe
 		for(j = 0; j < ACK_MAX_REQ_COALESCE; j++)
 			ack_send_packet_ops[*ack_push_ptr].reqs[j].opcode = ST_EMPTY;
 	}
+
+	if(ENABLE_ASSERTIONS)
+		for(i = 0; i < INV_RECV_OPS_SIZE; i++)
+			assert(inv_recv_ops[i].opcode == ST_EMPTY);
 }
 
 
@@ -699,7 +715,8 @@ static inline bool
 check_val_credits(uint8_t credits[][MACHINE_NUM], struct hrd_ctrl_blk *cb,
 				  struct ibv_wc *credit_wc, struct ibv_recv_wr* credit_recv_wr,
                   spacetime_group_membership last_g_membership,
-				  int* node_missing_credits, uint32_t *credits_missing,  uint16_t worker_lid)
+//				  int* node_missing_credits, uint32_t *credits_missing,
+				  uint16_t worker_lid)
 {
 	uint16_t poll_for_credits = 0, j;
 	for (j = 0; j < MACHINE_NUM; j++) {
@@ -708,8 +725,9 @@ check_val_credits(uint8_t credits[][MACHINE_NUM], struct hrd_ctrl_blk *cb,
 		if (credits[VAL_UD_QP_ID][j] == 0) {
 			poll_for_credits = 1;
 			break;
-		}else
-			credits_missing[j] = 0;
+		}
+// else
+//			credits_missing[j] = 0;
 	}
 
 	if (poll_for_credits == 1) {
@@ -723,8 +741,9 @@ check_val_credits(uint8_t credits[][MACHINE_NUM], struct hrd_ctrl_blk *cb,
 //				if(unlikely(credits_missing[j] > M_1))
 //					*node_missing_credits = j;
 				return false;
-			}else
-				credits_missing[j] = 0;
+			}
+//			else
+//				credits_missing[j] = 0;
 		}
 	}
 
@@ -821,7 +840,6 @@ broadcast_vals(spacetime_ack_t *ack_ops, spacetime_val_packet_t *val_send_packet
 			   struct ibv_send_wr *send_val_wr, struct ibv_sge *send_val_sgl,
 			   uint8_t credits[][MACHINE_NUM], struct hrd_ctrl_blk *cb,
 			   struct ibv_wc *credit_wc, spacetime_group_membership last_g_membership,
-			   int* node_missing_credits, uint32_t *credits_missing,
 			   long long *br_tx, struct ibv_recv_wr *credit_recv_wr, uint16_t worker_lid)
 {
 	uint16_t i = 0, br_i = 0, j, total_vals_in_batch = 0;
@@ -842,8 +860,7 @@ broadcast_vals(spacetime_ack_t *ack_ops, spacetime_val_packet_t *val_send_packet
 			assert(ack_ops[i].opcode == ST_LAST_ACK_SUCCESS);
 
 		// if not enough credits for a Broadcast
-		if (!check_val_credits(credits, cb, credit_wc, credit_recv_wr, last_g_membership,
-							   node_missing_credits, credits_missing, worker_lid)){
+		if (!check_val_credits(credits, cb, credit_wc, credit_recv_wr, last_g_membership, worker_lid)){
 			has_outstanding_vals = 1;
 			break;
 		}
@@ -896,6 +913,11 @@ broadcast_vals(spacetime_ack_t *ack_ops, spacetime_val_packet_t *val_send_packet
 		for(j = 0; j < VAL_MAX_REQ_COALESCE; j++)
 			val_send_packet_ops[*val_push_ptr].reqs[j].opcode = ST_EMPTY;
 	}
+
+	if (ENABLE_ASSERTIONS && has_outstanding_vals == 0)
+		for (i = 0; i < ACK_RECV_OPS_SIZE; i++)
+			assert(ack_ops[i].opcode == ST_EMPTY);
+
 	return has_outstanding_vals;
 }
 
@@ -906,7 +928,6 @@ broadcast_vals_on_membership_change
 		 int* val_push_ptr, struct ibv_send_wr* send_val_wr, struct ibv_sge* send_val_sgl,
 		 uint8_t credits[][MACHINE_NUM], struct hrd_ctrl_blk* cb,
 		 struct ibv_wc* credit_wc, spacetime_group_membership last_g_membership,
-		 int* node_missing_credits, uint32_t* credits_missing,
 		 long long* br_tx, struct ibv_recv_wr* credit_recv_wr, uint16_t worker_lid)
 {
 	uint16_t i = 0, br_i = 0, j, total_vals_in_batch = 0;
@@ -922,8 +943,7 @@ broadcast_vals_on_membership_change
 			continue;
 
 		// if not enough credits for a Broadcast
-		if (!check_val_credits(credits, cb, credit_wc, credit_recv_wr, last_g_membership,
-							   node_missing_credits, credits_missing, worker_lid)){
+		if (!check_val_credits(credits, cb, credit_wc, credit_recv_wr, last_g_membership, worker_lid)){
 			has_outstanding_vals = 1;
 			break;
 		}
@@ -1102,14 +1122,19 @@ issue_credits(spacetime_val_t *val_recv_ops, long long int* send_crd_tx,
 
 	if (send_crd_packets > 0)
 		batch_crds_2_NIC(send_crd_wr, cb, send_crd_packets, total_credits_to_send, worker_lid);
+
+	if(ENABLE_ASSERTIONS )
+		for(i = 0; i < VAL_RECV_OPS_SIZE; i++)
+			assert(val_recv_ops[i].opcode == ST_EMPTY);
 }
 
 /* ---------------------------------------------------------------------------
 ----------------------------------- MEMBERSHIP -------------------------------
 ---------------------------------------------------------------------------*/
 static inline void
-follower_removal(uint16_t failed_node_id)
+follower_removal(int failed_node_id)
 {
+	red_printf("Failed node %d!\n", failed_node_id);
     if(ENABLE_ASSERTIONS == 1){
 		assert(failed_node_id != machine_id);
 		assert(failed_node_id < MACHINE_NUM);
@@ -1117,12 +1142,12 @@ follower_removal(uint16_t failed_node_id)
 	optik_lock_membership(&group_membership.optik_lock);
     group_membership.write_ack_init  [failed_node_id / 8] |= (uint8_t) 1 << failed_node_id % 8;
 	group_membership.group_membership[failed_node_id / 8] &= ~((uint8_t) 1 << failed_node_id % 8);
+	group_membership.num_of_alive_remotes--;
 //	green_printf("Group mem. bit array: "BYTE_TO_BINARY_PATTERN" \n",
 //					   BYTE_TO_BINARY(group_membership.group_membership[0]));
-    group_membership.num_of_alive_remotes--;
 	optik_unlock_membership(&group_membership.optik_lock);
 
-	yellow_printf("Node: %d, Removed follower %d!\n", machine_id, machine_id + 1);
+	red_printf("Group membership changed --> Removed follower %d!\n", failed_node_id);
 
 	if(group_membership.num_of_alive_remotes < (MACHINE_NUM / 2)){
 		red_printf("Majority is down!\n");
@@ -1157,7 +1182,7 @@ group_membership_has_changed(spacetime_group_membership* last_group_membership,
 }
 
 static inline uint8_t
-node_is_in_membership(spacetime_group_membership last_group_membership, uint16_t node_id)
+node_is_in_membership(spacetime_group_membership last_group_membership, int node_id)
 {
 	if((last_group_membership.group_membership[node_id / 8] >> (node_id % 8)) % 2 == 1)
 		return 1;
@@ -1170,27 +1195,14 @@ node_is_in_membership(spacetime_group_membership last_group_membership, uint16_t
 static inline void
 refill_ops(uint32_t* trace_iter, uint16_t worker_lid,
 		   struct spacetime_trace_command *trace, spacetime_op_t *ops,
-		   uint32_t* refill_ops_debug_cnt, uint32_t* refilled_per_ops_debug_cnt)
+		   int* stuck_op_index, uint32_t* refilled_per_ops_debug_cnt)
 {
 	static uint8_t first_iter_has_passed[WORKERS_PER_MACHINE] = { 0 };
 	int i = 0, refilled_ops = 0;
 	for(i = 0; i < MAX_BATCH_OPS_SIZE; i++) {
 		if(ENABLE_ASSERTIONS){
 			if(first_iter_has_passed[worker_lid] == 1){
-                if(!(ops[i].opcode == ST_OP_PUT || ops[i].opcode == ST_OP_GET))
-					printf("Code: %s\n",code_to_str(ops[i].opcode));
 				assert(ops[i].opcode == ST_OP_PUT || ops[i].opcode == ST_OP_GET);
-				if(!(ops[i].state == ST_PUT_COMPLETE ||
-					   ops[i].state == ST_GET_COMPLETE ||
-					   ops[i].state == ST_PUT_SUCCESS ||
-					   ops[i].state == ST_IN_PROGRESS_PUT ||
-					   ops[i].state == ST_REPLAY_COMPLETE ||
-					   ops[i].state == ST_REPLAY_SUCCESS ||
-					   ops[i].state == ST_IN_PROGRESS_REPLAY ||
-					   ops[i].state == ST_PUT_COMPLETE_SEND_VALS ||
-					   ops[i].state == ST_PUT_STALL ||
-					   ops[i].state == ST_GET_STALL))
-					printf("State: %s\n",code_to_str(ops[i].state));
 				assert(ops[i].state == ST_PUT_COMPLETE ||
 					   ops[i].state == ST_GET_COMPLETE ||
 					   ops[i].state == ST_PUT_SUCCESS ||
@@ -1231,8 +1243,13 @@ refill_ops(uint32_t* trace_iter, uint16_t worker_lid,
 				red_printf("W%d--> Op: %s, hash(1st 8B):%" PRIu64 "\n",
 						   worker_lid, code_to_str(ops[i].opcode), ((uint64_t *) &ops[i].key)[0]);
 			HRD_MOD_ADD(*trace_iter, TRACE_SIZE);
-		}else
+		}else if(ops[i].state == ST_IN_PROGRESS_PUT || ops[i].state == ST_IN_PROGRESS_REPLAY){
 			refilled_per_ops_debug_cnt[i]++;
+            if(unlikely(refilled_per_ops_debug_cnt[i] > M_1)){
+				*stuck_op_index = i;
+                refilled_per_ops_debug_cnt[i] = 0;
+			}
+		}
 	}
 
 	if(refilled_ops == 0)
@@ -1241,10 +1258,39 @@ refill_ops(uint32_t* trace_iter, uint16_t worker_lid,
 	if(first_iter_has_passed[worker_lid] == 0)
 		first_iter_has_passed[worker_lid] = 1;
 
-	if(refilled_ops == 0)
-		(*refill_ops_debug_cnt)++;
-	else
-		*refill_ops_debug_cnt = 0;
+	if(ENABLE_ASSERTIONS)
+		for(i = 0; i < MAX_BATCH_OPS_SIZE; i++)
+			assert(ops[i].opcode == ST_OP_PUT || ops[i].opcode == ST_OP_GET);
 }
+static inline void
+emulating_failre_detection(int* stuck_op_index, spacetime_op_t* ops, spacetime_group_membership last_group_membership,
+						   uint32_t* num_of_iters_serving_op, uint16_t worker_lid){
+    int node_suspected, i;
+	node_suspected = find_failed_node(&ops[*stuck_op_index], worker_lid, last_group_membership);
+	yellow_printf("W[%d] Refill_ops is stuck--> node suspicion: %d!\n", worker_lid, node_suspected);
+	*stuck_op_index = -1;
+	if (node_suspected >= 0) {
+		if(ENABLE_ASSERTIONS) {
+			assert(node_suspected < MACHINE_NUM);
+			assert(node_suspected != machine_id);
+			assert(node_is_in_membership(last_group_membership, node_suspected));
+		}
+		node_suspicions[worker_lid][node_suspected] = 1;
+		//uncomment this if you want to increase certenty before removing a node
+//				threads_suspecting_this_node = 0;
+//				for(i = 0; i < WORKERS_PER_MACHINE; i++){
+//					if(node_suspicions[i][node_suspected] == 0)
+//						threads_suspecting_this_node++;
+//				}
+//				if(worker_lid == 0 && (threads_suspecting_this_node == WORKERS_PER_MACHINE ||
+//									  threads_suspecting_this_node > 7)){
+		if(worker_lid == 0){
+			yellow_printf("W[%d] Refill_ops is stuck--> node suspicion: %d!\n", worker_lid, node_suspected);
+			follower_removal(node_suspected);
+		}
 
+		for(i = 0; i < MAX_BATCH_OPS_SIZE; i++)
+			num_of_iters_serving_op[i] = 0;
+	}
+}
 #endif //HERMES_INLINE_UTIL_H
