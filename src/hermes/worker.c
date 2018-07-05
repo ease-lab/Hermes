@@ -106,7 +106,6 @@ void *run_worker(void *arg){
 	long long int inv_br_tx = 0, val_br_tx = 0, send_ack_tx = 0, send_crd_tx = 0;
 	uint16_t rolling_inv_index = 0;
 	uint8_t has_outstanding_vals = 0, has_outstanding_vals_from_membership_change = 0;
-	uint16_t threads_suspecting_this_node;
 	/* -----------------------------------------------------
 	--------------Start the main Loop-----------------------
 	---------------------------------------------------------*/

@@ -1,5 +1,6 @@
 #include "util.h"
 
+
 void *print_stats(void* no_arg){
     uint16_t i, print_count = 0;
     long long all_worker_xput = 0;
@@ -20,14 +21,7 @@ void *print_stats(void* no_arg){
         all_worker_xput = 0;
         print_count++;
         if (EXIT_ON_PRINT == 1 && print_count == PRINT_NUM) {
-          if (MEASURE_LATENCY && machine_id == 0) print_latency_stats();
-//            for(i = 0; i < WORKERS_PER_MACHINE; i++)
-//                if(w_stats[i].received_invs_per_worker != w_stats[i].issued_acks_per_worker)
-//                    red_printf("\tFollower[%d]:    received invs: %d issued acks: %d\n",
-//                               i, w_stats[i].received_invs_per_worker,w_stats[i].issued_acks_per_worker);
-//                else
-//                    green_printf("\tFollower[%d]:    received invs: %d issued acks: %d\n",
-//                               i, w_stats[i].received_invs_per_worker,w_stats[i].issued_acks_per_worker);
+          if (MEASURE_LATENCY && machine_id == 0) dump_latency_stats();
             printf("---------------------------------------\n");
             printf("------------RUN TERMINATED-------------\n");
             printf("---------------------------------------\n");
@@ -70,14 +64,13 @@ void *print_stats(void* no_arg){
         }
         green_printf("SYSTEM MIOPS: %.2f \n", total_throughput);
         printf("---------------------------------------\n");
-        ///if(ENABLE_CACHE_STATS == 1) print_cache_stats(start, machine_id);
         if(DUMP_STATS_2_FILE == 1)
             dump_stats_2_file(&all_stats);
 
     }
 }
 
-void init_stats(void)
+void init_stats(void) //TODO this is not required (global vars are always initialized to zero)
 {
     int i;
     for(i = 0; i < WORKERS_PER_MACHINE; i++){
@@ -109,3 +102,40 @@ void init_stats(void)
         w_stats[i].received_packet_crds_per_worker = 0;
     }
 }
+
+//assuming microsecond latency
+void dump_latency_stats(void){
+    FILE *latency_stats_fd;
+    int i = 0;
+    char filename[128];
+    char* path = "../../results/latency";
+
+    sprintf(filename, "%s/latency_stats_v_%d_m_%d_w_%d_b_%d_c_%d_t_%d_ci_%d_ca_%d_cv_%d.csv", path,
+            (int) (ST_VALUE_SIZE + 2),
+            MACHINE_NUM,
+            WRITE_RATIO,
+            MAX_BATCH_OPS_SIZE,
+            CREDITS_PER_REMOTE_WORKER,
+            WORKERS_PER_MACHINE,
+            INV_MAX_REQ_COALESCE,
+            ACK_MAX_REQ_COALESCE,
+            VAL_MAX_REQ_COALESCE);
+
+    latency_stats_fd = fopen(filename, "w");
+    fprintf(latency_stats_fd, "#---------------- Read Reqs --------------\n");
+    for(i = 0; i < LATENCY_BUCKETS; ++i)
+        fprintf(latency_stats_fd, "reads: %d, %d\n",i * LATENCY_PRECISION, latency_count.read_reqs[i]);
+    fprintf(latency_stats_fd, "reads: -1, %d\n", latency_count.read_reqs[LATENCY_BUCKETS]); //print outliers
+    fprintf(latency_stats_fd, "reads-hl: %d\n", latency_count.max_read_latency); //print max read latency
+
+    fprintf(latency_stats_fd, "#---------------- Write Reqs ---------------\n");
+    for(i = 0; i < LATENCY_BUCKETS; ++i)
+        fprintf(latency_stats_fd, "writes: %d, %d\n",i * LATENCY_PRECISION, latency_count.write_reqs[i]);
+    fprintf(latency_stats_fd, "writes: -1, %d\n", latency_count.write_reqs[LATENCY_BUCKETS]); //print outliers
+    fprintf(latency_stats_fd, "writes-hl: %d\n", latency_count.max_write_latency); //print max write latency
+
+    fclose(latency_stats_fd);
+
+    printf("Latency stats saved at %s\n", filename);
+}
+

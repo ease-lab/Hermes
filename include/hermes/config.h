@@ -6,7 +6,7 @@
 #define SPACETIME_CONFIG_H
 #include "hrd.h"
 
-#define ENABLE_ASSERTIONS 1
+#define ENABLE_ASSERTIONS 0
 #define MACHINE_NUM 3
 #define REMOTE_MACHINES (MACHINE_NUM - 1)
 #define GROUP_MEMBERSHIP_ARRAY_SIZE  CEILING(MACHINE_NUM, 8) //assuming uint8_t
@@ -15,9 +15,19 @@
 #define ENABLE_HYPERTHREADING 1
 #define KV_SOCKET 0
 #define START_SPAWNING_THREADS_FROM_SOCKET 0
-#define WRITE_RATIO 10
+#define WRITE_RATIO 1000
 #define MAX_BATCH_OPS_SIZE 50 //30 //5
 #define BATCH_POST_RECVS_TO_NIC 1
+
+//LATENCY
+#define MEASURE_LATENCY 1
+#define MAX_LATENCY 400 //in us
+#define LATENCY_BUCKETS 200
+#define LATENCY_PRECISION (MAX_LATENCY / LATENCY_BUCKETS) //latency granularity in us
+
+//FAILURE DETECTION
+#define ITER_STUCK_FOR_SUSPICION K_256
+
 //DEBUG
 #define DISABLE_VALS_FOR_DEBUGGING 0
 #define KEY_NUM 0 //use 0 to disable
@@ -27,17 +37,16 @@
 #define TRACE_SIZE K_128
 #define USE_A_SINGLE_KEY 0
 
-
 /*-------------------------------------------------
 ----------------- REQ COALESCING -------------------
 --------------------------------------------------*/
 
-#define MAX_REQ_COALESCE 1
+#define MAX_REQ_COALESCE 10
 #define INV_MAX_REQ_COALESCE MAX_REQ_COALESCE
-#define ACK_MAX_REQ_COALESCE MAX_REQ_COALESCE
-#define VAL_MAX_REQ_COALESCE MAX_REQ_COALESCE
-//#define ACK_MAX_REQ_COALESCE (3 * MAX_REQ_COALESCE)
-//#define VAL_MAX_REQ_COALESCE (3 * MAX_REQ_COALESCE)
+//#define ACK_MAX_REQ_COALESCE MAX_REQ_COALESCE
+//#define VAL_MAX_REQ_COALESCE MAX_REQ_COALESCE
+#define ACK_MAX_REQ_COALESCE (3 * MAX_REQ_COALESCE)
+#define VAL_MAX_REQ_COALESCE (3 * MAX_REQ_COALESCE)
 
 /*-------------------------------------------------
 -----------------FLOW CONTROL---------------------
@@ -139,7 +148,7 @@
 #define ENABLE_CREDIT_PRINTS 0
 #define ENABLE_POST_RECV_PRINTS 0
 #define ENABLE_BATCH_OP_PRINTS 0
-#define ENABLE_INV_PRINTS 1
+#define ENABLE_INV_PRINTS 0
 #define ENABLE_ACK_PRINTS 0
 #define ENABLE_VAL_PRINTS 0
 #define ENABLE_CRD_PRINTS 0
@@ -147,7 +156,6 @@
 //Stats
 #define EXIT_ON_PRINT 1
 #define PRINT_NUM 3
-#define MEASURE_LATENCY 0
 #define DUMP_STATS_2_FILE 0
 #define ENABLE_STAT_COUNTING 1
 
@@ -175,6 +183,15 @@ struct remote_qp {
     // no padding needed- false sharing is not an issue, only fragmentation
 };
 
+struct latency_counters{
+    uint32_t read_reqs[LATENCY_BUCKETS + 1];
+    uint32_t write_reqs[LATENCY_BUCKETS + 1];
+    int max_read_latency;
+    int max_write_latency;
+    long long total_measurements;
+};
+
+extern struct latency_counters latency_count;
 extern volatile struct remote_qp remote_worker_qps[WORKER_NUM][TOTAL_WORKER_UD_QPs];
 extern volatile uint8_t node_suspicions[WORKERS_PER_MACHINE][MACHINE_NUM];
 extern volatile char worker_needed_ah_ready;

@@ -10,34 +10,35 @@ Parser 4 aggregated over time results
 class LatencyParser:
     def __init__(self):
         self.latency_values = []
-        self.hot_reads = []
-        self.hot_writes = []
-        self.local_reqs = []
-        self.remote_reqs = []
+        self.reads = []
+        self.max_read_latency = 0
+        self.max_write_latency = 0
+        self.writes = []
         self.all_reqs = []
         self.parseInputStats()
         self.printAllStats()
        # self.printStats(all_reqs)
 
-    def printStats(self, array):
+    def printStats(self, array, max_latency):
         self.avgLatency(array)
         self.percentileLatency(array, 50)
         #self.percentileLatency(array, 90)
         self.percentileLatency(array, 95)
         self.percentileLatency(array, 99)
+        self.percentileLatency(array, 99.9)
+        self.percentileLatency(array, 99.99)
+        self.percentileLatency(array, 99.999)
+        self.percentileLatency(array, 99.9999)
         self.percentileLatency(array, 100)
+        print "Max Latency: ", max_latency, "\n"
 
     def printAllStats(self):
-        print "~~~~~~ Hot Write Stats ~~~~~~~"
-        self.printStats(self.hot_writes)
-        print "\n~~~~~~ Hot Read Stats ~~~~~~~~"
-        self.printStats(self.hot_reads)
-        print "\n~~~~~~ Remote Req Stats ~~~~~~"
-        self.printStats(self.remote_reqs)
-        print "\n~~~~~~ Local Req Stats ~~~~~~~"
-        self.printStats(self.local_reqs)
+        print "~~~~~~ Write Stats ~~~~~~~"
+        self.printStats(self.writes, self.max_write_latency)
+        print "\n~~~~~~ Read Stats ~~~~~~~~"
+        self.printStats(self.reads, self.max_read_latency)
         print "\n~~~~~~ Overall Stats ~~~~~~~~~"
-        self.printStats(self.all_reqs)
+        self.printStats(self.all_reqs, max(self.max_read_latency, self.max_write_latency))
 
 
     def avgLatency(self, array):
@@ -74,34 +75,28 @@ class LatencyParser:
 
     def parseInputStats(self):
         lr_lines = 0
-        hr_lines = 0
-        hw_lines = 0
         for line in sys.stdin:                  # input from standard input
             if line[0] == '#':
                 continue
             (command, words) = line.strip().split(":",1)
             command = command.strip()
-            if command == 'rr':
+            if command == 'reads':
                 words = words.strip().split(",")
                 #if int(words[0].strip()) != -1:
                 self.latency_values.append(int(words[0].strip()))
-                self.remote_reqs.append(int(words[1].strip()))
+                self.reads.append(int(words[1].strip()))
                 self.all_reqs.append(int(words[1].strip()))
-            elif command == 'lr':
+            elif command == 'writes':
                 words = words.strip().split(",")
-                self.local_reqs.append(int(words[1].strip()))
-                self.all_reqs[lr_lines] = self.all_reqs[lr_lines] + self.local_reqs[-1]
+                self.writes.append(int(words[1].strip()))
+                self.all_reqs[lr_lines] = self.all_reqs[lr_lines] + self.writes[-1]
                 lr_lines = lr_lines + 1
-            elif command == 'hr':
+            elif command == 'reads-hl':
                 words = words.strip().split(",")
-                self.hot_reads.append(int(words[1].strip()))
-                self.all_reqs[hr_lines] = self.all_reqs[hr_lines] + self.hot_reads[-1]
-                hr_lines = hr_lines + 1
-            elif command == 'hw':
+                self.max_read_latency = int(words[0].strip())
+            elif command == 'writes-hl':
                 words = words.strip().split(",")
-                self.hot_writes.append(int(words[1].strip()))
-                self.all_reqs[hw_lines] = self.all_reqs[hw_lines] + self.hot_writes[-1]
-                hw_lines = hw_lines + 1
+                self.max_write_latency = int(words[0].strip())
 
 if __name__ == '__main__':
     LatencyParser()

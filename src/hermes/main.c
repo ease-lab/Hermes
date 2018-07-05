@@ -12,9 +12,10 @@
 
 //Global vars
 volatile char worker_needed_ah_ready;
+struct latency_counters latency_count;
 volatile struct worker_stats w_stats[WORKERS_PER_MACHINE];
+volatile uint8_t node_suspicions[WORKERS_PER_MACHINE][MACHINE_NUM];
 volatile struct remote_qp remote_worker_qps[WORKER_NUM][TOTAL_WORKER_UD_QPs];
-volatile uint8_t node_suspicions[WORKERS_PER_MACHINE][MACHINE_NUM] = {0};
 
 
 int main(int argc, char *argv[]){
