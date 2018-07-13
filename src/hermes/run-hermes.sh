@@ -31,7 +31,7 @@ export HRD_REGISTRY_IP="129.215.165.7" # I.E. SANANTONIO
 export MLX5_SINGLE_THREADED=1
 export MLX5_SCATTER_TO_CQE=1
 
-#sudo killall memcached
+sudo killall memcached
 sudo killall spacetime
 # A function to echo in blue color
 function blue() {

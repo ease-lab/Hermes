@@ -4,11 +4,14 @@ HOSTS=( "houston" "sanantonio" "austin" )
 #HOSTS=( "austin" "houston" "sanantonio" "indianapolis" "philly" )
 #HOSTS=( "austin" "houston" "sanantonio" "indianapolis" "philly" "baltimore" "chicago" "atlanta" "detroit")
 LOCAL_HOST=`hostname`
-EXECUTABLES=( "hermes") #"run-hermes.sh" )
+#EXECUTABLES=( "hermes" "run-hermes.sh" )
+EXECUTABLES=( "hermes" )
+MAKE_FOLDER="/home/user/hermes/src"
 HOME_FOLDER="/home/user/hermes/src/hermes"
 DEST_FOLDER="/home/user/hermes-exec/src/hermes"
 
-cd $HOME_FOLDER
+cd $MAKE_FOLDER
+make clean
 make
 cd -
 

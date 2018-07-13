@@ -417,7 +417,8 @@ void batch_ops_to_KVS(int op_num, spacetime_op_t **op, int thread_id,
 		}
 
 		if(key_in_store[I] == 0)  //KVS miss --> We get here if either tag or log key match failed
-			assert(0);
+			(*op)[I].state = ST_MISS;
+//			assert(0);
 
 	}
 }

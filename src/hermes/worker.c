@@ -94,10 +94,8 @@ void *run_worker(void *arg){
 	setup_credits(credits, cb, crd_send_wr, &send_crd_sgl, crd_recv_wr, &recv_crd_sgl);
     setup_send_WRs(inv_send_wr, inv_send_sgl, ack_send_wr, ack_send_sgl, val_send_wr,
 				   val_send_sgl, inv_mr, ack_mr, val_mr, worker_lid);
-	//TODO only for testing
-//    reconfigure_wrs(inv_send_wr, val_send_wr, worker_lid);
 
-	int i = 0, invs_polled = 0, acks_polled = 0, vals_polled = 0;
+	int invs_polled = 0, acks_polled = 0, vals_polled = 0;
 	int node_suspected = -1;
 	int stuck_op_index = -1;
 	uint32_t credits_missing[MACHINE_NUM];
@@ -106,9 +104,10 @@ void *run_worker(void *arg){
 	long long int inv_br_tx = 0, val_br_tx = 0, send_ack_tx = 0, send_crd_tx = 0;
 	uint16_t rolling_inv_index = 0;
 	uint8_t has_outstanding_vals = 0, has_outstanding_vals_from_membership_change = 0;
+
 	/* -----------------------------------------------------
-	--------------Start the main Loop-----------------------
-	---------------------------------------------------------*/
+       ------------------------Main Loop--------------------
+	   ----------------------------------------------------- */
 	while (true) {
 
 		refill_ops(&trace_iter, worker_lid, trace, ops, &stuck_op_index, num_of_iters_serving_op);

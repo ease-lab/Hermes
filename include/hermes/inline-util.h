@@ -280,6 +280,8 @@ forge_bcast_inv_wrs(spacetime_op_t* op, spacetime_inv_packet_t* inv_send_op,
 	inv_send_op->reqs[inv_send_op->req_num].sender = (uint8_t) machine_id;
 	inv_send_op->req_num++;
 
+	send_inv_sgl[br_i].length = (sizeof(spacetime_inv_packet_t) - (INV_MAX_REQ_COALESCE - inv_send_op->req_num));
+
 	w_stats[worker_lid].issued_invs_per_worker++;
 
 	if(inv_send_op->req_num == 1) {
@@ -331,7 +333,6 @@ batch_invs_2_NIC(struct ibv_send_wr *send_inv_wr, struct ibv_sge *send_inv_sgl,
 			assert(send_inv_wr[j].next == &send_inv_wr[j + 1]);
 			assert(DISABLE_INV_INLINING || send_inv_wr[j].opcode == IBV_SEND_INLINE | IBV_SEND_SIGNALED);
 			assert(send_inv_wr[j].sg_list == &send_inv_sgl[sgl_index]);
-			assert(send_inv_sgl[sgl_index].length == sizeof(spacetime_inv_packet_t));
 			assert(((spacetime_inv_packet_t *) send_inv_sgl[sgl_index].addr)->req_num > 0);
 			for(k = 0; k < ((spacetime_inv_packet_t *) send_inv_sgl[sgl_index].addr)->req_num; k ++){
 				assert(((spacetime_inv_packet_t *) send_inv_sgl[sgl_index].addr)->reqs[k].opcode == ST_OP_INV);
@@ -468,7 +469,7 @@ broadcast_invs(spacetime_op_t *ops, spacetime_inv_packet_t *inv_send_packet_ops,
 ---------------------------------------------------------------------------*/
 
 static inline void
-forge_ack_wr(spacetime_inv_t* inv_recv_op, spacetime_ack_packet_t* ack_send_ops,
+forge_ack_wr(spacetime_inv_t* inv_recv_op, spacetime_ack_packet_t* ack_send_op,
 			 struct ibv_send_wr* send_ack_wr, struct ibv_sge* send_ack_sgl,
 			 struct hrd_ctrl_blk* cb, long long* send_ack_tx,
 			 uint16_t send_ack_packets, uint16_t worker_lid)
@@ -478,17 +479,20 @@ forge_ack_wr(spacetime_inv_t* inv_recv_op, spacetime_ack_packet_t* ack_send_ops,
 	if(ENABLE_ASSERTIONS)
 		assert(REMOTE_MACHINES != 1 || inv_recv_op->sender == REMOTE_MACHINES - machine_id);
 
-	memcpy(&ack_send_ops->reqs[ack_send_ops->req_num], inv_recv_op, sizeof(spacetime_ack_t));
-	ack_send_ops->reqs[ack_send_ops->req_num].opcode = ST_OP_ACK;
-	ack_send_ops->reqs[ack_send_ops->req_num].sender = (uint8_t) machine_id;
-	ack_send_ops->req_num++;
+	memcpy(&ack_send_op->reqs[ack_send_op->req_num], inv_recv_op, sizeof(spacetime_ack_t));
+	ack_send_op->reqs[ack_send_op->req_num].opcode = ST_OP_ACK;
+	ack_send_op->reqs[ack_send_op->req_num].sender = (uint8_t) machine_id;
+	ack_send_op->req_num++;
+
 	if(ENABLE_ASSERTIONS)
-		assert(ack_send_ops->req_num <= ACK_MAX_REQ_COALESCE);
+		assert(ack_send_op->req_num <= ACK_MAX_REQ_COALESCE);
+
+	send_ack_sgl[send_ack_packets].length = (sizeof(spacetime_ack_packet_t) - (ACK_MAX_REQ_COALESCE - ack_send_op->req_num));
 
 	w_stats[worker_lid].issued_acks_per_worker++;
 
-	if(ack_send_ops->req_num == 1) {
-		send_ack_sgl[send_ack_packets].addr = (uint64_t) ack_send_ops;
+	if(ack_send_op->req_num == 1) {
+		send_ack_sgl[send_ack_packets].addr = (uint64_t) ack_send_op;
 		send_ack_wr[send_ack_packets].wr.ud.ah = remote_worker_qps[dst_worker_gid][ACK_UD_QP_ID].ah;
 		send_ack_wr[send_ack_packets].wr.ud.remote_qpn = (uint32) remote_worker_qps[dst_worker_gid][ACK_UD_QP_ID].qpn;
 		if(DISABLE_ACK_INLINING)
@@ -532,7 +536,6 @@ batch_acks_2_NIC(struct ibv_send_wr *send_ack_wr, struct ibv_sge *send_ack_sgl,
 			assert(send_ack_wr[j].opcode == IBV_WR_SEND);
 			assert(send_ack_wr[j].wr.ud.remote_qkey == HRD_DEFAULT_QKEY);
 			assert(send_ack_wr[j].sg_list == &send_ack_sgl[j]);
-			assert(send_ack_wr[j].sg_list->length == sizeof(spacetime_ack_packet_t));
 			assert(send_ack_wr[j].num_sge == 1);
 			assert(DISABLE_ACK_INLINING || send_ack_wr[j].send_flags == IBV_SEND_INLINE ||
 				   send_ack_wr[j].send_flags == IBV_SEND_INLINE | IBV_SEND_SIGNALED);
@@ -756,11 +759,13 @@ forge_bcast_val_wrs(void* op, spacetime_val_packet_t* val_packet_send_op,
 	val_packet_send_op->reqs[val_packet_send_op->req_num].sender = (uint8_t) machine_id;
 	val_packet_send_op->req_num++;
 
+	send_val_sgl[br_i].length = (sizeof(spacetime_val_packet_t) - (VAL_MAX_REQ_COALESCE - val_packet_send_op->req_num));
+
 	w_stats[worker_lid].issued_vals_per_worker++;
 
 	if(val_packet_send_op->req_num == 1) {
-		int br_i_x_remotes = br_i * num_of_alive_remotes;
 		send_val_sgl[br_i].addr = (uint64_t) (uintptr_t) val_packet_send_op;
+		int br_i_x_remotes = br_i * num_of_alive_remotes;
 		if(DISABLE_VAL_INLINING)
 			send_val_wr[br_i_x_remotes].send_flags = 0;
 		else
@@ -809,7 +814,6 @@ batch_vals_2_NIC(struct ibv_send_wr *send_val_wr, struct ibv_sge *send_val_sgl,
 			assert(send_val_wr[j].num_sge == 1);
 			assert(DISABLE_VAL_INLINING || send_val_wr[j].opcode == IBV_SEND_INLINE | IBV_SEND_SIGNALED);
 			assert(send_val_wr[j].sg_list == &send_val_sgl[sgl_index]);
-			assert(send_val_sgl[sgl_index].length == sizeof(spacetime_val_packet_t));
 		}
 		assert(send_val_wr[j].next == NULL);
 	}
@@ -822,9 +826,7 @@ batch_vals_2_NIC(struct ibv_send_wr *send_val_wr, struct ibv_sge *send_val_sgl,
 					 w_stats[worker_lid].issued_packet_vals_per_worker,
 					 w_stats[worker_lid].issued_vals_per_worker * REMOTE_MACHINES);
 	ret = ibv_post_send(cb->dgram_qp[VAL_UD_QP_ID], &send_val_wr[0], &bad_send_wr);
-	if (ret)
-		printf("Total vals issued: %llu\n", w_stats[worker_lid].issued_vals_per_worker);
-	CPE(ret, "1st: Broadcast VALs ibv_post_send error", ret);
+	CPE(ret, "Broadcast VALs ibv_post_send error", ret);
 }
 
 static inline uint8_t
@@ -1259,6 +1261,7 @@ refill_ops(uint32_t* trace_iter, uint16_t worker_lid,
 					   ops[i].state == ST_GET_COMPLETE ||
 					   ops[i].state == ST_PUT_SUCCESS ||
 					   ops[i].state == ST_REPLAY_SUCCESS ||
+					   ops[i].state == ST_MISS ||
 					   ops[i].state == ST_PUT_STALL ||
 					   ops[i].state == ST_REPLAY_COMPLETE ||
 					   ops[i].state == ST_IN_PROGRESS_PUT ||
@@ -1268,7 +1271,9 @@ refill_ops(uint32_t* trace_iter, uint16_t worker_lid,
 			}
 
 		if (first_iter_has_passed[worker_lid] == 0 ||
-			ops[i].state == ST_PUT_COMPLETE || ops[i].state == ST_GET_COMPLETE) {
+			ops[i].state == ST_MISS||
+			ops[i].state == ST_PUT_COMPLETE ||
+			ops[i].state == ST_GET_COMPLETE) {
 			if(first_iter_has_passed[worker_lid] != 0) {
 				if (ENABLE_REQ_PRINTS && worker_lid < MAX_THREADS_TO_PRINT)
 					green_printf("W%d--> Key Hash:%" PRIu64 "\n\t\tType: %s, version %d, tie-b: %d, value(len-%d): %c\n",
@@ -1281,9 +1286,10 @@ refill_ops(uint32_t* trace_iter, uint16_t worker_lid,
 
 				ops[i].state = ST_EMPTY;
 				ops[i].opcode = ST_EMPTY;
-				w_stats[worker_lid].completed_ops_per_worker++;
 				refilled_per_ops_debug_cnt[i] = 0;
 				refilled_ops++;
+                if(ops[i].opcode != ST_MISS)
+					w_stats[worker_lid].completed_ops_per_worker++;
 			}
 			if(ENABLE_ASSERTIONS)
 				assert(trace[*trace_iter].opcode == ST_OP_PUT || trace[*trace_iter].opcode == ST_OP_GET);

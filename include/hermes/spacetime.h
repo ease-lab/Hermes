@@ -20,11 +20,12 @@
 ///#define NUM_KEYS (250 * 1000)
 ///#define NUM_BKTS (64 * 1024) //64K buckets seems to be enough to store most of our keys
 //#define SPACETIME_NUM_KEYS (50 * 1000)
-#define SPACETIME_NUM_KEYS (250 * 1000)
+//#define SPACETIME_NUM_KEYS (250 * 1000)
+#define SPACETIME_NUM_KEYS (1000 * 1000)
 //#define SPACETIME_NUM_KEYS (500 * 1000)
 //#define SPACETIME_NUM_KEYS (1 * 1000 * 1000)
-#define SPACETIME_NUM_BKTS (1 * 1024 * 1024)
-//#define SPACETIME_NUM_BKTS (2 * 1024 * 1024)
+//#define SPACETIME_NUM_BKTS (1 * 1024 * 1024)
+#define SPACETIME_NUM_BKTS (2 * 1024 * 1024)
 
 ///WARNING the monotonically increasing assigned numbers to States are used for comparisons (do not reorder / change numbers)
 //States

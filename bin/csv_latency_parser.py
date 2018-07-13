@@ -21,8 +21,9 @@ class LatencyParser:
 
     def printStats(self, array, max_latency):
         self.avgLatency(array)
+        self.percentileLatency(array, 20)
         self.percentileLatency(array, 50)
-        #self.percentileLatency(array, 90)
+        self.percentileLatency(array, 90)
         self.percentileLatency(array, 95)
         self.percentileLatency(array, 99)
         self.percentileLatency(array, 99.9)
@@ -30,7 +31,7 @@ class LatencyParser:
         self.percentileLatency(array, 99.999)
         self.percentileLatency(array, 99.9999)
         self.percentileLatency(array, 100)
-        print "Max Latency: ", max_latency, "\n"
+        print "Max Latency: ", max_latency, "us"
 
     def printAllStats(self):
         print "~~~~~~ Write Stats ~~~~~~~"
@@ -59,17 +60,23 @@ class LatencyParser:
             #cummulative = self.latency_values[x] * array[x] + cummulative 
             total_reqs += array[x]
         if total_reqs > 0:
-	    if percentage == 100:
-		for x in reversed(xrange(len(self.latency_values))):
-			if array[x] > 0:
-                		print percentage, "%: ", self.latency_values[x]
-		   		return 
-	    else:
-            	for x in xrange(len(self.latency_values)):
-                	sum_reqs += array[x] 
-                	if ((100.0 * sum_reqs) / total_reqs) >= percentage:
-                    		print percentage, "% : ", self.latency_values[x]
-                    		return
+            if percentage == 100:
+                for x in reversed(xrange(len(self.latency_values))):
+                    if array[x] > 0:
+                        if self.latency_values[x] == -1:
+                            print percentage, "%: >", self.latency_values[x-1], "us"
+                        else:
+                            print percentage, "%: ", self.latency_values[x], "us"
+                    return
+            else:
+                for x in xrange(len(self.latency_values)):
+                    sum_reqs += array[x]
+                    if ((100.0 * sum_reqs) / total_reqs) >= percentage:
+                        if self.latency_values[x] == -1:
+                            print percentage, "%: >", self.latency_values[x-1], "us"
+                        else:
+                            print percentage, "% : ", self.latency_values[x], "us"
+                        return
         else:
             print "No reqs measured"
 

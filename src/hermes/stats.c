@@ -5,7 +5,7 @@ void *print_stats(void* no_arg){
     uint16_t i, print_count = 0;
     long long all_worker_xput = 0;
     double total_throughput = 0;
-    int sleep_time = 20;
+//    int sleep_time = 20;
     struct worker_stats curr_w_stats[WORKERS_PER_MACHINE], prev_w_stats[WORKERS_PER_MACHINE];
     struct stats all_stats;
     sleep(4);
@@ -13,7 +13,7 @@ void *print_stats(void* no_arg){
     struct timespec start, end;
     clock_gettime(CLOCK_REALTIME, &start);
     while(true) {
-        sleep(sleep_time);
+        sleep(PRINT_EVERY_SECS);
         clock_gettime(CLOCK_REALTIME, &end);
         double seconds = (end.tv_sec - start.tv_sec) + (double) (end.tv_nsec - start.tv_nsec) / 1000000001;
         start = end;
