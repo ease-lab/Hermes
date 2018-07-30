@@ -136,7 +136,7 @@ uint8_t node_of_missing_ack(spacetime_group_membership curr_membership, uint8_t 
 	return k;
 }
 
-int find_failed_node(spacetime_op_t *op, int thread_id, spacetime_group_membership curr_membership)
+int find_suspected_node(spacetime_op_t *op, int thread_id, spacetime_group_membership curr_membership)
 {
 #if SPACETIME_DEBUG == 1
 	//assert(kv.hash_table != NULL);
@@ -213,7 +213,6 @@ int find_failed_node(spacetime_op_t *op, int thread_id, spacetime_group_membersh
 }
 
 
-//TODO may merge all the batch_* func
 void batch_ops_to_KVS(int op_num, spacetime_op_t **op, int thread_id,
 					  spacetime_group_membership curr_membership)
 {
@@ -245,6 +244,7 @@ void batch_ops_to_KVS(int op_num, spacetime_op_t **op, int thread_id,
 			(*op)[I].state == ST_REPLAY_SUCCESS ||
 			(*op)[I].state == ST_IN_PROGRESS_PUT ||
 			(*op)[I].state == ST_IN_PROGRESS_REPLAY ||
+			(*op)[I].state == ST_OP_MEMBERSHIP_CHANGE ||
 			(*op)[I].state == ST_PUT_COMPLETE_SEND_VALS) continue;
 //			cyan_printf("Ops[%d]=== hash(1st 8B):%" PRIu64 "\n", I, ((uint64_t *) &(*op)[I].key)[1]);
 		bkt[I] = (*op)[I].key.bkt & kv.hash_table.bkt_mask;
@@ -261,6 +261,7 @@ void batch_ops_to_KVS(int op_num, spacetime_op_t **op, int thread_id,
 			(*op)[I].state == ST_REPLAY_SUCCESS ||
 			(*op)[I].state == ST_IN_PROGRESS_PUT ||
 			(*op)[I].state == ST_IN_PROGRESS_REPLAY ||
+			(*op)[I].state == ST_OP_MEMBERSHIP_CHANGE ||
 			(*op)[I].state == ST_PUT_COMPLETE_SEND_VALS) continue;
 		for(j = 0; j < 8; j++) {
 			if(bkt_ptr[I]->slots[j].in_use == 1 &&
@@ -294,6 +295,7 @@ void batch_ops_to_KVS(int op_num, spacetime_op_t **op, int thread_id,
 			(*op)[I].state == ST_REPLAY_SUCCESS ||
 			(*op)[I].state == ST_IN_PROGRESS_PUT ||
 			(*op)[I].state == ST_IN_PROGRESS_REPLAY ||
+			(*op)[I].state == ST_OP_MEMBERSHIP_CHANGE ||
 			(*op)[I].state == ST_PUT_COMPLETE_SEND_VALS) continue;
 		if(kv_ptr[I] != NULL) {
 			/* We had a tag match earlier. Now compare log entry. */
@@ -416,14 +418,14 @@ void batch_ops_to_KVS(int op_num, spacetime_op_t **op, int thread_id,
 			}
 		}
 
-		if(key_in_store[I] == 0)  //KVS miss --> We get here if either tag or log key match failed
+		if(key_in_store[I] == 0)//KVS miss --> We get here if either tag or log key match failed
 			(*op)[I].state = ST_MISS;
-//			assert(0);
 
 	}
 }
 
-void batch_invs_to_KVS(int op_num, spacetime_inv_t **op, spacetime_op_t *read_write_op, int thread_id)
+void batch_invs_to_KVS(int op_num, spacetime_inv_t **op, spacetime_op_t *read_write_op, int thread_id,
+					   int* node_suspected, uint32_t* refilled_per_ops_debug_cnt)
 {
 	int I, j;	/* I is batch index */
 #if SPACETIME_DEBUG == 1
@@ -456,12 +458,17 @@ void batch_invs_to_KVS(int op_num, spacetime_inv_t **op, spacetime_op_t *read_wr
 	for(I = 0; I < op_num; I++) {
         if(ENABLE_ASSERTIONS){
 			assert((*op)[I].version % 2 == 0);
-            assert((*op)[I].opcode == ST_OP_INV);
+            assert((*op)[I].opcode == ST_OP_INV || (*op)[I].opcode == ST_OP_MEMBERSHIP_CHANGE);
 			assert((*op)[I].val_len == ST_VALUE_SIZE);
 			assert(REMOTE_MACHINES != 1 || (*op)[I].sender == REMOTE_MACHINES - machine_id);
 			assert(REMOTE_MACHINES != 1 || (*op)[I].tie_breaker_id == REMOTE_MACHINES - machine_id);
 //			red_printf("INVs: Ops[%d]vvv hash(1st 8B):%" PRIu64 " version: %d, tie: %d\n", I,
 //					   ((uint64_t *) &(*op)[I].key)[0], (*op)[I].version, (*op)[I].tie_breaker_id);
+		}
+		if((*op)[I].opcode == ST_OP_MEMBERSHIP_CHANGE){
+            printf("RECEIVED NODE SUSPICION: %d\n",(*op)[I].value[0]);
+			*node_suspected = (*op)[I].value[0];
+			continue;
 		}
 		bkt[I] = (*op)[I].key.bkt & kv.hash_table.bkt_mask;
 		bkt_ptr[I] = &kv.hash_table.ht_index[bkt[I]];
@@ -473,6 +480,7 @@ void batch_invs_to_KVS(int op_num, spacetime_inv_t **op, spacetime_op_t *read_wr
 	}
 
 	for(I = 0; I < op_num; I++) {
+		if((*op)[I].opcode == ST_OP_MEMBERSHIP_CHANGE) continue;
 		for(j = 0; j < 8; j++) {
 			if(bkt_ptr[I]->slots[j].in_use == 1 &&
 			   bkt_ptr[I]->slots[j].tag == tag[I]) {
@@ -502,6 +510,7 @@ void batch_invs_to_KVS(int op_num, spacetime_inv_t **op, spacetime_op_t *read_wr
 	// the following variables used to validate atomicity between a lock-free read of an object
 	spacetime_object_meta lock_free_meta;
 	for(I = 0; I < op_num; I++) {
+		if((*op)[I].opcode == ST_OP_MEMBERSHIP_CHANGE) continue;
 		if(kv_ptr[I] != NULL) {
 			/* We had a tag match earlier. Now compare log entry. */
 			long long *key_ptr_log = (long long *) kv_ptr[I];
@@ -556,15 +565,16 @@ void batch_invs_to_KVS(int op_num, spacetime_inv_t **op, spacetime_op_t *read_wr
 									curr_meta->state = INVALID_WRITE_STATE;
 									break;
 								case REPLAY_STATE:
-									curr_meta->state = INVALID_STATE;
-									//recover the read
-									if(ENABLE_ASSERTIONS){
-										assert(curr_meta->op_buffer_index != ST_OP_BUFFER_INDEX_EMPTY);
-										assert(read_write_op[curr_meta->op_buffer_index].state == ST_IN_PROGRESS_REPLAY);
-										assert(((uint64_t *) &read_write_op[curr_meta->op_buffer_index].key)[0] == ((uint64_t *) &(*op)[I].key)[0]);
-									}
-									read_write_op[curr_meta->op_buffer_index].state = ST_NEW;
-									curr_meta->op_buffer_index = ST_OP_BUFFER_INDEX_EMPTY;
+									curr_meta->state = INVALID_WRITE_STATE;
+//									curr_meta->state = INVALID_STATE;
+//									//recover the read
+//									if(ENABLE_ASSERTIONS){
+//										assert(curr_meta->op_buffer_index != ST_OP_BUFFER_INDEX_EMPTY);
+//										assert(read_write_op[curr_meta->op_buffer_index].state == ST_IN_PROGRESS_REPLAY);
+//										assert(((uint64_t *) &read_write_op[curr_meta->op_buffer_index].key)[0] == ((uint64_t *) &(*op)[I].key)[0]);
+//									}
+//									read_write_op[curr_meta->op_buffer_index].state = ST_NEW;
+//									curr_meta->op_buffer_index = ST_OP_BUFFER_INDEX_EMPTY;
 									break;
 								default: assert(0);
 							}
@@ -625,12 +635,16 @@ void batch_acks_to_KVS(int op_num, spacetime_ack_t **op, spacetime_op_t *read_wr
 	for(I = 0; I < op_num; I++) {
         if(ENABLE_ASSERTIONS){
 			assert((*op)[I].version % 2 == 0);
-            assert((*op)[I].opcode == ST_OP_ACK);
+            assert((*op)[I].opcode == ST_OP_ACK || (*op)[I].opcode == ST_OP_MEMBERSHIP_CHANGE);
 			assert(group_membership.num_of_alive_remotes != REMOTE_MACHINES ||
 						   (*op)[I].tie_breaker_id == machine_id);
 			assert(REMOTE_MACHINES != 1 || (*op)[I].sender == REMOTE_MACHINES - machine_id);
 //			yellow_printf("ACKS: Ops[%d]vvv hash(1st 8B):%" PRIu64 " version: %d, tie: %d\n", I,
 //					   ((uint64_t *) &(*op)[I].key)[0], (*op)[I].version, (*op)[I].tie_breaker_id);
+		}
+		if((*op)[I].opcode == ST_OP_MEMBERSHIP_CHANGE){
+            //Could add measurments
+			continue;
 		}
 		bkt[I] = (*op)[I].key.bkt & kv.hash_table.bkt_mask;
 		bkt_ptr[I] = &kv.hash_table.ht_index[bkt[I]];
@@ -642,6 +656,7 @@ void batch_acks_to_KVS(int op_num, spacetime_ack_t **op, spacetime_op_t *read_wr
 	}
 
 	for(I = 0; I < op_num; I++) {
+		if((*op)[I].opcode == ST_OP_MEMBERSHIP_CHANGE) continue;
 		for(j = 0; j < 8; j++) {
 			if(bkt_ptr[I]->slots[j].in_use == 1 &&
 			   bkt_ptr[I]->slots[j].tag == tag[I]) {
@@ -671,6 +686,7 @@ void batch_acks_to_KVS(int op_num, spacetime_ack_t **op, spacetime_op_t *read_wr
 	// the following variables used to validate atomicity between a lock-free read of an object
 	spacetime_object_meta lock_free_read_meta;
 	for(I = 0; I < op_num; I++) {
+		if((*op)[I].opcode == ST_OP_MEMBERSHIP_CHANGE) continue;
 		int op_buff_indx = ST_OP_BUFFER_INDEX_EMPTY;
 		if(kv_ptr[I] != NULL) {
 			/* We had a tag match earlier. Now compare log entry. */
@@ -743,13 +759,15 @@ void batch_acks_to_KVS(int op_num, spacetime_ack_t **op, spacetime_op_t *read_wr
 //								   (*op)[I].version, (*op)[I].tie_breaker_id, (*op)[I].sender);
 							assert(op_buff_indx != ST_OP_BUFFER_INDEX_EMPTY);
 							assert(read_write_op[op_buff_indx].state == ST_IN_PROGRESS_PUT ||
+								   read_write_op[op_buff_indx].state == ST_OP_MEMBERSHIP_CHANGE ||
 								   read_write_op[op_buff_indx].state == ST_IN_PROGRESS_REPLAY);
                             assert(((uint64_t *) &read_write_op[op_buff_indx].key)[0] == ((uint64_t *) &(*op)[I].key)[0]);
 						}
                         if(read_write_op[op_buff_indx].opcode == ST_OP_PUT)
 							read_write_op[op_buff_indx].state = ST_PUT_COMPLETE;
                         else if(read_write_op[op_buff_indx].opcode == ST_OP_GET){
-							read_write_op[op_buff_indx].state = ST_GET_COMPLETE;
+							read_write_op[op_buff_indx].state = ST_NEW;
+//							read_write_op[op_buff_indx].state = ST_GET_COMPLETE;
 						} else assert(0);
 					}
 				}
@@ -764,10 +782,12 @@ void batch_acks_to_KVS(int op_num, spacetime_ack_t **op, spacetime_op_t *read_wr
 	if (ENABLE_ASSERTIONS)
 		for (I = 0; I < MAX_BATCH_OPS_SIZE; I++)
 			assert(read_write_op[I].opcode == ST_OP_GET ||
+				   read_write_op[I].state == ST_MISS ||
 				   read_write_op[I].state == ST_PUT_STALL ||
 				   read_write_op[I].state == ST_PUT_SUCCESS ||
 				   read_write_op[I].state == ST_PUT_COMPLETE ||
 				   read_write_op[I].state == ST_IN_PROGRESS_PUT ||
+				   read_write_op[I].state == ST_OP_MEMBERSHIP_CHANGE || ///TODO check this
 				   read_write_op[I].state == ST_IN_PROGRESS_REPLAY);
 }
 
@@ -961,7 +981,8 @@ void complete_writes_and_replays_on_follower_removal(int op_num, spacetime_op_t 
 	 */
 	for(I = 0; I < op_num; I++) {
 		if ((*op)[I].state != ST_IN_PROGRESS_PUT &&
-			(*op)[I].state != ST_IN_PROGRESS_REPLAY) continue;
+			(*op)[I].state != ST_IN_PROGRESS_REPLAY &&
+			(*op)[I].state != ST_OP_MEMBERSHIP_CHANGE) continue;
 //			cyan_printf("Ops[%d]=== hash(1st 8B):%" PRIu64 "\n", I, ((uint64_t *) &(*op)[I].key)[1]);
 		bkt[I] = (*op)[I].key.bkt & kv.hash_table.bkt_mask;
 		bkt_ptr[I] = &kv.hash_table.ht_index[bkt[I]];
@@ -974,7 +995,8 @@ void complete_writes_and_replays_on_follower_removal(int op_num, spacetime_op_t 
 
 	for(I = 0; I < op_num; I++) {
 		if ((*op)[I].state != ST_IN_PROGRESS_PUT &&
-			(*op)[I].state != ST_IN_PROGRESS_REPLAY) continue;
+			(*op)[I].state != ST_IN_PROGRESS_REPLAY &&
+			(*op)[I].state != ST_OP_MEMBERSHIP_CHANGE) continue;
 		for(j = 0; j < 8; j++) {
 			if(bkt_ptr[I]->slots[j].in_use == 1 &&
 			   bkt_ptr[I]->slots[j].tag == tag[I]) {
@@ -1005,7 +1027,9 @@ void complete_writes_and_replays_on_follower_removal(int op_num, spacetime_op_t 
 	spacetime_object_meta lock_free_read_meta;
 	for(I = 0; I < op_num; I++) {
 		if ((*op)[I].state != ST_IN_PROGRESS_PUT &&
-			(*op)[I].state != ST_IN_PROGRESS_REPLAY) continue;
+			(*op)[I].state != ST_IN_PROGRESS_REPLAY &&
+			(*op)[I].state != ST_OP_MEMBERSHIP_CHANGE) continue;
+        uint8_t prev_state = (*op)[I].state;
 		if(kv_ptr[I] != NULL) {
 			/* We had a tag match earlier. Now compare log entry. */
 			long long *key_ptr_log = (long long *) kv_ptr[I];
@@ -1040,12 +1064,12 @@ void complete_writes_and_replays_on_follower_removal(int op_num, spacetime_op_t 
 								(*op)[I].state = ST_PUT_COMPLETE;
                                 break;
 							case INVALID_WRITE_STATE:
-								if(ENABLE_ASSERTIONS) assert((*op)[I].state == ST_IN_PROGRESS_PUT);
+								if(ENABLE_ASSERTIONS) assert((*op)[I].state == ST_IN_PROGRESS_PUT || (*op)[I].state == ST_OP_MEMBERSHIP_CHANGE);
 								curr_meta->state = INVALID_STATE;
 								(*op)[I].state = ST_PUT_COMPLETE;
 								break;
 							case WRITE_STATE:
-                                if(ENABLE_ASSERTIONS) assert((*op)[I].state == ST_IN_PROGRESS_PUT);
+								if(ENABLE_ASSERTIONS) assert((*op)[I].state == ST_IN_PROGRESS_PUT || (*op)[I].state == ST_OP_MEMBERSHIP_CHANGE);
 								curr_meta->state = VALID_STATE;
 								(*op)[I].version = curr_meta->version - 1; // -1 because of optik lock does version + 1
 								(*op)[I].tie_breaker_id = curr_meta->tie_breaker_id;
@@ -1066,6 +1090,8 @@ void complete_writes_and_replays_on_follower_removal(int op_num, spacetime_op_t 
 				}
 			}
 		}
+		if(prev_state == ST_OP_MEMBERSHIP_CHANGE)
+			(*op)[I].state = ST_OP_MEMBERSHIP_CHANGE;
 
 		if(key_in_store[I] == 0)  //KVS miss --> We get here if either tag or log key match failed
 			assert(0);

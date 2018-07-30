@@ -97,7 +97,6 @@ void *run_worker(void *arg){
 
 	int invs_polled = 0, acks_polled = 0, vals_polled = 0;
 	int node_suspected = -1;
-	int stuck_op_index = -1;
 	uint32_t credits_missing[MACHINE_NUM];
 	uint32_t num_of_iters_serving_op[MAX_BATCH_OPS_SIZE] = {0};
 	uint32_t trace_iter = 0;
@@ -110,16 +109,19 @@ void *run_worker(void *arg){
 	   ----------------------------------------------------- */
 	while (true) {
 
-		refill_ops(&trace_iter, worker_lid, trace, ops, &stuck_op_index, num_of_iters_serving_op);
+//		if(unlikely(w_stats[worker_lid].total_loops % M_4 == M_4 - 1)){
+//			for(int k = 0; k < MAX_BATCH_OPS_SIZE; k++)
+//				printf("Op[%d]:%s(%" PRIu64 ")--> state: %s\n", k, code_to_str(ops[k].opcode), ((uint64_t *) &ops[k].key)[0], code_to_str(ops[k].state));
+//		}
+		node_suspected = refill_ops(&trace_iter, worker_lid, trace, ops, num_of_iters_serving_op, last_group_membership);
 
 		batch_ops_to_KVS(MAX_BATCH_OPS_SIZE, &ops, worker_lid, last_group_membership);
 
 		if (WRITE_RATIO > 0) {
 			///~~~~~~~~~~~~~~~~~~~~~~INVS~~~~~~~~~~~~~~~~~~~~~~~~~~~
 			broadcast_invs(ops, inv_send_packet_ops, &inv_push_send_ptr, inv_send_wr,
-						   inv_send_sgl, credits, cb, &inv_br_tx,
-						   worker_lid, last_group_membership, &node_suspected,
-						   credits_missing, &rolling_inv_index);
+						   inv_send_sgl, credits, cb, &inv_br_tx, worker_lid,
+						   last_group_membership, credits_missing, &rolling_inv_index);
 
 			///Poll for INVs
 			poll_buff_and_post_recvs(incoming_invs, ST_INV_BUFF, &inv_pull_recv_ptr, inv_recv_ops,
@@ -127,7 +129,7 @@ void *run_worker(void *arg){
 									 &inv_push_recv_ptr, inv_recv_wr, credits, worker_lid);
 
 			if(invs_polled > 0) {
-				batch_invs_to_KVS(invs_polled, &inv_recv_ops, ops, worker_lid);
+				batch_invs_to_KVS(invs_polled, &inv_recv_ops, ops, worker_lid, &node_suspected, num_of_iters_serving_op);
 
 				///~~~~~~~~~~~~~~~~~~~~~~ACKS~~~~~~~~~~~~~~~~~~~~~~~~~~~
 				issue_acks(inv_recv_ops, ack_send_packet_ops, &ack_push_send_ptr, &send_ack_tx,
@@ -171,8 +173,9 @@ void *run_worker(void *arg){
 				}
 			}
 
-			if (unlikely(stuck_op_index >= 0))
-				emulating_failre_detection(&stuck_op_index, ops, last_group_membership, num_of_iters_serving_op, worker_lid);
+            ///Emulating a perfect failure detector via a group membership
+			if (unlikely(node_suspected >= 0 && worker_lid == 0))
+					follower_removal(node_suspected, num_of_iters_serving_op);
 
 
 			if(group_membership_has_changed(&last_group_membership, worker_lid) == 1){
@@ -184,6 +187,8 @@ void *run_worker(void *arg){
 				has_outstanding_vals_from_membership_change = broadcast_vals_on_membership_change(ops, val_send_packet_ops, &val_push_send_ptr,
 																		   val_send_wr, val_send_sgl, credits, cb, crd_recv_wc,
                                                                            last_group_membership, &val_br_tx, crd_recv_wr, worker_lid);
+				//reset counter for failure suspicion
+				memset(num_of_iters_serving_op, 0, sizeof(uint32_t) * MAX_BATCH_OPS_SIZE);
 			}
 		}
 		w_stats[worker_lid].total_loops++;

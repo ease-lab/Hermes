@@ -13,7 +13,7 @@ void *print_stats(void* no_arg){
     struct timespec start, end;
     clock_gettime(CLOCK_REALTIME, &start);
     while(true) {
-        sleep(PRINT_EVERY_SECS);
+        usleep(PRINT_STATS_EVERY_MSECS * 1000);
         clock_gettime(CLOCK_REALTIME, &end);
         double seconds = (end.tv_sec - start.tv_sec) + (double) (end.tv_nsec - start.tv_nsec) / 1000000001;
         start = end;
@@ -26,7 +26,7 @@ void *print_stats(void* no_arg){
             red_printf("---------------------------------------\n");
             exit(0);
         }
-        if (EXIT_ON_PRINT == 1 && print_count == PRINT_NUM) {
+        if (EXIT_ON_STATS_PRINT == 1 && print_count == PRINT_NUM_STATS_BEFORE_EXITING) {
           if (MEASURE_LATENCY && machine_id == 0) dump_latency_stats();
             printf("---------------------------------------\n");
             printf("------------RUN TERMINATED-------------\n");

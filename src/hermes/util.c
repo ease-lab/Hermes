@@ -149,6 +149,10 @@ char* code_to_str(uint8_t code)
             return "ST_OP_VAL";
         case ST_OP_CRD:
             return "ST_OP_CRD";
+        case ST_OP_MEMBERSHIP_CHANGE:
+            return "ST_OP_MEMBERSHIP_CHANGE";
+        case ST_OP_MEMBERSHIP_COMPLETE:
+            return "ST_OP_MEMBERSHIP_COMPLETE";
         //Response opcodes
         case ST_GET_COMPLETE:
             return "ST_GET_COMPLETE";
