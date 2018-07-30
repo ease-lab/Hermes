@@ -35,6 +35,7 @@ src/Armonia/main
 /src/Armonia/throughput.txt
 /src/herd-UD/throughput.txt
 /bin/traces
+/results/*
 /results/*.txt
 /results/latency/*.txt
 /results/scattered-results/*

@@ -33,8 +33,8 @@
 #define HRD_Q_DEPTH 128
 
 #define USE_BIG_OBJECTS 0
-#define EXTRA_CACHE_LINES 1
-#define BASE_VALUE_SIZE 46 //max is --> 46 //40
+#define EXTRA_CACHE_LINES 0
+#define BASE_VALUE_SIZE 42 //max is --> 46 //40
 #define SHIFT_BITS (USE_BIG_OBJECTS == 1 ? 3 : 0) // number of bits to shift left or right to calculate the value length
 #define HRD_DEFAULT_PSN 3185	/* PSN for all queues */ // starting Packet Sequence Number
 #define HRD_DEFAULT_QKEY 0x11111111

@@ -6,52 +6,52 @@
 #define SPACETIME_CONFIG_H
 #include "hrd.h"
 
-#define ENABLE_ASSERTIONS 0
-#define MACHINE_NUM 3
+#define MACHINE_NUM 5
 #define REMOTE_MACHINES (MACHINE_NUM - 1)
-#define GROUP_MEMBERSHIP_ARRAY_SIZE  CEILING(MACHINE_NUM, 8) //assuming uint8_t
-#define WORKERS_PER_MACHINE 1
+#define GROUP_MEMBERSHIP_ARRAY_SIZE CEILING(MACHINE_NUM, 8) //assuming uint8_t
+#define WORKERS_PER_MACHINE 36
+#define KV_SOCKET 0
 #define USE_ALL_CORES 1
 #define ENABLE_HYPERTHREADING 1
-#define KV_SOCKET 0
-#define START_SPAWNING_THREADS_FROM_SOCKET 0
-#define WRITE_RATIO 10
-#define MAX_BATCH_OPS_SIZE 60 //30 //5 // up to 254
+#define SOCKET_TO_START_SPAWNING_THREADS 0
 #define BATCH_POST_RECVS_TO_NIC 1
+#define WRITE_RATIO 50
+#define MAX_BATCH_OPS_SIZE 50// up to 254
+
 
 //LATENCY
-#define MEASURE_LATENCY 1
-#define MAX_LATENCY 400 //in us
-#define LATENCY_BUCKETS 200
+#define MEASURE_LATENCY 0
+#define THREAD_MEASURING_LATENCY 6
+#define MAX_LATENCY 800 //in us
+#define LATENCY_BUCKETS 800
 #define LATENCY_PRECISION (MAX_LATENCY / LATENCY_BUCKETS) //latency granularity in us
 
 //FAILURE DETECTION
-#define ITER_STUCK_FOR_SUSPICION M_256
+#define NUM_OF_IDLE_ITERS_FOR_SUSPICION M_1
 
 //DEBUG
+#define ENABLE_ASSERTIONS 0
 #define DISABLE_VALS_FOR_DEBUGGING 0
 #define KEY_NUM 0 //use 0 to disable
 
-//TRACE
+//REQUESTS
+#define NUM_OF_REP_REQS K_128
 #define FEED_FROM_TRACE 0
-#define TRACE_SIZE K_128
 #define USE_A_SINGLE_KEY 0
 
 /*-------------------------------------------------
 ----------------- REQ COALESCING -------------------
 --------------------------------------------------*/
 
-#define MAX_REQ_COALESCE 10
+#define MAX_REQ_COALESCE 5
 #define INV_MAX_REQ_COALESCE MAX_REQ_COALESCE
-//#define ACK_MAX_REQ_COALESCE MAX_REQ_COALESCE
-//#define VAL_MAX_REQ_COALESCE MAX_REQ_COALESCE
-#define ACK_MAX_REQ_COALESCE (3 * MAX_REQ_COALESCE)
-#define VAL_MAX_REQ_COALESCE (3 * MAX_REQ_COALESCE)
+#define ACK_MAX_REQ_COALESCE MAX_REQ_COALESCE
+#define VAL_MAX_REQ_COALESCE MAX_REQ_COALESCE
 
 /*-------------------------------------------------
 -----------------FLOW CONTROL---------------------
 --------------------------------------------------*/
-#define CREDITS_PER_REMOTE_WORKER 60 //MAX_BATCH_OPS_SIZE //(MAX_BATCH_OPS_SIZE / (MAX_REQ_COALESCE * 2)) //3 //60 //30
+#define CREDITS_PER_REMOTE_WORKER 5
 #define INV_CREDITS CREDITS_PER_REMOTE_WORKER
 #define ACK_CREDITS CREDITS_PER_REMOTE_WORKER
 #define VAL_CREDITS CREDITS_PER_REMOTE_WORKER
@@ -60,7 +60,8 @@
 /*-------------------------------------------------
 -----------------PCIe BATCHING---------------------
 --------------------------------------------------*/
-#define MAX_PCIE_BCAST_BATCH MIN(MAX_BATCH_OPS_SIZE, INV_CREDITS) //Warning! use min to avoid reseting the first req prior batching to the NIC
+#define MIN_PCIE_BCAST_BATCH 2 //MAX_BATCH_OPS_SIZE
+#define MAX_PCIE_BCAST_BATCH MIN(MIN_PCIE_BCAST_BATCH, INV_CREDITS) //Warning! use min to avoid reseting the first req prior batching to the NIC
 #define MAX_MSGS_IN_PCIE_BCAST_BATCH (MAX_PCIE_BCAST_BATCH * REMOTE_MACHINES) //must be smaller than the q_depth
 
 /**/
@@ -153,10 +154,17 @@
 #define ENABLE_VAL_PRINTS 0
 #define ENABLE_CRD_PRINTS 0
 
+//FAKE NODE FAILURE
+#define FAKE_FAILURE 1
+#define NODE_TO_FAIL 3
+#define ROUNDS_BEFORE_FAILURE 4
+
 //Stats
-#define PRINT_EVERY_SECS 5
+//#define PRINT_EVERY_SECS 5
+#define PRINT_EVERY_SECS 1
+#define PRINT_WORKER_STATS 0
 #define EXIT_ON_PRINT 1
-#define PRINT_NUM 3
+#define PRINT_NUM 8
 #define DUMP_STATS_2_FILE 0
 #define ENABLE_STAT_COUNTING 1
 

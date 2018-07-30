@@ -20,6 +20,12 @@ void *print_stats(void* no_arg){
         memcpy(curr_w_stats, (void*) w_stats, WORKERS_PER_MACHINE * (sizeof(struct worker_stats)));
         all_worker_xput = 0;
         print_count++;
+        if(FAKE_FAILURE == 1 && machine_id == NODE_TO_FAIL && print_count == ROUNDS_BEFORE_FAILURE){
+            red_printf("---------------------------------------\n");
+            red_printf("------------  NODE FAILED  ------------\n");
+            red_printf("---------------------------------------\n");
+            exit(0);
+        }
         if (EXIT_ON_PRINT == 1 && print_count == PRINT_NUM) {
           if (MEASURE_LATENCY && machine_id == 0) dump_latency_stats();
             printf("---------------------------------------\n");
@@ -38,32 +44,46 @@ void *print_stats(void* no_arg){
         total_throughput = all_worker_xput / seconds;
         printf("---------------PRINT %d time elapsed %.2f---------------\n", print_count, seconds / MILLION);
         green_printf("SYSTEM MIOPS: %.2f \n", total_throughput);
-        for (i = 0; i < WORKERS_PER_MACHINE; i++) {
+        if(PRINT_WORKER_STATS) {
+            for (i = 0; i < WORKERS_PER_MACHINE; i++) {
 //            yellow_printf("W%d: %.2f MIOPS-Batch %.2f(%.2f) -H %.2f -W %llu -E %.2f -AC %.2f \n", i, all_stats.xput_per_worker[i], all_stats.batch_size_per_worker[i],
 //                          all_stats.stalled_time_per_worker[i], trace_ratio, curr_w_stats[i].wasted_loops, all_stats.empty_reqs_per_worker[i],
 //                          all_stats.average_coalescing_per_worker[i]);
-            all_stats.issued_invs_avg_coalesing[i] = w_stats[i].issued_invs_per_worker / (double) w_stats[i].issued_packet_invs_per_worker;
-            all_stats.issued_acks_avg_coalesing[i] = w_stats[i].issued_acks_per_worker / (double) w_stats[i].issued_packet_acks_per_worker;
-            all_stats.issued_vals_avg_coalesing[i] = w_stats[i].issued_vals_per_worker / (double) w_stats[i].issued_packet_vals_per_worker;
-            all_stats.issued_crds_avg_coalesing[i] = w_stats[i].issued_crds_per_worker / (double) w_stats[i].issued_packet_crds_per_worker;
+                all_stats.issued_invs_avg_coalesing[i] =
+                        w_stats[i].issued_invs_per_worker / (double) w_stats[i].issued_packet_invs_per_worker;
+                all_stats.issued_acks_avg_coalesing[i] =
+                        w_stats[i].issued_acks_per_worker / (double) w_stats[i].issued_packet_acks_per_worker;
+                all_stats.issued_vals_avg_coalesing[i] =
+                        w_stats[i].issued_vals_per_worker / (double) w_stats[i].issued_packet_vals_per_worker;
+                all_stats.issued_crds_avg_coalesing[i] =
+                        w_stats[i].issued_crds_per_worker / (double) w_stats[i].issued_packet_crds_per_worker;
 
-            all_stats.received_invs_avg_coalesing[i] = w_stats[i].received_invs_per_worker / (double) w_stats[i].received_packet_invs_per_worker;
-            all_stats.received_acks_avg_coalesing[i] = w_stats[i].received_acks_per_worker / (double) w_stats[i].received_packet_acks_per_worker;
-            all_stats.received_vals_avg_coalesing[i] = w_stats[i].received_vals_per_worker / (double) w_stats[i].received_packet_vals_per_worker;
-            all_stats.received_crds_avg_coalesing[i] = w_stats[i].received_crds_per_worker / (double) w_stats[i].received_packet_crds_per_worker;
+                all_stats.received_invs_avg_coalesing[i] =
+                        w_stats[i].received_invs_per_worker / (double) w_stats[i].received_packet_invs_per_worker;
+                all_stats.received_acks_avg_coalesing[i] =
+                        w_stats[i].received_acks_per_worker / (double) w_stats[i].received_packet_acks_per_worker;
+                all_stats.received_vals_avg_coalesing[i] =
+                        w_stats[i].received_vals_per_worker / (double) w_stats[i].received_packet_vals_per_worker;
+                all_stats.received_crds_avg_coalesing[i] =
+                        w_stats[i].received_crds_per_worker / (double) w_stats[i].received_packet_crds_per_worker;
 
-            all_stats.percentage_of_wasted_loops[i] = w_stats[i].wasted_loops / (double) w_stats[i].total_loops * 100;
-            all_stats.completed_reqs_per_loop[i] = curr_w_stats[i].completed_ops_per_worker / (double) w_stats[i].total_loops;
-            cyan_printf("W%d: ",i);
-            yellow_printf("%.2f MIOPS, Coalescing{Inv: %.2f, Ack: %.2f, Val: %.2f, Crd: %.2f}\n",
-                          all_stats.xput_per_worker[i],
-                          all_stats.issued_invs_avg_coalesing[i], all_stats.issued_acks_avg_coalesing[i],
-                          all_stats.issued_vals_avg_coalesing[i], all_stats.issued_crds_avg_coalesing[i]);
-            yellow_printf("\t wasted_loops: %.2f%, reqs per loop: %.2f, total reqs %d\n", all_stats.percentage_of_wasted_loops[i],
-                          all_stats.completed_reqs_per_loop[i], curr_w_stats[i].completed_ops_per_worker);
+                all_stats.percentage_of_wasted_loops[i] =
+                        w_stats[i].wasted_loops / (double) w_stats[i].total_loops * 100;
+                all_stats.completed_reqs_per_loop[i] =
+                        curr_w_stats[i].completed_ops_per_worker / (double) w_stats[i].total_loops;
+                cyan_printf("W%d: ", i);
+                yellow_printf("%.2f MIOPS, Coalescing{Inv: %.2f, Ack: %.2f, Val: %.2f, Crd: %.2f}\n",
+                              all_stats.xput_per_worker[i],
+                              all_stats.issued_invs_avg_coalesing[i], all_stats.issued_acks_avg_coalesing[i],
+                              all_stats.issued_vals_avg_coalesing[i], all_stats.issued_crds_avg_coalesing[i]);
+                yellow_printf("\t wasted_loops: %.2f%, reqs per loop: %.2f, total reqs %d, reqs missed: %d\n",
+                              all_stats.percentage_of_wasted_loops[i],
+                              all_stats.completed_reqs_per_loop[i], curr_w_stats[i].completed_ops_per_worker,
+                              curr_w_stats[i].reqs_missed_in_cache);
+            }
+            green_printf("SYSTEM MIOPS: %.2f \n", total_throughput);
+            printf("---------------------------------------\n");
         }
-        green_printf("SYSTEM MIOPS: %.2f \n", total_throughput);
-        printf("---------------------------------------\n");
         if(DUMP_STATS_2_FILE == 1)
             dump_stats_2_file(&all_stats);
 

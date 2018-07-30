@@ -44,6 +44,8 @@ int main(int argc, char *argv[]){
 	assert(INVALID_STATE < INVALID_WRITE_STATE);
 	assert(INVALID_WRITE_STATE < WRITE_STATE);
 	assert(WRITE_STATE < REPLAY_STATE);
+
+	assert(MEASURE_LATENCY == 0 || THREAD_MEASURING_LATENCY < WORKERS_PER_MACHINE);
 //	green_printf("UD size: %d ibv_grh + crd size: %d \n", sizeof(ud_req_crd_t), sizeof(struct ibv_grh) + sizeof(spacetime_crd_t));
 //	assert(sizeof(ud_req_crd_t) == sizeof(struct ibv_grh) + sizeof(spacetime_crd_t)); ///CRD --> 48 Bytes instead of 43
 
@@ -102,7 +104,7 @@ int main(int argc, char *argv[]){
 		if(USE_ALL_CORES)
             w_core = i;
 		else
-			w_core = START_SPAWNING_THREADS_FROM_SOCKET +  (ENABLE_HYPERTHREADING == 1 ? 2 * i : 4 * i ); // use socket one cores
+			w_core = SOCKET_TO_START_SPAWNING_THREADS +  (ENABLE_HYPERTHREADING == 1 ? 2 * i : 4 * i ); // use socket one cores
         assert(w_core < TOTAL_CORES);
 		param_arr[i].id = i;
 

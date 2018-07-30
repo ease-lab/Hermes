@@ -219,10 +219,10 @@ char* code_to_str(uint8_t code)
 void manufacture_trace(struct spacetime_trace_command **cmds, int worker_gid)
 {
     srand(time(NULL) + worker_gid * 7);
-    *cmds = (struct spacetime_trace_command *)malloc((TRACE_SIZE + 1) * sizeof(struct spacetime_trace_command));
+    *cmds = (struct spacetime_trace_command *)malloc((NUM_OF_REP_REQS + 1) * sizeof(struct spacetime_trace_command));
     uint32_t i, writes = 0;
     //parse file line by line and insert trace to cmd.
-    for (i = 0; i < TRACE_SIZE; i++) {
+    for (i = 0; i < NUM_OF_REP_REQS; i++) {
         //Before reading the request deside if it's gone be read or write
         (*cmds)[i].opcode = (uint8_t) (WRITE_RATIO == 1000 || ((rand() % 1000 < WRITE_RATIO)) ? ST_OP_PUT :  ST_OP_GET);
 
@@ -236,8 +236,8 @@ void manufacture_trace(struct spacetime_trace_command **cmds, int worker_gid)
     }
 
     if (worker_gid % WORKERS_PER_MACHINE == 0)
-        printf("Write Ratio: %.2f%% \nTrace w_size %d \n", (double) (writes * 100) / TRACE_SIZE, TRACE_SIZE);
-    (*cmds)[TRACE_SIZE].opcode = NOP;
+        printf("Write Ratio: %.2f%% \nTrace w_size %d \n", (double) (writes * 100) / NUM_OF_REP_REQS, NUM_OF_REP_REQS);
+    (*cmds)[NUM_OF_REP_REQS].opcode = NOP;
     // printf("CLient %d Trace w_size: %d, debug counter %d hot keys %d, cold keys %d \n",l_id, cmd_count, debug_cnt,
     //         t_stats[l_id].hot_keys_per_trace, t_stats[l_id].cold_keys_per_trace );
 }

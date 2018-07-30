@@ -1281,7 +1281,7 @@ refill_ops(uint32_t* trace_iter, uint16_t worker_lid,
 								 code_to_str(ops[i].state), ops[i].version,
 								 ops[i].tie_breaker_id, ops[i].val_len, ops[i].value[0]);
 
-				if(MEASURE_LATENCY && machine_id == 0 && worker_lid == 0 && i == 0)
+				if(MEASURE_LATENCY && machine_id == 0 && worker_lid == THREAD_MEASURING_LATENCY && i == 0)
 					stop_latency_measurment(ops[i].opcode, &start);
 
 				ops[i].state = ST_EMPTY;
@@ -1290,11 +1290,13 @@ refill_ops(uint32_t* trace_iter, uint16_t worker_lid,
 				refilled_ops++;
                 if(ops[i].opcode != ST_MISS)
 					w_stats[worker_lid].completed_ops_per_worker++;
+                else
+					w_stats[worker_lid].reqs_missed_in_cache++;
 			}
 			if(ENABLE_ASSERTIONS)
 				assert(trace[*trace_iter].opcode == ST_OP_PUT || trace[*trace_iter].opcode == ST_OP_GET);
 
-            if(MEASURE_LATENCY && machine_id == 0 && worker_lid == 0 && i == 0)
+            if(MEASURE_LATENCY && machine_id == 0 && worker_lid == THREAD_MEASURING_LATENCY && i == 0)
 				start_latency_measurement(&start);
 
 			ops[i].state = ST_NEW;
@@ -1307,10 +1309,10 @@ refill_ops(uint32_t* trace_iter, uint16_t worker_lid,
 			if(ENABLE_REQ_PRINTS &&  worker_lid < MAX_THREADS_TO_PRINT)
 				red_printf("W%d--> Op: %s, hash(1st 8B):%" PRIu64 "\n",
 						   worker_lid, code_to_str(ops[i].opcode), ((uint64_t *) &ops[i].key)[0]);
-			HRD_MOD_ADD(*trace_iter, TRACE_SIZE);
+			HRD_MOD_ADD(*trace_iter, NUM_OF_REP_REQS);
 		}else if(ops[i].state == ST_IN_PROGRESS_PUT || ops[i].state == ST_IN_PROGRESS_REPLAY){
 			refilled_per_ops_debug_cnt[i]++;
-            if(unlikely(refilled_per_ops_debug_cnt[i] > ITER_STUCK_FOR_SUSPICION)){
+            if(unlikely(refilled_per_ops_debug_cnt[i] > NUM_OF_IDLE_ITERS_FOR_SUSPICION)){
 				*stuck_op_index = i;
                 refilled_per_ops_debug_cnt[i] = 0;
 			}

@@ -1,16 +1,25 @@
 #!/usr/bin/env bash
 
-num_machines=2 #3
-#allIPs=(129.215.165.8 129.215.165.7 129.215.165.9 129.215.165.6 129.215.165.5) # houston-sanantonio-austin-indianapolis-philly
-#houston-sanantonio-austin-indianapolis-philly-chicago-detroit-baltimore-atlanta
-allIPs=(129.215.165.8 129.215.165.7 129.215.165.9 129.215.165.6 129.215.165.5  129.215.165.3 129.215.165.4 129.215.165.2 129.215.165.1)
-localIP=$(ip addr | grep 'state UP' -A2 | sed -n 3p | awk '{print $2}' | cut -f1  -d'/')
-#$(ip addr | grep 'state UP' -A2 | tail -n1 | awk '{print $2}' | cut -f1  -d'/')
+allIPs=(
+            ####    network cluster    ####
+#          houston      sanantonio      austin
+        129.215.165.8 129.215.165.7 129.215.165.9
+#          atlanata
+        129.215.165.1
+#        indianapolis
+        129.215.165.6
+#          philly
+        129.215.165.5
+            ####    compute cluster    ####
+#          chicago       detroit      baltimore
+        129.215.165.3 129.215.165.4 129.215.165.2
+        )
+localIP=$(ip addr | grep 'state UP' -A2 | grep 'inet 129.'| awk '{print $2}' | cut -f1  -d'/')
 
-tmp=$((${#localIP}-1))
-machine_id=-1 #$((${localIP:$tmp:1}-1))
 
-# <vasilis>
+echo LOCAL_IP : "$localIP"
+machine_id=-1
+
 for i in "${!allIPs[@]}"; do
 	if [  "${allIPs[i]}" ==  "$localIP" ]; then
 		machine_id=$i
@@ -18,7 +27,6 @@ for i in "${!allIPs[@]}"; do
     remoteIPs+=( "${allIPs[i]}" )
 	fi
 done
-# </vasilis>
 
 
 #echo AllIps: "${allIPs[@]}"
@@ -26,8 +34,8 @@ done
 echo Machine-Id "$machine_id"
 
 
-#export HRD_REGISTRY_IP="129.215.165.8" # I.E. HOUSTON
-export HRD_REGISTRY_IP="129.215.165.7" # I.E. SANANTONIO
+export HRD_REGISTRY_IP="129.215.165.8" # I.E. HOUSTON
+#export HRD_REGISTRY_IP="129.215.165.7" # I.E. SANANTONIO
 export MLX5_SINGLE_THREADED=1
 export MLX5_SCATTER_TO_CQE=1
 
@@ -39,7 +47,6 @@ function blue() {
 	ee=`tput sgr0`
 	echo "${es}$1${ee}"
 }
-
 
 #blue "Removing SHM keys used by the workers 24 -> 24 + Workers_per_machine (request regions hugepages)"
 #for i in `seq 0 32`; do
@@ -55,7 +62,6 @@ for i in `seq 0 28`; do
 	key=`expr 4185 + $i`
 	sudo ipcrm -M $key 2>/dev/null
 done
-
 : ${HRD_REGISTRY_IP:?"Need to set HRD_REGISTRY_IP non-empty"}
 
 
@@ -64,7 +70,6 @@ shm-rm.sh 1>/dev/null 2>/dev/null
 
 
 blue "Reset server QP registry"
-#sudo killall memcached
 memcached -l 0.0.0.0 1>/dev/null 2>/dev/null &
 sleep 1
 
