@@ -520,3 +520,8 @@ void setup_incoming_buffs_and_post_initial_recvs(ud_req_inv_t *incoming_invs, ud
     post_credit_recvs(cb, crd_recv_wr, MAX_RECV_CRD_WRS);
 }
 
+uint64_t rdtsc(){
+    unsigned int lo,hi;
+    __asm__ __volatile__ ("rdtsc" : "=a" (lo), "=d" (hi));
+    return ((uint64_t)hi << 32) | lo;
+}

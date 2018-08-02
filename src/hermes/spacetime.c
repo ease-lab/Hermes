@@ -562,10 +562,11 @@ void batch_invs_to_KVS(int op_num, spacetime_inv_t **op, spacetime_op_t *read_wr
 								case INVALID_WRITE_STATE:
 									break;
 								case WRITE_STATE:
-									curr_meta->state = INVALID_WRITE_STATE;
-									break;
 								case REPLAY_STATE:
 									curr_meta->state = INVALID_WRITE_STATE;
+									break;
+//								case REPLAY_STATE:
+//									curr_meta->state = INVALID_WRITE_STATE;
 //									curr_meta->state = INVALID_STATE;
 //									//recover the read
 //									if(ENABLE_ASSERTIONS){
@@ -575,7 +576,7 @@ void batch_invs_to_KVS(int op_num, spacetime_inv_t **op, spacetime_op_t *read_wr
 //									}
 //									read_write_op[curr_meta->op_buffer_index].state = ST_NEW;
 //									curr_meta->op_buffer_index = ST_OP_BUFFER_INDEX_EMPTY;
-									break;
+//									break;
 								default: assert(0);
 							}
 							optik_unlock(curr_meta, (*op)[I].tie_breaker_id, (*op)[I].version);
@@ -754,8 +755,8 @@ void batch_acks_to_KVS(int op_num, spacetime_ack_t **op, spacetime_op_t *read_wr
 						(*op)[I].opcode == ST_LAST_ACK_NO_BCAST_SUCCESS){
 						///completed read / write --> remove it from the ops buffer
 						if(ENABLE_ASSERTIONS){
-//                            printf("ACK[%d]: Key Hash:%" PRIu64 " complete buff: %d\n\t op: %s, TS: %d | %d, sender: %d\n",
-//								   I, ((uint64_t *) &(*op)[I].key)[1], op_buff_indx, code_to_str((*op)[I].opcode),
+//								printf("W%d--> ACK[%d]: Key Hash:%" PRIu64 " complete buff: %d\n\t op: %s, TS: %d | %d, sender: %d\n",
+//								   thread_id, I, ((uint64_t *) &(*op)[I].key)[1], op_buff_indx, code_to_str((*op)[I].opcode),
 //								   (*op)[I].version, (*op)[I].tie_breaker_id, (*op)[I].sender);
 							assert(op_buff_indx != ST_OP_BUFFER_INDEX_EMPTY);
 							assert(read_write_op[op_buff_indx].state == ST_IN_PROGRESS_PUT ||
@@ -767,8 +768,7 @@ void batch_acks_to_KVS(int op_num, spacetime_ack_t **op, spacetime_op_t *read_wr
 							read_write_op[op_buff_indx].state = ST_PUT_COMPLETE;
                         else if(read_write_op[op_buff_indx].opcode == ST_OP_GET){
 							read_write_op[op_buff_indx].state = ST_NEW;
-//							read_write_op[op_buff_indx].state = ST_GET_COMPLETE;
-						} else assert(0);
+						}else assert(0);
 					}
 				}
 			}
@@ -900,43 +900,8 @@ void batch_vals_to_KVS(int op_num, spacetime_val_t **op, spacetime_op_t *read_wr
 						///Warning: use op.version + 1 bellow since optik_lock() increases curr_meta->version by 1
 						if(timestamp_is_equal(curr_meta->version - 1, curr_meta->tie_breaker_id,
 											  (*op)[I].version,   (*op)[I].tie_breaker_id)){
-//							printf("VAL with TS == local.TS\n");
-							switch(curr_meta->state) {
-								case VALID_STATE:
-									break;
-								case INVALID_STATE:
-									break;
-								case WRITE_STATE: // I am out of group
-									assert(0); ///WARNING: this should not happen w/o this node removed from the group
-								case INVALID_WRITE_STATE:
-//                                    printf("Invalid Write state\n");
-//									//Complete write
-//									if(ENABLE_ASSERTIONS){
-//										assert(curr_meta->op_buffer_index != ST_OP_BUFFER_INDEX_EMPTY);
-//										if((((uint64_t *) &read_write_op[curr_meta->op_buffer_index].key)[0] != ((uint64_t *) &(*op)[I].key)[0]))
-//											green_printf("Key Hash:%" PRIu64 "\nOp  Hash:%" PRIu64 "\n",
-//												((uint64_t *) &read_write_op[curr_meta->op_buffer_index].key)[0], ((uint64_t *) &(*op)[I].key)[0]);
-//										assert(((uint64_t *) &read_write_op[curr_meta->op_buffer_index].key)[0] == ((uint64_t *) &(*op)[I].key)[0]);
-////										if(read_write_op[curr_meta->op_buffer_index].state != ST_IN_PROGRESS_PUT)
-////											printf("Code: %s\n", code_to_str(read_write_op[curr_meta->op_buffer_index].state));
-//										assert(read_write_op[curr_meta->op_buffer_index].state == ST_IN_PROGRESS_PUT ||
-//												read_write_op[curr_meta->op_buffer_index].state == ST_PUT_SUCCESS);
-//									}
-//									read_write_op[curr_meta->op_buffer_index].state = ST_PUT_COMPLETE;
-//									curr_meta->op_buffer_index = ST_OP_BUFFER_INDEX_EMPTY;
-									break;
-								case REPLAY_STATE:
-//                                    //Complete read
-//									if(ENABLE_ASSERTIONS){
-//										assert(curr_meta->op_buffer_index != ST_OP_BUFFER_INDEX_EMPTY);
-//										assert(read_write_op[curr_meta->op_buffer_index].state == ST_IN_PROGRESS_REPLAY);
-//										assert(((uint64_t *) &read_write_op[curr_meta->op_buffer_index].key)[0] == ((uint64_t *) &(*op)[I].key)[0]);
-//									}
-//									read_write_op[curr_meta->op_buffer_index].state = ST_GET_COMPLETE;
-//									curr_meta->op_buffer_index = ST_OP_BUFFER_INDEX_EMPTY;
-									break;
-								default: assert(0);
-							}
+                            if(ENABLE_ASSERTIONS)
+								assert(curr_meta->state != WRITE_STATE); ///WARNING: this should not happen w/o this node removed from the group
 							curr_meta->state = VALID_STATE;
 						}
 						optik_unlock_decrement_version(curr_meta);

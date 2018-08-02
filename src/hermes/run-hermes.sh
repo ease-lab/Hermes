@@ -4,12 +4,12 @@ allIPs=(
             ####    network cluster    ####
 #          houston      sanantonio      austin
         129.215.165.8 129.215.165.7 129.215.165.9
-#          atlanata
-        129.215.165.1
-#          philly
-        129.215.165.5
 #        indianapolis
         129.215.165.6
+#          philly
+        129.215.165.5
+#          atlanata
+        129.215.165.1
             ####    compute cluster    ####
 #          chicago       detroit      baltimore
         129.215.165.3 129.215.165.4 129.215.165.2

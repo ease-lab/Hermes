@@ -91,6 +91,7 @@ poll_buff_and_post_recvs(void *incoming_buff, uint8_t buff_type, int *buf_pull_p
 						 struct ibv_cq *completion_q, struct ibv_wc *work_completions,
 						 struct hrd_ctrl_blk *cb, int *recv_push_ptr,
 						 struct ibv_recv_wr *recv_wr,
+						 spacetime_group_membership last_group_membership,
 						 uint8_t credits[][MACHINE_NUM], uint16_t worker_lid)
 {
 	void* next_packet_reqs, *recv_op_ptr, *next_req;
@@ -182,14 +183,15 @@ poll_buff_and_post_recvs(void *incoming_buff, uint8_t buff_type, int *buf_pull_p
 			default:
 				assert(0);
 		}
-		for(j = 0; j < *next_packet_req_num_ptr; j++){
-			recv_op_ptr = ((uint8_t *) recv_ops) + (*ops_push_ptr * req_size);
-			next_req = &((uint8_t*) next_packet_reqs)[j * req_size];
-			memcpy(recv_op_ptr, next_req, req_size);
-			reqs_polled++;
-			(*ops_push_ptr)++;
-			credits[qp_credits_to_inc][sender]++; //increment packet credits
-		}
+        if(node_is_in_membership(last_group_membership, sender))
+			for(j = 0; j < *next_packet_req_num_ptr; j++){
+				recv_op_ptr = ((uint8_t *) recv_ops) + (*ops_push_ptr * req_size);
+				next_req = &((uint8_t*) next_packet_reqs)[j * req_size];
+				memcpy(recv_op_ptr, next_req, req_size);
+				reqs_polled++;
+				(*ops_push_ptr)++;
+				credits[qp_credits_to_inc][sender]++; //increment packet credits
+			}
 
 		*next_packet_req_num_ptr = 0; //TODO can be removed since we already reset on posting receives
 		HRD_MOD_ADD(*buf_pull_ptr, recv_q_depth);
@@ -1148,7 +1150,7 @@ issue_credits(spacetime_val_t *val_recv_ops, long long int* send_crd_tx,
 ----------------------------------- MEMBERSHIP -------------------------------
 ---------------------------------------------------------------------------*/
 static inline void
-follower_removal(int suspected_node_id, uint32_t* num_of_iters_serving_op)
+follower_removal(int suspected_node_id)
 {
 	red_printf("Suspected node %d!\n", suspected_node_id);
 
@@ -1334,8 +1336,7 @@ refill_ops(uint32_t* trace_iter, uint16_t worker_lid,
 			refilled_per_ops_debug_cnt[i]++;
 			///Failure suspicion
 			if(unlikely(refilled_per_ops_debug_cnt[i] > NUM_OF_IDLE_ITERS_FOR_SUSPICION)){
-//				if(machine_id == 0 && worker_lid == 0){
-				if(worker_lid == 0){
+				if(machine_id < NODES_WITH_FAILURE_DETECTOR && worker_lid == WORKER_EMULATING_FAILURE_DETECTOR){
 					node_suspected = find_suspected_node(&ops[i], worker_lid, last_group_membership);
 					cyan_printf("Worker: %d SUSPECTS node: %d\n", worker_lid, node_suspected);
 					ops[i].state = ST_OP_MEMBERSHIP_CHANGE;

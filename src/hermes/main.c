@@ -18,7 +18,8 @@ volatile uint8_t node_suspicions[WORKERS_PER_MACHINE][MACHINE_NUM];
 volatile struct remote_qp remote_worker_qps[WORKER_NUM][TOTAL_WORKER_UD_QPs];
 
 
-int main(int argc, char *argv[]){
+int main(int argc, char *argv[])
+{
 	int i, c;
 	is_roce = -1; machine_id = -1;
 	remote_IP = (char *) malloc(16 * sizeof(char));
@@ -34,6 +35,18 @@ int main(int argc, char *argv[]){
 	assert(MAX_PCIE_BCAST_BATCH <= VAL_CREDITS);
 	assert(MAX_PCIE_BCAST_BATCH <= INV_SS_GRANULARITY);
 	assert(MAX_PCIE_BCAST_BATCH <= VAL_SS_GRANULARITY);
+
+	assert(SOCKET_TO_START_SPAWNING_THREADS < TOTAL_NUMBER_OF_SOCKETS);
+	assert((ENABLE_HYPERTHREADING == 1 && USE_ALL_SOCKETS == 1) || WORKERS_PER_MACHINE <= TOTAL_CORES_PER_SOCKET);
+//	assert((ENABLE_HYPERTHREADING == 0 && USE_ALL_SOCKETS == 1) || WORKERS_PER_MACHINE <= TOTAL_THREADS_PER_CORE  * TOTAL_CORES_PER_SOCKET);
+//	assert((ENABLE_HYPERTHREADING == 1 && USE_ALL_SOCKETS == 0) || WORKERS_PER_MACHINE <= TOTAL_NUMBER_OF_SOCKETS * TOTAL_CORES_PER_SOCKET);
+	assert(WORKERS_PER_MACHINE <= TOTAL_HW_CORES);
+
+	///Assertions for failures
+    assert(FAKE_FAILURE == 0 || NODES_WITH_FAILURE_DETECTOR >= 1);
+	assert(FAKE_FAILURE == 0 || NODE_TO_FAIL < MACHINE_NUM);
+	assert(FAKE_FAILURE == 0 || ROUNDS_BEFORE_FAILURE < PRINT_NUM_STATS_BEFORE_EXITING);
+	assert(FAKE_FAILURE == 0 || WORKER_EMULATING_FAILURE_DETECTOR < WORKERS_PER_MACHINE);
 
 	assert(MACHINE_NUM < TIE_BREAKER_ID_EMPTY);
 	assert(MACHINE_NUM < LAST_WRITER_ID_EMPTY);
@@ -98,14 +111,19 @@ int main(int argc, char *argv[]){
 	spacetime_init(machine_id, WORKERS_PER_MACHINE);
 	init_stats();
 
+
+//	// Register signal and signal handler
+//	signal(SIGINT, signal_callback_handler);
+
 	pthread_attr_init(&attr);
-    int w_core ;
+    int w_core, init_core = SOCKET_TO_START_SPAWNING_THREADS;
 	for(i = 0; i < WORKERS_PER_MACHINE; i++) {
-		if(USE_ALL_CORES)
-            w_core = i;
+		if(USE_ALL_SOCKETS && ENABLE_HYPERTHREADING)
+            w_core = init_core + i;
 		else
-			w_core = SOCKET_TO_START_SPAWNING_THREADS +  (ENABLE_HYPERTHREADING == 1 ? 2 * i : 4 * i ); // use socket one cores
-        assert(w_core < TOTAL_CORES);
+			w_core = 2 * i + init_core;
+        assert(ENABLE_HYPERTHREADING || w_core < TOTAL_NUMBER_OF_SOCKETS * TOTAL_CORES_PER_SOCKET);
+		assert(w_core < TOTAL_HW_CORES);
 		param_arr[i].id = i;
 
 		green_printf("Creating worker thread %d at core %d \n", param_arr[i].id, w_core);

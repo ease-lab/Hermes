@@ -18,6 +18,7 @@ void *run_worker(void *arg){
 												BASE_SHM_KEY + worker_lid, /* key */
 												recv_q_depths, send_q_depths); /* Depth of the dgram RECV, SEND Q*/
 
+	cbs[worker_lid] = cb; //required for destruction
 	/* -----------------------------------------------------
 	--------------DECLARATIONS------------------------------
 	---------------------------------------------------------*/
@@ -126,7 +127,7 @@ void *run_worker(void *arg){
 			///Poll for INVs
 			poll_buff_and_post_recvs(incoming_invs, ST_INV_BUFF, &inv_pull_recv_ptr, inv_recv_ops,
 									 &invs_polled, cb->dgram_recv_cq[INV_UD_QP_ID], inv_recv_wc, cb,
-									 &inv_push_recv_ptr, inv_recv_wr, credits, worker_lid);
+									 &inv_push_recv_ptr, inv_recv_wr, last_group_membership, credits, worker_lid);
 
 			if(invs_polled > 0) {
 				batch_invs_to_KVS(invs_polled, &inv_recv_ops, ops, worker_lid, &node_suspected, num_of_iters_serving_op);
@@ -141,7 +142,7 @@ void *run_worker(void *arg){
 				///Poll for Acks
 				poll_buff_and_post_recvs(incoming_acks, ST_ACK_BUFF, &ack_pull_recv_ptr, ack_recv_ops,
 										 &acks_polled, cb->dgram_recv_cq[ACK_UD_QP_ID], ack_recv_wc, cb,
-										 &ack_push_recv_ptr, ack_recv_wr, credits, worker_lid);
+										 &ack_push_recv_ptr, ack_recv_wr, last_group_membership, credits, worker_lid);
 
 				if (acks_polled > 0) {
 					batch_acks_to_KVS(acks_polled, &ack_recv_ops, ops, last_group_membership, worker_lid);
@@ -163,7 +164,7 @@ void *run_worker(void *arg){
 				///Poll for Vals
 				poll_buff_and_post_recvs(incoming_vals, ST_VAL_BUFF, &val_pull_recv_ptr, val_recv_ops,
 										 &vals_polled,  cb->dgram_recv_cq[VAL_UD_QP_ID], val_recv_wc, cb,
-										 &val_push_recv_ptr, val_recv_wr, credits, worker_lid);
+										 &val_push_recv_ptr, val_recv_wr, last_group_membership, credits, worker_lid);
 
 				if (vals_polled > 0) {
 					batch_vals_to_KVS(vals_polled, &val_recv_ops, ops, worker_lid);
@@ -174,8 +175,8 @@ void *run_worker(void *arg){
 			}
 
             ///Emulating a perfect failure detector via a group membership
-			if (unlikely(node_suspected >= 0 && worker_lid == 0))
-					follower_removal(node_suspected, num_of_iters_serving_op);
+			if (unlikely(node_suspected >= 0 && worker_lid == WORKER_EMULATING_FAILURE_DETECTOR))
+				follower_removal(node_suspected);
 
 
 			if(group_membership_has_changed(&last_group_membership, worker_lid) == 1){
