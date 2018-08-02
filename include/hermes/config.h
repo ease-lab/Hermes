@@ -20,6 +20,10 @@
 
 
 //LATENCY
+#define INCREASE_TAIL_LATENCY 1
+#define INCREASE_TAIL_BY_MS 40
+#define NUM_OF_CORES_TO_INCREASE_TAIL WORKERS_PER_MACHINE
+#define INCREASE_TAIL_EVERY_X_ACKS 1000
 #define MEASURE_LATENCY 0
 #define THREAD_MEASURING_LATENCY 6
 #define MAX_LATENCY 800 //in us
@@ -41,7 +45,7 @@
 ----------------- REQ COALESCING -------------------
 --------------------------------------------------*/
 
-#define MAX_REQ_COALESCE 5
+#define MAX_REQ_COALESCE 15
 #define INV_MAX_REQ_COALESCE MAX_REQ_COALESCE
 #define ACK_MAX_REQ_COALESCE MAX_REQ_COALESCE
 #define VAL_MAX_REQ_COALESCE MAX_REQ_COALESCE
@@ -49,7 +53,7 @@
 /*-------------------------------------------------
 -----------------FLOW CONTROL---------------------
 --------------------------------------------------*/
-#define CREDITS_PER_REMOTE_WORKER 5
+#define CREDITS_PER_REMOTE_WORKER 15
 #define INV_CREDITS CREDITS_PER_REMOTE_WORKER
 #define ACK_CREDITS CREDITS_PER_REMOTE_WORKER
 #define VAL_CREDITS CREDITS_PER_REMOTE_WORKER
@@ -159,18 +163,18 @@
 //Stats
 #define DUMP_STATS_2_FILE 0 //This is not working at the moment
 #define EXIT_ON_STATS_PRINT 1
-#define PRINT_NUM_STATS_BEFORE_EXITING 10
+#define PRINT_NUM_STATS_BEFORE_EXITING 30
 #define ENABLE_STAT_COUNTING 1
 
 //FAKE NODE FAILURE
-#define FAKE_FAILURE 1
+#define FAKE_FAILURE 0
 #define NODE_TO_FAIL 3
-#define ROUNDS_BEFORE_FAILURE 3
+#define ROUNDS_BEFORE_FAILURE 20
 
 //FAILURE DETECTION
 #define NODES_WITH_FAILURE_DETECTOR 1
 #define WORKER_EMULATING_FAILURE_DETECTOR 4
-#define NUM_OF_IDLE_ITERS_FOR_SUSPICION K_256 //M_2 //K_256 //M_1
+#define NUM_OF_IDLE_ITERS_FOR_SUSPICION K_128 //M_2 //K_256 //M_1
 
 // Rarely change
 #define WORKER_NUM (MACHINE_NUM * WORKERS_PER_MACHINE)

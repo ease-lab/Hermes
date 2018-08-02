@@ -66,7 +66,7 @@ set(SOURCE_FILES_ccKVS
         include/ccKVS/cache.h
         include/ccKVS/main.h
         include/ccKVS/inline_util.h
-        include/ccKVS/util.h include/hermes/spacetime.h include/hermes/inline-util.h)
+        include/ccKVS/util.h include/hermes/spacetime.h include/hermes/inline-util.h include/hermes/time_rdtsc.h)
 
 add_executable(hermes ${SOURCE_FILES_hermes})
 add_executable(ccKVS ${SOURCE_FILES_ccKVS})

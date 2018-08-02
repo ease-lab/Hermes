@@ -1,7 +1,12 @@
 #include <spacetime.h>
 #include <optik_mod.h>
+#include <time.h>
 #include "util.h"
 #include "inline-util.h"
+
+///
+#include "time_rdtsc.h"
+///
 
 void *run_worker(void *arg){
 	struct thread_params params = *(struct thread_params *) arg;
@@ -18,7 +23,6 @@ void *run_worker(void *arg){
 												BASE_SHM_KEY + worker_lid, /* key */
 												recv_q_depths, send_q_depths); /* Depth of the dgram RECV, SEND Q*/
 
-	cbs[worker_lid] = cb; //required for destruction
 	/* -----------------------------------------------------
 	--------------DECLARATIONS------------------------------
 	---------------------------------------------------------*/
@@ -105,6 +109,16 @@ void *run_worker(void *arg){
 	uint16_t rolling_inv_index = 0;
 	uint8_t has_outstanding_vals = 0, has_outstanding_vals_from_membership_change = 0;
 
+//	if(INCREASE_TAIL_LATENCY) {
+		//Latency enhancement
+	    CalibrateTicks();
+		struct timespec time_received_msg;
+		GetRdtscTime(&time_received_msg);
+//		long long time_received_msg = hrd_get_cycles();
+		uint8_t has_msg_stalled = 0;
+		spacetime_ack_t stalled_ack;
+		uint64_t total_acks_polled = 0;
+//	}
 	/* -----------------------------------------------------
        ------------------------Main Loop--------------------
 	   ----------------------------------------------------- */
@@ -145,7 +159,29 @@ void *run_worker(void *arg){
 										 &ack_push_recv_ptr, ack_recv_wr, last_group_membership, credits, worker_lid);
 
 				if (acks_polled > 0) {
-					batch_acks_to_KVS(acks_polled, &ack_recv_ops, ops, last_group_membership, worker_lid);
+					if(worker_lid < NUM_OF_CORES_TO_INCREASE_TAIL && INCREASE_TAIL_LATENCY){
+						if(has_msg_stalled == 0) {
+							total_acks_polled += acks_polled; //might need to move this before this if
+							if (acks_polled > 1 && total_acks_polled > INCREASE_TAIL_EVERY_X_ACKS) {
+								total_acks_polled = 0;
+								has_msg_stalled = 1;
+								GetRdtscTime(&time_received_msg);
+//								yellow_printf("ACK Stalled\n");
+								memcpy(&stalled_ack, &ack_recv_ops[acks_polled - 1], sizeof(spacetime_ack_t));
+								ack_recv_ops[acks_polled - 1].opcode = ST_EMPTY;
+								acks_polled--;
+								///Might also need to increase / decrease inv credits
+							}
+						}else if(time_elapsed_in_ms(time_received_msg) > INCREASE_TAIL_BY_MS && acks_polled < MAX_BATCH_OPS_SIZE - 1){
+								memcpy(&ack_recv_ops[acks_polled], &stalled_ack, sizeof(spacetime_ack_t));
+//								green_printf("ACK Unstalled after ms: %2.f\n", time_elapsed_in_ms(time_received_msg));
+								has_msg_stalled = 0;
+								acks_polled++;
+						}
+					}
+                    if(acks_polled > 0)
+						batch_acks_to_KVS(acks_polled, &ack_recv_ops, ops, last_group_membership, worker_lid);
+
 					acks_polled = 0;
 				}
 			}
