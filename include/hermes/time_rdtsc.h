@@ -62,6 +62,14 @@ void GetRdtscTime(struct timespec *ts)
     GetTimeSpec(ts, RDTSC() / g_TicksPerNanoSec);
 }
 
+static inline double time_elapsed_in_microsec(struct timespec start)
+{
+	struct timespec now, *diff;
+	GetRdtscTime(&now);
+	diff = TimeSpecDiff(&now, &start);
+	return  diff->tv_sec * 1000000 + diff->tv_nsec / 1000;
+}
+
 static inline double time_elapsed_in_ms(struct timespec start)
 {
 	struct timespec now, *diff;

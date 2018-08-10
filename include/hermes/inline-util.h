@@ -1252,7 +1252,7 @@ stop_latency_measurment(uint8_t req_opcode, struct timespec *start)
 	clock_gettime(CLOCK_MONOTONIC, &end);
 	int useconds = (int) (((end.tv_sec - start->tv_sec) * 1000000) +
 				   ((end.tv_nsec - start->tv_nsec) / 1000));
-	if (ENABLE_ASSERTIONS) assert(useconds > 0);
+	if (ENABLE_ASSERTIONS) assert(useconds >= 0);
 //	printf("Latency of %s %u us\n", code_to_str(req_opcode), useconds);
 	bookkeep_latency(useconds, req_opcode);
 }

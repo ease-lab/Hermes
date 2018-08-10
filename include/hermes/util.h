@@ -42,6 +42,8 @@ struct worker_stats { // 2 cache lines
     long long received_packet_vals_per_worker;
 	long long received_packet_crds_per_worker;
 
+	long long received_acks_stalled; //for faking tail-latency
+
     long long stalled_time_per_worker;
 
     long long wasted_loops;

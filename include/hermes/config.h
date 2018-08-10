@@ -9,25 +9,26 @@
 #define MACHINE_NUM 5
 #define REMOTE_MACHINES (MACHINE_NUM - 1)
 #define GROUP_MEMBERSHIP_ARRAY_SIZE CEILING(MACHINE_NUM, 8) //assuming uint8_t
-#define WORKERS_PER_MACHINE 36
+#define WORKERS_PER_MACHINE 30
 #define KV_SOCKET 0
 #define SOCKET_TO_START_SPAWNING_THREADS 0
 #define USE_ALL_SOCKETS 1
 #define ENABLE_HYPERTHREADING 1
 #define BATCH_POST_RECVS_TO_NIC 1
-#define WRITE_RATIO 10
-#define MAX_BATCH_OPS_SIZE 50// up to 254
+#define WRITE_RATIO 50
+#define MAX_BATCH_OPS_SIZE 50 // up to 254
 
 
 //LATENCY
-#define INCREASE_TAIL_LATENCY 1
-#define INCREASE_TAIL_BY_MS 40
+#define INCREASE_TAIL_LATENCY 0
+//#define INCREASE_TAIL_BY_MICROSECS 1000
+#define INCREASE_TAIL_BY_MS 5
 #define NUM_OF_CORES_TO_INCREASE_TAIL WORKERS_PER_MACHINE
-#define INCREASE_TAIL_EVERY_X_ACKS 1000
-#define MEASURE_LATENCY 0
-#define THREAD_MEASURING_LATENCY 6
-#define MAX_LATENCY 800 //in us
-#define LATENCY_BUCKETS 800
+#define INCREASE_TAIL_EVERY_X_ACKS 0
+#define MEASURE_LATENCY 1
+#define THREAD_MEASURING_LATENCY 4
+#define MAX_LATENCY 200 //in us
+#define LATENCY_BUCKETS 200
 #define LATENCY_PRECISION (MAX_LATENCY / LATENCY_BUCKETS) //latency granularity in us
 
 
@@ -45,7 +46,7 @@
 ----------------- REQ COALESCING -------------------
 --------------------------------------------------*/
 
-#define MAX_REQ_COALESCE 15
+#define MAX_REQ_COALESCE 5
 #define INV_MAX_REQ_COALESCE MAX_REQ_COALESCE
 #define ACK_MAX_REQ_COALESCE MAX_REQ_COALESCE
 #define VAL_MAX_REQ_COALESCE MAX_REQ_COALESCE
@@ -53,7 +54,7 @@
 /*-------------------------------------------------
 -----------------FLOW CONTROL---------------------
 --------------------------------------------------*/
-#define CREDITS_PER_REMOTE_WORKER 15
+#define CREDITS_PER_REMOTE_WORKER 5
 #define INV_CREDITS CREDITS_PER_REMOTE_WORKER
 #define ACK_CREDITS CREDITS_PER_REMOTE_WORKER
 #define VAL_CREDITS CREDITS_PER_REMOTE_WORKER
@@ -62,7 +63,7 @@
 /*-------------------------------------------------
 -----------------PCIe BATCHING---------------------
 --------------------------------------------------*/
-#define MIN_PCIE_BCAST_BATCH 2 //MAX_BATCH_OPS_SIZE
+#define MIN_PCIE_BCAST_BATCH 1 //MAX_BATCH_OPS_SIZE
 #define MAX_PCIE_BCAST_BATCH MIN(MIN_PCIE_BCAST_BATCH, INV_CREDITS) //Warning! use min to avoid reseting the first req prior batching to the NIC
 #define MAX_MSGS_IN_PCIE_BCAST_BATCH (MAX_PCIE_BCAST_BATCH * REMOTE_MACHINES) //must be smaller than the q_depth
 
@@ -157,24 +158,24 @@
 #define ENABLE_CRD_PRINTS 0
 
 //Stats prints
-#define PRINT_STATS_EVERY_MSECS 1000
+#define PRINT_STATS_EVERY_MSECS 10000 //10
 #define PRINT_WORKER_STATS 0
 
 //Stats
 #define DUMP_STATS_2_FILE 0 //This is not working at the moment
-#define EXIT_ON_STATS_PRINT 1
-#define PRINT_NUM_STATS_BEFORE_EXITING 30
-#define ENABLE_STAT_COUNTING 1
+#define EXIT_ON_STATS_PRINT 0
+#define PRINT_NUM_STATS_BEFORE_EXITING 10 //80
+#define ENABLE_STAT_COUNTING 0
 
 //FAKE NODE FAILURE
 #define FAKE_FAILURE 0
 #define NODE_TO_FAIL 3
-#define ROUNDS_BEFORE_FAILURE 20
+#define ROUNDS_BEFORE_FAILURE 5
 
 //FAILURE DETECTION
-#define NODES_WITH_FAILURE_DETECTOR 1
+#define NODES_WITH_FAILURE_DETECTOR 0
 #define WORKER_EMULATING_FAILURE_DETECTOR 4
-#define NUM_OF_IDLE_ITERS_FOR_SUSPICION K_128 //M_2 //K_256 //M_1
+#define NUM_OF_IDLE_ITERS_FOR_SUSPICION K_64 //M_4 //K_32 //M_2 //K_256 //M_1
 
 // Rarely change
 #define WORKER_NUM (MACHINE_NUM * WORKERS_PER_MACHINE)

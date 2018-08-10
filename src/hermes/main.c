@@ -36,7 +36,7 @@ int main(int argc, char *argv[])
 	assert(MAX_PCIE_BCAST_BATCH <= INV_SS_GRANULARITY);
 	assert(MAX_PCIE_BCAST_BATCH <= VAL_SS_GRANULARITY);
 
-	assert(SOCKET_TO_START_SPAWNING_THREADS < TOTAL_NUMBER_OF_SOCKETS);
+//	assert(SOCKET_TO_START_SPAWNING_THREADS < TOTAL_NUMBER_OF_SOCKETS);
 	assert((ENABLE_HYPERTHREADING == 1 && USE_ALL_SOCKETS == 1) || WORKERS_PER_MACHINE <= TOTAL_CORES_PER_SOCKET);
 	assert(WORKERS_PER_MACHINE <= TOTAL_HW_CORES);
 
@@ -123,6 +123,7 @@ int main(int argc, char *argv[])
             w_core = init_core + i;
 		else
 			w_core = 2 * i + init_core;
+//        if(w_core > 19 ) w_core+=4;
         assert(ENABLE_HYPERTHREADING || w_core < TOTAL_NUMBER_OF_SOCKETS * TOTAL_CORES_PER_SOCKET);
 		assert(w_core < TOTAL_HW_CORES);
 		param_arr[i].id = i;
