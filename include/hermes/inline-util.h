@@ -1262,10 +1262,10 @@ stop_latency_measurment(uint8_t req_opcode, struct timespec *start)
 ------------------------------------OTHERS------------------------------------
 ---------------------------------------------------------------------------*/
 static inline int
-refill_ops(uint32_t* trace_iter, uint16_t worker_lid,
-		   struct spacetime_trace_command *trace, spacetime_op_t *ops,
-		   uint32_t* refilled_per_ops_debug_cnt,
-		   spacetime_group_membership last_group_membership)
+refill_ops_n_suspect_failed_nodes(uint32_t *trace_iter, uint16_t worker_lid,
+								  struct spacetime_trace_command *trace, spacetime_op_t *ops,
+								  uint32_t *refilled_per_ops_debug_cnt,
+								  spacetime_group_membership last_group_membership)
 {
 	static uint8_t first_iter_has_passed[WORKERS_PER_MACHINE] = { 0 };
 	static struct timespec start;

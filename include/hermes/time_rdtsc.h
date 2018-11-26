@@ -6,6 +6,12 @@
 #define HERMES_TIME_H
 #include <stdint.h> /* for uint64_t */
 #include <time.h>  /* for struct timespec */
+#include <stdio.h>
+
+#define ENABLE_STATIC_TICKS_PER_NS 1
+#define TICKS_PER_NS 2.1
+
+double g_ticks_per_ns;
 
 /* assembly code to read the TSC */
 static inline uint64_t RDTSC()
@@ -18,7 +24,7 @@ static inline uint64_t RDTSC()
 const int NANO_SECONDS_IN_SEC = 1000000000;
 /* returns a static buffer of struct timespec with the time difference of ts1 and ts2
    ts1 is assumed to be greater than ts2 */
-struct timespec *TimeSpecDiff(struct timespec *ts1, struct timespec *ts2)
+struct timespec *timespec_diff(struct timespec *ts1, struct timespec *ts2)
 {
     static struct timespec ts;
     ts.tv_sec = ts1->tv_sec - ts2->tv_sec;
@@ -30,51 +36,72 @@ struct timespec *TimeSpecDiff(struct timespec *ts1, struct timespec *ts2)
     return &ts;
 }
 
-double g_TicksPerNanoSec;
-static void CalibrateTicks()
+static void
+calibrate_ticks()
 {
-    struct timespec begints, endts;
-    uint64_t begin = 0, end = 0;
-    clock_gettime(CLOCK_MONOTONIC, &begints);
-    begin = RDTSC();
-    uint64_t i;
-    for (i = 0; i < 1000000; i++); /* must be CPU intensive */
-    end = RDTSC();
-    clock_gettime(CLOCK_MONOTONIC, &endts);
-    struct timespec *tmpts = TimeSpecDiff(&endts, &begints);
-    uint64_t nsecElapsed = tmpts->tv_sec * 1000000000LL + tmpts->tv_nsec;
-//    g_TicksPerNanoSec = (double)(end - begin)/(double)nsecElapsed;
-    g_TicksPerNanoSec = 2.1;
+    struct timespec begin_ts, end_ts;
+    printf("Start RDTSC calibration: patience is a virtue\n");
+    clock_gettime(CLOCK_MONOTONIC, &begin_ts);
+    uint64_t begin = RDTSC();
+    // do something CPU intensive
+    for (volatile unsigned long long i = 0; i < 1000000000ULL; ++i);
+    uint64_t end = RDTSC();
+    clock_gettime(CLOCK_MONOTONIC, &end_ts);
+    struct timespec *tmp_ts = timespec_diff(&end_ts, &begin_ts);
+    uint64_t ns_elapsed = (uint64_t) (tmp_ts->tv_sec * 1000000000LL + tmp_ts->tv_nsec);
+    g_ticks_per_ns = (double) (end - begin) / (double) ns_elapsed;
+    printf("RDTSC calibration is done (ticks_per_ns: %.2f \n", g_ticks_per_ns);
 }
 
 /* Call once before using RDTSC, has side effect of binding process to CPU1 */
-void InitRdtsc() { CalibrateTicks(); }
+static inline void
+init_rdtsc()
+{
+    if(ENABLE_STATIC_TICKS_PER_NS)
+        g_ticks_per_ns = TICKS_PER_NS;
+    else
+        calibrate_ticks();
+}
 
-void GetTimeSpec(struct timespec *ts, uint64_t nsecs)
+static inline void
+get_timespec(struct timespec *ts, uint64_t nsecs)
 {
     ts->tv_sec = nsecs / NANO_SECONDS_IN_SEC;
     ts->tv_nsec = nsecs % NANO_SECONDS_IN_SEC;
 }
 
 /* ts will be filled with time converted from TSC reading */
-void GetRdtscTime(struct timespec *ts)
+static inline void
+get_rdtsc_timespec(struct timespec *ts)
 {
-    GetTimeSpec(ts, RDTSC() / g_TicksPerNanoSec);
+    get_timespec(ts, (uint64_t) (RDTSC() / g_ticks_per_ns));
 }
 
-static inline double time_elapsed_in_microsec(struct timespec start)
+static inline double
+time_elapsed_in_us(struct timespec start)
 {
 	struct timespec now, *diff;
-	GetRdtscTime(&now);
-	diff = TimeSpecDiff(&now, &start);
+    get_rdtsc_timespec(&now);
+	diff = timespec_diff(&now, &start);
 	return  diff->tv_sec * 1000000 + diff->tv_nsec / 1000;
 }
 
-static inline double time_elapsed_in_ms(struct timespec start)
+static inline double
+time_elapsed_in_ms(struct timespec start)
 {
 	struct timespec now, *diff;
-	GetRdtscTime(&now);
-	diff = TimeSpecDiff(&now, &start);
+    get_rdtsc_timespec(&now);
+	diff = timespec_diff(&now, &start);
 	return  diff->tv_sec * 1000 + diff->tv_nsec / 1000000;
 }
+
+static inline double
+time_elapsed_in_sec(struct timespec start)
+{
+	struct timespec now, *diff;
+    get_rdtsc_timespec(&now);
+	diff = timespec_diff(&now, &start);
+	return  diff->tv_sec + diff->tv_nsec / NANO_SECONDS_IN_SEC;
+}
+
 #endif //HERMES_TIME_H

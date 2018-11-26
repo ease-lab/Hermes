@@ -134,8 +134,8 @@ void setup_incoming_buffs_and_post_initial_recvs(ud_req_inv_t *incoming_invs, ud
 //static inline double time_elapsed_in_ms(struct timespec start)
 //{
 //	struct timespec end, *diff;
-//	GetRdtscTime(&end);
-//	diff = TimeSpecDiff(&end,&start);
+//	get_rdtsc_timespec(&end);
+//	diff = timespec_diff(&end,&start);
 //	return  diff->tv_nsec * 1000000;
 //}
 //

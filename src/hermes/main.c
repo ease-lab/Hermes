@@ -134,6 +134,7 @@ int main(int argc, char *argv[])
 		pthread_attr_setaffinity_np(&attr, sizeof(cpu_set_t), &cpus_w);
 		pthread_create(&thread_arr[i], &attr, run_worker, &param_arr[i]);
 	}
+
 	yellow_printf("{Sizes} Op: %d, Meta %d, Value %d,\n",
 				 sizeof(spacetime_op_t), sizeof(spacetime_object_meta), ST_VALUE_SIZE);
 	yellow_printf("{Op Sizes} Inv: %d, Ack: %d, Val: %d, Crd: %d\n",

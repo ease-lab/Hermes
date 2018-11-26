@@ -76,8 +76,10 @@ void *run_worker(void *arg){
 			  &val_recv_ops, &inv_send_packet_ops,
 			  &ack_send_packet_ops, &val_send_packet_ops);
 
-	//Used to register the intermidiate send_packet_buffs to the NIC when inlining is disabled
-	struct ibv_mr *inv_mr, *ack_mr, *val_mr;
+	//Used to register the intermidiate send_packet_buffs to the NIC iff inlining is disabled
+	struct ibv_mr *inv_mr = NULL;
+	struct ibv_mr *ack_mr = NULL;
+	struct ibv_mr *val_mr = NULL;
 	if(DISABLE_INV_INLINING) inv_mr = register_buffer(cb->pd, inv_send_packet_ops, INV_SEND_OPS_SIZE * sizeof(spacetime_inv_packet_t));
 	if(DISABLE_ACK_INLINING) ack_mr = register_buffer(cb->pd, ack_send_packet_ops, ACK_SEND_OPS_SIZE * sizeof(spacetime_ack_packet_t));
 	if(DISABLE_VAL_INLINING) val_mr = register_buffer(cb->pd, val_send_packet_ops, VAL_SEND_OPS_SIZE * sizeof(spacetime_val_packet_t));
@@ -90,7 +92,8 @@ void *run_worker(void *arg){
 	struct spacetime_trace_command *trace;
 	trace_init(&trace, worker_gid);
 	setup_recv_WRs(inv_recv_wr,inv_recv_sgl,ack_recv_wr,ack_recv_sgl,val_recv_wr,val_recv_sgl,cb);
-    /* Post receives, we need to do this early */
+
+    /* Post receives, we need to do th is early */
     if(WRITE_RATIO > 0)
 		setup_incoming_buffs_and_post_initial_recvs(incoming_invs, incoming_acks, incoming_vals, &inv_push_recv_ptr,
 													&ack_push_recv_ptr, &val_push_recv_ptr, inv_recv_wr,
@@ -107,13 +110,13 @@ void *run_worker(void *arg){
 	uint32_t trace_iter = 0;
 	long long int inv_br_tx = 0, val_br_tx = 0, send_ack_tx = 0, send_crd_tx = 0;
 	uint16_t rolling_inv_index = 0;
-	uint8_t has_outstanding_vals = 0, has_outstanding_vals_from_membership_change = 0;
+	uint8_t has_outstanding_vals = 0, has_outstanding_vals_from_memb_change = 0;
 
 //	if(INCREASE_TAIL_LATENCY) {
 		//Latency enhancement
-	    CalibrateTicks();
+		init_rdtsc();
 		struct timespec time_received_msg;
-		GetRdtscTime(&time_received_msg);
+		get_rdtsc_timespec(&time_received_msg);
 //		long long time_received_msg = hrd_get_cycles();
 		uint8_t has_msg_stalled = 0;
 		spacetime_ack_t stalled_ack;
@@ -128,7 +131,8 @@ void *run_worker(void *arg){
 //			for(int k = 0; k < MAX_BATCH_OPS_SIZE; k++)
 //				printf("Op[%d]:%s(%" PRIu64 ")--> state: %s\n", k, code_to_str(ops[k].opcode), ((uint64_t *) &ops[k].key)[0], code_to_str(ops[k].state));
 //		}
-		node_suspected = refill_ops(&trace_iter, worker_lid, trace, ops, num_of_iters_serving_op, last_group_membership);
+		node_suspected = refill_ops_n_suspect_failed_nodes(&trace_iter, worker_lid, trace, ops,
+														   num_of_iters_serving_op, last_group_membership);
 
 		batch_ops_to_KVS(MAX_BATCH_OPS_SIZE, &ops, worker_lid, last_group_membership);
 
@@ -144,7 +148,8 @@ void *run_worker(void *arg){
 									 &inv_push_recv_ptr, inv_recv_wr, last_group_membership, credits, worker_lid);
 
 			if(invs_polled > 0) {
-				batch_invs_to_KVS(invs_polled, &inv_recv_ops, ops, worker_lid, &node_suspected, num_of_iters_serving_op);
+				batch_invs_to_KVS(invs_polled, &inv_recv_ops, ops, worker_lid,
+								  &node_suspected, num_of_iters_serving_op);
 
 				///~~~~~~~~~~~~~~~~~~~~~~ACKS~~~~~~~~~~~~~~~~~~~~~~~~~~~
 				issue_acks(inv_recv_ops, ack_send_packet_ops, &ack_push_send_ptr, &send_ack_tx,
@@ -152,7 +157,7 @@ void *run_worker(void *arg){
 				invs_polled = 0;
 			}
 
-			if(has_outstanding_vals == 0 && has_outstanding_vals_from_membership_change == 0) {
+			if(has_outstanding_vals == 0 && has_outstanding_vals_from_memb_change == 0) {
 				///Poll for Acks
 				poll_buff_and_post_recvs(incoming_acks, ST_ACK_BUFF, &ack_pull_recv_ptr, ack_recv_ops,
 										 &acks_polled, cb->dgram_recv_cq[ACK_UD_QP_ID], ack_recv_wc, cb,
@@ -165,7 +170,7 @@ void *run_worker(void *arg){
 							if (acks_polled > 1 && total_acks_polled > INCREASE_TAIL_EVERY_X_ACKS) {
 								total_acks_polled = 0;
 								has_msg_stalled = 1;
-								GetRdtscTime(&time_received_msg);
+								get_rdtsc_timespec(&time_received_msg);
 //								yellow_printf("ACK Stalled\n");
 								memcpy(&stalled_ack, &ack_recv_ops[acks_polled - 1], sizeof(spacetime_ack_t));
 								ack_recv_ops[acks_polled - 1].opcode = ST_EMPTY;
@@ -188,8 +193,8 @@ void *run_worker(void *arg){
 
 			if(!DISABLE_VALS_FOR_DEBUGGING) {
 				///~~~~~~~~~~~~~~~~~~~~~~ VALs ~~~~~~~~~~~~~~~~~~~~~~~~~~~
-				if(has_outstanding_vals_from_membership_change > 0)
-					has_outstanding_vals_from_membership_change = broadcast_vals_on_membership_change(ops, val_send_packet_ops, &val_push_send_ptr,
+				if(has_outstanding_vals_from_memb_change > 0)
+					has_outstanding_vals_from_memb_change = broadcast_vals_on_membership_change(ops, val_send_packet_ops, &val_push_send_ptr,
 																									  val_send_wr, val_send_sgl, credits, cb, crd_recv_wc,
 																									  last_group_membership, &val_br_tx, crd_recv_wr, worker_lid);
 				else
@@ -204,6 +209,7 @@ void *run_worker(void *arg){
 
 				if (vals_polled > 0) {
 					batch_vals_to_KVS(vals_polled, &val_recv_ops, ops, worker_lid);
+
 					///~~~~~~~~~~~~~~~~~~~~~~CREDITS~~~~~~~~~~~~~~~~~~~~~~~~~~~
 					issue_credits(val_recv_ops, &send_crd_tx, crd_send_wr, credits, cb, worker_lid);
 					vals_polled = 0;
@@ -220,10 +226,13 @@ void *run_worker(void *arg){
 								last_group_membership, worker_lid);
 				reset_bcast_send_buffers(inv_send_packet_ops, &inv_push_send_ptr,
 										 val_send_packet_ops, &val_push_send_ptr);
-				complete_writes_and_replays_on_follower_removal(MAX_BATCH_OPS_SIZE, &ops, last_group_membership, worker_lid);
-				has_outstanding_vals_from_membership_change = broadcast_vals_on_membership_change(ops, val_send_packet_ops, &val_push_send_ptr,
-																		   val_send_wr, val_send_sgl, credits, cb, crd_recv_wc,
-                                                                           last_group_membership, &val_br_tx, crd_recv_wr, worker_lid);
+				complete_writes_and_replays_on_follower_removal(MAX_BATCH_OPS_SIZE, &ops,
+																last_group_membership, worker_lid);
+				has_outstanding_vals_from_memb_change = broadcast_vals_on_membership_change(ops, val_send_packet_ops,
+																							&val_push_send_ptr, val_send_wr,
+																							val_send_sgl, credits, cb,
+																							crd_recv_wc, last_group_membership,
+																							&val_br_tx, crd_recv_wr, worker_lid);
 				//reset counter for failure suspicion
 				memset(num_of_iters_serving_op, 0, sizeof(uint32_t) * MAX_BATCH_OPS_SIZE);
 			}
