@@ -40,3 +40,6 @@ src/Armonia/main
 /results/latency/*.txt
 /results/scattered-results/*
 /results/aggregated-system-results/*.csv
+/traces/system-traces/*.txt
+/traces/current-splited-traces/*.txt
+/traces/*.txt

@@ -4,9 +4,9 @@
 
 #ifndef SPACETIME_CONFIG_H
 #define SPACETIME_CONFIG_H
-#include "hrd.h"
+#include "../libhrd/hrd.h"
 
-#define MACHINE_NUM 5
+#define MACHINE_NUM 2 //5
 #define REMOTE_MACHINES (MACHINE_NUM - 1)
 #define GROUP_MEMBERSHIP_ARRAY_SIZE CEILING(MACHINE_NUM, 8) //assuming uint8_t
 #define WORKERS_PER_MACHINE 30
@@ -21,12 +21,11 @@
 
 //LATENCY
 #define INCREASE_TAIL_LATENCY 0
-//#define INCREASE_TAIL_BY_MICROSECS 1000
 #define INCREASE_TAIL_BY_MS 5
 #define NUM_OF_CORES_TO_INCREASE_TAIL WORKERS_PER_MACHINE
 #define INCREASE_TAIL_EVERY_X_ACKS 0
 #define MEASURE_LATENCY 1
-#define THREAD_MEASURING_LATENCY 4
+#define THREAD_MEASURING_LATENCY 0 //4
 #define MAX_LATENCY 200 //in us
 #define LATENCY_BUCKETS 200
 #define LATENCY_PRECISION (MAX_LATENCY / LATENCY_BUCKETS) //latency granularity in us
@@ -39,7 +38,7 @@
 
 //REQUESTS
 #define NUM_OF_REP_REQS K_128
-#define FEED_FROM_TRACE 0
+#define FEED_FROM_TRACE 1
 #define USE_A_SINGLE_KEY 0
 
 /*-------------------------------------------------
@@ -64,7 +63,8 @@
 -----------------PCIe BATCHING---------------------
 --------------------------------------------------*/
 #define MIN_PCIE_BCAST_BATCH 1 //MAX_BATCH_OPS_SIZE
-#define MAX_PCIE_BCAST_BATCH MIN(MIN_PCIE_BCAST_BATCH, INV_CREDITS) //Warning! use min to avoid reseting the first req prior batching to the NIC
+#define MAX_PCIE_BCAST_BATCH MIN(MIN_PCIE_BCAST_BATCH + 1, INV_CREDITS) //Warning! use min to avoid reseting the first req prior batching to the NIC
+//WARNING: todo check why we need to have MIN_PCIE_BCAST_BATCH + 1 instead of just MIN_PCIE_BCAST_BATCH
 #define MAX_MSGS_IN_PCIE_BCAST_BATCH (MAX_PCIE_BCAST_BATCH * REMOTE_MACHINES) //must be smaller than the q_depth
 
 /**/

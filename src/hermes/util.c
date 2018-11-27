@@ -269,7 +269,7 @@ void trace_init(struct spacetime_trace_command** trace, uint16_t worker_gid)
                  machine_num, "_c_", local_client_id, ".txt");
         //TODO need to implement "parse_trace"
         //initialize the command array from the trace file
-//        parse_trace(path, (struct trace_command **)cmds, g_id % LEADERS_PER_MACHINE);
+        parse_trace(path, (struct trace_command **)cmds, g_id % LEADERS_PER_MACHINE);
         assert(0);
     }else
         manufacture_trace(trace, worker_gid);

@@ -222,6 +222,7 @@ void *run_worker(void *arg){
 
 
 			if(group_membership_has_changed(&last_group_membership, worker_lid) == 1){
+			    printf("Reconfiguring group membership\n");
 				reconfigure_wrs(inv_send_wr, inv_send_sgl, val_send_wr, val_send_sgl,
 								last_group_membership, worker_lid);
 				reset_bcast_send_buffers(inv_send_packet_ops, &inv_push_send_ptr,

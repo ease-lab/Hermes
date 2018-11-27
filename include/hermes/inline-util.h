@@ -183,6 +183,7 @@ poll_buff_and_post_recvs(void *incoming_buff, uint8_t buff_type, int *buf_pull_p
 			default:
 				assert(0);
 		}
+
         if(node_is_in_membership(last_group_membership, sender))
 			for(j = 0; j < *next_packet_req_num_ptr; j++){
 				recv_op_ptr = ((uint8_t *) recv_ops) + (*ops_push_ptr * req_size);
@@ -275,31 +276,44 @@ forge_bcast_inv_wrs(spacetime_op_t* op, spacetime_inv_packet_t* inv_send_op,
 
 	if(ENABLE_ASSERTIONS)
 		assert(sizeof(spacetime_inv_t) == sizeof(spacetime_op_t));
+
 	memcpy(&inv_send_op->reqs[inv_send_op->req_num], op, sizeof(spacetime_inv_t));
 	inv_send_op->reqs[inv_send_op->req_num].opcode = opcode;
 	inv_send_op->reqs[inv_send_op->req_num].sender = (uint8_t) machine_id;
 	inv_send_op->req_num++;
+
+
 	if(opcode == ST_OP_MEMBERSHIP_CHANGE)
 		cyan_printf("FORGING MEMBERSHIP CHANGE for node: %d\n",inv_send_op->reqs[inv_send_op->req_num-1].value[0]);
+
 
 	send_inv_sgl[br_i].length = (sizeof(spacetime_inv_packet_t) - (INV_MAX_REQ_COALESCE - inv_send_op->req_num));
 
 	w_stats[worker_lid].issued_invs_per_worker++;
 
+
 	if(inv_send_op->req_num == 1) {
 		send_inv_sgl[br_i].addr = (uint64_t) (uintptr_t) inv_send_op;
 		int br_i_x_remotes = br_i * num_of_alive_remotes;
+
 		if(DISABLE_INV_INLINING)
 			send_inv_wr[br_i_x_remotes].send_flags = 0;
 		else
 			send_inv_wr[br_i_x_remotes].send_flags = IBV_SEND_INLINE; //reset possibly signaled wr from the prev round
+
+
 		// SET THE PREV SEND_WR TO POINT TO CURR
 		if (br_i > 0)
 			send_inv_wr[br_i_x_remotes - 1].next = &send_inv_wr[br_i_x_remotes];
+
+
 		// Do a Signaled Send every INV_SS_GRANULARITY broadcasts (INV_SS_GRANULARITY * REMOTE_MACHINES messages)
 		if (*total_inv_bcasts % INV_SS_GRANULARITY == 0) {
-			if(*total_inv_bcasts > 0) { //if not the first SS poll the previous SS completion
+
+		    //if not the first SS poll the previous SS completion
+			if(*total_inv_bcasts > 0) {
 				hrd_poll_cq(cb->dgram_send_cq[INV_UD_QP_ID], 1, &signal_send_wc);
+
 				w_stats[worker_lid].inv_ss_completions_per_worker++;
 				if (ENABLE_SS_PRINTS && ENABLE_INV_PRINTS && worker_lid < MAX_THREADS_TO_PRINT)
 					red_printf( "^^^ Polled SS completion[W%d]: \033[31mINV\033[0m %d "
@@ -308,6 +322,7 @@ forge_bcast_inv_wrs(spacetime_op_t* op, spacetime_inv_packet_t* inv_send_op,
 								(*total_inv_bcasts - INV_SS_GRANULARITY) * REMOTE_MACHINES + 1,
 								*total_inv_bcasts * REMOTE_MACHINES);
 			}
+
 			if (ENABLE_SS_PRINTS && ENABLE_INV_PRINTS && worker_lid < MAX_THREADS_TO_PRINT)
 				red_printf("vvv Send SS[W%d]: \033[31mINV\033[0m \n", worker_lid);
 			send_inv_wr[br_i_x_remotes].send_flags |= IBV_SEND_SIGNALED;
@@ -333,7 +348,7 @@ batch_invs_2_NIC(struct ibv_send_wr *send_inv_wr, struct ibv_sge *send_inv_sgl,
 			sgl_index = j / num_of_alive_remotes;
 			assert(send_inv_wr[j].num_sge == 1);
 			assert(send_inv_wr[j].next == &send_inv_wr[j + 1]);
-			assert(DISABLE_INV_INLINING || send_inv_wr[j].opcode == IBV_SEND_INLINE | IBV_SEND_SIGNALED);
+			assert(DISABLE_INV_INLINING || send_inv_wr[j].opcode == (IBV_SEND_INLINE | IBV_SEND_SIGNALED));
 			assert(send_inv_wr[j].sg_list == &send_inv_sgl[sgl_index]);
 			assert(((spacetime_inv_packet_t *) send_inv_sgl[sgl_index].addr)->req_num > 0);
 			for(k = 0; k < ((spacetime_inv_packet_t *) send_inv_sgl[sgl_index].addr)->req_num; k ++){
@@ -377,9 +392,11 @@ broadcast_invs(spacetime_op_t *ops, spacetime_inv_packet_t *inv_send_packet_ops,
 	// traverse all of the ops to find invs
 	for (i = 0; i < MAX_BATCH_OPS_SIZE; i++) {
 		index = (uint16_t) ((i + *rolling_index) % MAX_BATCH_OPS_SIZE);
-		if (ops[index].state != ST_PUT_SUCCESS && ops[index].state != ST_REPLAY_SUCCESS &&
+		if (ops[index].state != ST_PUT_SUCCESS &&
+		    ops[index].state != ST_REPLAY_SUCCESS &&
 			ops[index].state != ST_OP_MEMBERSHIP_CHANGE)
 			continue;
+
 		//Check for credits
 		for (j = 0; j < MACHINE_NUM; j++) {
 			if (j == machine_id) continue; // skip the local machine
@@ -394,6 +411,7 @@ broadcast_invs(spacetime_op_t *ops, spacetime_inv_packet_t *inv_send_packet_ops,
 			}else
 				credits_missing[j] = 0;
 		}
+
 		// if not enough credits for a Broadcast
 		if (missing_credits == 1) break;
 
@@ -410,10 +428,11 @@ broadcast_invs(spacetime_op_t *ops, spacetime_inv_packet_t *inv_send_packet_ops,
 		forge_bcast_inv_wrs(&ops[index], &inv_send_packet_ops[*inv_push_ptr],
 							send_inv_wr, send_inv_sgl, last_g_membership.num_of_alive_remotes,
 							cb, total_inv_bcasts, br_i, worker_lid,
-							(uint8_t) (ops[index].state == ST_OP_MEMBERSHIP_CHANGE ? ST_OP_MEMBERSHIP_CHANGE : ST_OP_INV));
+							(uint8_t) (ops[index].state == ST_OP_MEMBERSHIP_CHANGE ?
+									   ST_OP_MEMBERSHIP_CHANGE : ST_OP_INV));
 
 		//Change state of op
-		if(ops[index].state == ST_PUT_SUCCESS )
+		if(ops[index].state == ST_PUT_SUCCESS)
 			ops[index].state = ST_IN_PROGRESS_PUT;
 		else if(ops[index].state == ST_REPLAY_SUCCESS)
 			ops[index].state = ST_IN_PROGRESS_REPLAY;
@@ -422,18 +441,25 @@ broadcast_invs(spacetime_op_t *ops, spacetime_inv_packet_t *inv_send_packet_ops,
 		else assert(0);
 
 		total_invs_in_batch++;
+
 		// if packet is full
 		if(inv_send_packet_ops[*inv_push_ptr].req_num == INV_MAX_REQ_COALESCE) {
 			br_i++;
+
+			// if last batch to the NIC
 			if (br_i == MAX_PCIE_BCAST_BATCH) { //check if we should batch it to NIC
 				batch_invs_2_NIC(send_inv_wr, send_inv_sgl, last_g_membership.num_of_alive_remotes,
 								 cb, br_i, total_invs_in_batch, worker_lid);
 				br_i = 0;
 				total_invs_in_batch = 0;
 			}
+
 			HRD_MOD_ADD(*inv_push_ptr, INV_SEND_OPS_SIZE / REMOTE_MACHINES *
 					     last_g_membership.num_of_alive_remotes); //got to the next "packet" + dealing with failutes
-			//Reset data left from previous bcasts after ibv_post_send to avoid sending reseted data
+//			static int mk = 0;
+//			printf("Sent idx: %d (%d)\n", *inv_push_ptr, mk++);
+
+///			// Reset data left from previous bcasts after ibv_post_send to avoid sending resetted data
 			inv_send_packet_ops[*inv_push_ptr].req_num = 0;
 			for(j = 0; j < INV_MAX_REQ_COALESCE; j++)
 				inv_send_packet_ops[*inv_push_ptr].reqs[j].opcode = ST_EMPTY;
@@ -446,14 +472,19 @@ broadcast_invs(spacetime_op_t *ops, spacetime_inv_packet_t *inv_send_packet_ops,
 		br_i++;
 
 	if(br_i > 0)
-		batch_invs_2_NIC(send_inv_wr, send_inv_sgl, last_g_membership.num_of_alive_remotes, cb, br_i,
-						 total_invs_in_batch, worker_lid);
+		batch_invs_2_NIC(send_inv_wr, send_inv_sgl, last_g_membership.num_of_alive_remotes,
+						 cb, br_i, total_invs_in_batch, worker_lid);
 
 	//Move to next packet and reset data left from previous bcasts
 	if(inv_send_packet_ops[*inv_push_ptr].req_num > 0 &&
-	   inv_send_packet_ops[*inv_push_ptr].req_num < INV_MAX_REQ_COALESCE) {
+	   inv_send_packet_ops[*inv_push_ptr].req_num < INV_MAX_REQ_COALESCE)
+	{
 		HRD_MOD_ADD(*inv_push_ptr, INV_SEND_OPS_SIZE / REMOTE_MACHINES *
 				     last_g_membership.num_of_alive_remotes); //got to the next "packet" + dealing with failutes
+
+//		static int mk2 = 0;
+//		printf("2 Sent idx: %d (%d)\n", *inv_push_ptr, mk2++);
+		 ///
 		inv_send_packet_ops[*inv_push_ptr].req_num = 0;
 		for(j = 0; j < INV_MAX_REQ_COALESCE; j++)
 			inv_send_packet_ops[*inv_push_ptr].reqs[j].opcode = ST_EMPTY;
