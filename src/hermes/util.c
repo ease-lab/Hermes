@@ -373,8 +373,11 @@ void trace_init(struct spacetime_trace_command** trace, uint16_t worker_gid)
             exit(EXIT_FAILURE);
         }
 
-        snprintf(path, sizeof(path), "%s%s%04d%s", cwd,
-                "/../../traces/current-splited-traces/t_", worker_gid, "_a_0.99.txt");
+        double zipf_exponent = ZIPF_EXPONENT_OF_TRACE / 100.0;
+
+        snprintf(path, sizeof(path), "%s%s%04d%s%.2f%s", cwd,
+                "/../../traces/current-splited-traces/t_",
+                worker_gid, "_a_", zipf_exponent, ".txt");
 
         //initialize the command array from the trace file
         parse_trace(path, trace, worker_gid);
