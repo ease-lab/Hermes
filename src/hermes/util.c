@@ -223,7 +223,8 @@ char* code_to_str(uint8_t code)
 void manufacture_trace(struct spacetime_trace_command **cmds, int worker_gid)
 {
     srand(time(NULL) + worker_gid * 7);
-    *cmds = (struct spacetime_trace_command *)malloc((NUM_OF_REP_REQS + 1) * sizeof(struct spacetime_trace_command));
+    *cmds = malloc((NUM_OF_REP_REQS + 1) * sizeof(struct spacetime_trace_command));
+
     uint32_t i, writes = 0;
     //parse file line by line and insert trace to cmd.
     for (i = 0; i < NUM_OF_REP_REQS; i++) {
@@ -234,7 +235,7 @@ void manufacture_trace(struct spacetime_trace_command **cmds, int worker_gid)
         uint32 key_id = KEY_NUM != 0 ? (uint32) rand() % KEY_NUM : (uint32) rand() % SPACETIME_NUM_KEYS;
         if(USE_A_SINGLE_KEY == 1) key_id =  0;
         uint128 key_hash = CityHash128((char *) &(key_id), 4);
-//        memcpy(&(*cmds)[i].key_hash, &key_hash, 16);
+//        memcpy(&(*cmds)[i].key_hash, &key_hash, 16); // this is for 16B keys
         memcpy(&(*cmds)[i].key_hash, &((uint64_t*)&key_hash)[1], 8);
         if ((*cmds)[i].opcode == ST_OP_PUT) writes++;
     }
@@ -244,6 +245,103 @@ void manufacture_trace(struct spacetime_trace_command **cmds, int worker_gid)
     (*cmds)[NUM_OF_REP_REQS].opcode = NOP;
     // printf("CLient %d Trace w_size: %d, debug counter %d hot keys %d, cold keys %d \n",l_id, cmd_count, debug_cnt,
     //         t_stats[l_id].hot_keys_per_trace, t_stats[l_id].cold_keys_per_trace );
+}
+
+// Parse a trace, use this for skewed workloads as uniform trace can be manufactured easilly
+int
+parse_trace(char* path, struct spacetime_trace_command **cmds, int worker_gid)
+{
+    FILE * fp;
+    ssize_t read;
+    size_t len = 0;
+    char* ptr;
+    char* word;
+    char *saveptr;
+    char* line = NULL;
+    int cmd_count = 0;
+    int writes = 0;
+    uint32_t hottest_key_counter = 0;
+
+    fp = fopen(path, "r");
+    if (fp == NULL){
+        printf ("ERROR: Cannot open file: %s\n", path);
+        exit(EXIT_FAILURE);
+    }
+
+    while ((read = getline(&line, &len, fp)) != -1)
+        cmd_count++;
+
+//    printf("File %s has %d lines \n", path, cmd_count);
+
+    fclose(fp);
+    if (line)
+        free(line);
+
+    len = 0;
+    line = NULL;
+
+    fp = fopen(path, "r");
+    if (fp == NULL){
+        printf ("ERROR: Cannot open file: %s\n", path);
+        exit(EXIT_FAILURE);
+    }
+
+    (*cmds) = malloc((cmd_count + 1) * sizeof(struct spacetime_trace_command));
+
+    // Initialize random with a seed based on local time and a worker / machine id
+    srand((unsigned int) (time(NULL) + worker_gid * 7));
+
+    int debug_cnt = 0;
+    //parse file line by line and insert trace to cmd.
+    for (int i = 0; i < cmd_count; i++) {
+        if ((read = getline(&line, &len, fp)) == -1)
+            die("ERROR: Problem while reading the trace\n");
+        int word_count = 0;
+        assert(word_count == 0);
+        word = strtok_r(line, " ", &saveptr);
+
+        //Before reading the request deside if it's gone be read or write
+        (*cmds)[i].opcode = (uint8_t) (WRITE_RATIO == 1000 || ((rand() % 1000 < WRITE_RATIO)) ? ST_OP_PUT :  ST_OP_GET);
+
+        if ((*cmds)[i].opcode == ST_OP_PUT) writes++;
+
+        while (word != NULL) {
+            if (word[strlen(word) - 1] == '\n')
+                word[strlen(word) - 1] = 0;
+
+            if(word_count == 0) {
+                uint32_t key_id = (uint32_t) strtoul(word, &ptr, 10);
+                if(key_id == 0)
+                    hottest_key_counter++;
+                uint128 key_hash = CityHash128((char *) &(key_id), 4);
+//              memcpy(&(*cmds)[i].key_hash, &key_hash, 16); // this is for 16B keys
+                memcpy(&(*cmds)[i].key_hash, &((uint64_t*)&key_hash)[1], 8); // this is for 8B keys
+                debug_cnt++;
+            } //else DO NOTHING
+
+            word_count++;
+            word = strtok_r(NULL, " ", &saveptr);
+            if (word == NULL && word_count != 1) {
+                printf("Client %d Error: Reached word %d in line %d : %s \n",
+                        worker_gid, word_count, i, line);
+                assert(0);
+            }
+        }
+
+    }
+    if (worker_gid % WORKERS_PER_MACHINE == 0)
+        printf("Trace size: %d | Hottest key accessed: %.2f%% | Write Ratio: %.2f%% \n",
+               cmd_count, (100 * hottest_key_counter / (double) cmd_count),
+               (double) (writes * 100) / cmd_count);
+
+    (*cmds)[cmd_count].opcode = NOP;
+    // printf("Thread %d Trace w_size: %d, debug counter %d hot keys %d, cold keys %d \n",l_id, cmd_count, debug_cnt,
+    //         t_stats[l_id].hot_keys_per_trace, t_stats[l_id].cold_keys_per_trace );
+    assert(cmd_count == debug_cnt);
+    fclose(fp);
+    if (line)
+        free(line);
+    return cmd_count;
 }
 
 void trace_init(struct spacetime_trace_command** trace, uint16_t worker_gid)
@@ -264,13 +362,11 @@ void trace_init(struct spacetime_trace_command** trace, uint16_t worker_gid)
             exit(EXIT_FAILURE);
         }
 
-        snprintf(path, sizeof(path), "%s%s%s%s%s%s", cwd,
-                 "/../../traces/current-splited-traces/s_",
-                 machine_num, "_c_", local_client_id, ".txt");
-        //TODO need to implement "parse_trace"
+        snprintf(path, sizeof(path), "%s%s%04d%s", cwd,
+                "/../../traces/current-splited-traces/t_", worker_gid, "_a_0.99.txt");
+
         //initialize the command array from the trace file
-        parse_trace(path, (struct trace_command **)cmds, g_id % LEADERS_PER_MACHINE);
-        assert(0);
+        parse_trace(path, trace, worker_gid);
     }else
         manufacture_trace(trace, worker_gid);
 }
