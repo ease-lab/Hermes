@@ -134,6 +134,7 @@ typedef struct{ ///May add    uint8_t session_id;
     uint8_t val_len;
     uint8_t tie_breaker_id;
     uint32_t version; ///timestamp{version+tie_braker_id}
+    uint16_t no_req_coalescing; //todo this is only for skew optimizations
     uint8_t value[ST_VALUE_SIZE];
 }spacetime_op_t;
 
@@ -144,6 +145,7 @@ typedef struct{
     uint8_t val_len;
     uint8_t tie_breaker_id;
     uint32_t version; ///timestamp{version+tie_braker_id}
+    uint16_t no_coales; //todo this is only for skew optimizations
     uint8_t value[ST_VALUE_SIZE];
 }spacetime_inv_t;
 
@@ -246,6 +248,7 @@ struct spacetime_kv {
 struct spacetime_trace_command {
     spacetime_key_t key_hash;
     uint8_t opcode;
+    uint8_t key_id; // stores key ids 0-254 otherwise it is set to 255 to indicate other key ids
 };
 
 void spacetime_init(int spacetime_id, int num_threads);

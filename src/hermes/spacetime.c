@@ -213,6 +213,7 @@ int find_suspected_node(spacetime_op_t *op, int thread_id, spacetime_group_membe
 }
 
 
+static uint64_t g_seed = 0xdeadbeef;
 void batch_ops_to_KVS(int op_num, spacetime_op_t **op, int thread_id,
 					  spacetime_group_membership curr_membership)
 {
@@ -313,6 +314,7 @@ void batch_ops_to_KVS(int op_num, spacetime_op_t **op, int thread_id,
 					uint8_t was_locked_read = 0;
 					(*op)[I].state = ST_EMPTY;
 					do {
+					    uint8_t node_id; // used for virtual --> physical node ids mapping
 						prev_meta = *curr_meta;
 						//switch template with all states
 						switch(curr_meta->state) {
@@ -341,8 +343,13 @@ void batch_ops_to_KVS(int op_num, spacetime_op_t **op, int thread_id,
 										(*op)[I].state = ST_GET_STALL;
 										break;
 									case INVALID_STATE:
-										if(node_is_in_membership(curr_membership, curr_meta->last_writer_id))
+									    node_id = (uint8_t) (!ENABLE_VIRTUAL_NODE_IDS ?
+																	 curr_meta->last_writer_id :
+																	 curr_meta->last_writer_id % MACHINE_NUM);
+										if(node_is_in_membership(curr_membership, node_id))
 											(*op)[I].state = ST_GET_STALL;
+//										if(node_is_in_membership(curr_membership, curr_meta->last_writer_id))
+//											(*op)[I].state = ST_GET_STALL;
 										else if(curr_meta->op_buffer_index == ST_OP_BUFFER_INDEX_EMPTY){
 											///stall replay: until all acks from last write arrive
 											///on multiple threads we can't complete writes / replays on VAL
@@ -377,6 +384,7 @@ void batch_ops_to_KVS(int op_num, spacetime_op_t **op, int thread_id,
 					///Warning: even if a write is in progress write we may need to update the value of write_buffer_index
 					(*op)[I].state = ST_EMPTY;
 					optik_lock(curr_meta);
+					uint8_t v_node_id = (uint8_t) machine_id;
 					switch(curr_meta->state) {
 						case VALID_STATE:
 						case INVALID_STATE:
@@ -395,8 +403,12 @@ void batch_ops_to_KVS(int op_num, spacetime_op_t **op, int thread_id,
 									assert(I < ST_OP_BUFFER_INDEX_EMPTY);
 								curr_meta->op_buffer_index = (uint8_t) I;
 								curr_meta->last_local_write_version = curr_meta->version + 1;
-								curr_meta->last_local_write_tie_breaker_id = (uint8_t) machine_id;
-								optik_unlock_write(curr_meta, (uint8_t) machine_id, &((*op)[I].version));
+
+								v_node_id = (uint8_t) (!ENABLE_VIRTUAL_NODE_IDS ? machine_id :
+													   machine_id + MACHINE_NUM * (hrd_fastrand(&g_seed) % VIRTUAL_NODE_IDS_PER_NODE));
+								curr_meta->last_local_write_tie_breaker_id = v_node_id;
+								optik_unlock_write(curr_meta, v_node_id, &((*op)[I].version));
+
 								(*op)[I].state = ST_PUT_SUCCESS;
 							}
 							break;
@@ -410,7 +422,7 @@ void batch_ops_to_KVS(int op_num, spacetime_op_t **op, int thread_id,
 					}
 					//Fill this deterministic stuff after releasing the lock
 					if((*op)[I].state == ST_PUT_SUCCESS)
-						(*op)[I].tie_breaker_id = (uint8_t) machine_id;
+						(*op)[I].tie_breaker_id = v_node_id;
 					else
 						(*op)[I].state = ST_PUT_STALL;
 
@@ -599,7 +611,7 @@ void batch_invs_to_KVS(int op_num, spacetime_inv_t **op, spacetime_op_t *read_wr
 			(*op)[I].opcode = ST_MISS;
 		}
 		if(ENABLE_ASSERTIONS)
-			assert((*op)[I].opcode == ST_INV_SUCCESS);
+			assert((*op)[I].opcode == ST_INV_SUCCESS || (*op)[I].opcode == ST_INV_OUT_OF_GROUP);
 	}
 }
 
@@ -638,7 +650,8 @@ void batch_acks_to_KVS(int op_num, spacetime_ack_t **op, spacetime_op_t *read_wr
 			assert((*op)[I].version % 2 == 0);
             assert((*op)[I].opcode == ST_OP_ACK || (*op)[I].opcode == ST_OP_MEMBERSHIP_CHANGE);
 			assert(group_membership.num_of_alive_remotes != REMOTE_MACHINES ||
-						   (*op)[I].tie_breaker_id == machine_id);
+						   (*op)[I].tie_breaker_id == machine_id ||
+				   (ENABLE_VIRTUAL_NODE_IDS && (*op)[I].tie_breaker_id  % MACHINE_NUM == machine_id));
 			assert(REMOTE_MACHINES != 1 || (*op)[I].sender == REMOTE_MACHINES - machine_id);
 //			yellow_printf("ACKS: Ops[%d]vvv hash(1st 8B):%" PRIu64 " version: %d, tie: %d\n", I,
 //					   ((uint64_t *) &(*op)[I].key)[0], (*op)[I].version, (*op)[I].tie_breaker_id);

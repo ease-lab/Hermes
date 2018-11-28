@@ -162,6 +162,7 @@ poll_buff_and_post_recvs(void *incoming_buff, uint8_t buff_type, int *buf_pull_p
 							   ((spacetime_ack_t*) next_packet_reqs)[j].opcode == ST_OP_MEMBERSHIP_CHANGE);
 						assert(REMOTE_MACHINES != 1 || ((spacetime_ack_t*) next_packet_reqs)[j].sender == REMOTE_MACHINES - machine_id);
 						assert(group_membership.num_of_alive_remotes != REMOTE_MACHINES ||
+							   ENABLE_VIRTUAL_NODE_IDS ||
 							   ((spacetime_ack_t*) next_packet_reqs)[j].tie_breaker_id == machine_id);
 					}
 				}
@@ -356,7 +357,9 @@ batch_invs_2_NIC(struct ibv_send_wr *send_inv_wr, struct ibv_sge *send_inv_sgl,
 				       ((spacetime_inv_packet_t *) send_inv_sgl[sgl_index].addr)->reqs[k].opcode == ST_OP_MEMBERSHIP_CHANGE);
 				assert(((spacetime_inv_packet_t *) send_inv_sgl[sgl_index].addr)->reqs[k].sender == machine_id);
 				assert(num_of_alive_remotes != REMOTE_MACHINES ||
-					   ((spacetime_inv_packet_t *) send_inv_sgl[sgl_index].addr)->reqs[k].tie_breaker_id == machine_id);
+					   ((spacetime_inv_packet_t *) send_inv_sgl[sgl_index].addr)->reqs[k].tie_breaker_id == machine_id ||
+					   (ENABLE_VIRTUAL_NODE_IDS && ((spacetime_inv_packet_t *) send_inv_sgl[sgl_index].addr)
+														   ->reqs[k].tie_breaker_id % MACHINE_NUM == machine_id));
 			}
 //			green_printf("Ops[%d]--> hash(1st 8B):%" PRIu64 "\n",
 //						 j, ((uint64_t *) &((spacetime_inv_packet_t*) send_inv_sgl[sgl_index].addr)->reqs[0].key)[1]);
@@ -1296,7 +1299,9 @@ static inline int
 refill_ops_n_suspect_failed_nodes(uint32_t *trace_iter, uint16_t worker_lid,
 								  struct spacetime_trace_command *trace, spacetime_op_t *ops,
 								  uint32_t *refilled_per_ops_debug_cnt,
-								  spacetime_group_membership last_group_membership)
+								  spacetime_group_membership last_group_membership,
+								  spacetime_op_t** n_hottest_keys_in_ops_get,
+								  spacetime_op_t** n_hottest_keys_in_ops_put)
 {
 	static uint8_t first_iter_has_passed[WORKERS_PER_MACHINE] = { 0 };
 	static struct timespec start;
@@ -1322,7 +1327,7 @@ refill_ops_n_suspect_failed_nodes(uint32_t *trace_iter, uint16_t worker_lid,
 			}
 
 		if (first_iter_has_passed[worker_lid] == 0 ||
-			ops[i].state == ST_MISS||
+			ops[i].state == ST_MISS ||
 			ops[i].state == ST_PUT_COMPLETE ||
 			ops[i].state == ST_OP_MEMBERSHIP_COMPLETE ||
 			ops[i].state == ST_GET_COMPLETE) {
@@ -1337,32 +1342,63 @@ refill_ops_n_suspect_failed_nodes(uint32_t *trace_iter, uint16_t worker_lid,
 					stop_latency_measurment(ops[i].opcode, &start);
 
                 if(ops[i].state != ST_MISS)
-					w_stats[worker_lid].completed_ops_per_worker++;
+					w_stats[worker_lid].completed_ops_per_worker += ops[i].no_req_coalescing;
                 else
 					w_stats[worker_lid].reqs_missed_in_cache++;
 
+				ops[i].no_req_coalescing = 1;
 				ops[i].state = ST_EMPTY;
 				ops[i].opcode = ST_EMPTY;
 				refilled_per_ops_debug_cnt[i] = 0;
 				refilled_ops++;
 			}
+
 			if(ENABLE_ASSERTIONS)
 				assert(trace[*trace_iter].opcode == ST_OP_PUT || trace[*trace_iter].opcode == ST_OP_GET);
 
             if(MEASURE_LATENCY && machine_id == 0 && worker_lid == THREAD_MEASURING_LATENCY && i == 0)
 				start_latency_measurement(&start);
 
+           /// INSERT new req(s) to ops
+			uint8_t key_id;
+			if(ENABLE_COALESCE_OF_HOT_REQS){
+			    // see if you could coalesce any requests
+			    spacetime_op_t** n_hottest_keys_in_ops;
+				do{
+					key_id = trace[*trace_iter].key_id;
+					n_hottest_keys_in_ops = trace[*trace_iter].opcode == ST_OP_GET ?
+											n_hottest_keys_in_ops_get : n_hottest_keys_in_ops_put;
+					// if we can coalesce (a hot) req
+					if(key_id < COALESCE_N_HOTTEST_KEYS && // is a hot key
+					   n_hottest_keys_in_ops[key_id] != NULL && // exists in the ops array
+					   n_hottest_keys_in_ops[key_id]->opcode == trace[*trace_iter].opcode) // has the same code with the last inserted
+					{
+						n_hottest_keys_in_ops[key_id]->no_req_coalescing++;
+						*trace_iter = trace[*trace_iter + 1].opcode != NOP ? *trace_iter + 1 : 0;
+					}else
+						break;
+				} while(1);
+
+				if(key_id < COALESCE_N_HOTTEST_KEYS)
+					n_hottest_keys_in_ops[key_id] = &ops[i];
+			}
+
 			ops[i].state = ST_NEW;
 			ops[i].opcode = trace[*trace_iter].opcode;
 			memcpy(&ops[i].key, &trace[*trace_iter].key_hash, sizeof(spacetime_key_t));
 
 			if (ops[i].opcode == ST_OP_PUT)
-				memset(ops[i].value, ((uint8_t) 'x' + machine_id), ST_VALUE_SIZE);
+				memset(ops[i].value, ((uint8_t) 'a' + machine_id), ST_VALUE_SIZE);
 			ops[i].val_len = (uint8) (ops[i].opcode == ST_OP_PUT ? ST_VALUE_SIZE : 0);
+
+			// instead of MOD add
+			*trace_iter = trace[*trace_iter + 1].opcode != NOP ? *trace_iter + 1 : 0;
+
+
 			if(ENABLE_REQ_PRINTS &&  worker_lid < MAX_THREADS_TO_PRINT)
 				red_printf("W%d--> Op: %s, hash(1st 8B):%" PRIu64 "\n",
 						   worker_lid, code_to_str(ops[i].opcode), ((uint64_t *) &ops[i].key)[0]);
-			HRD_MOD_ADD(*trace_iter, NUM_OF_REP_REQS);
+
 		}else if(ops[i].state == ST_IN_PROGRESS_PUT){
 			refilled_per_ops_debug_cnt[i]++;
 			///Failure suspicion

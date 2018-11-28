@@ -6,17 +6,17 @@
 #define SPACETIME_CONFIG_H
 #include "../libhrd/hrd.h"
 
-#define MACHINE_NUM 2 //5
+#define MACHINE_NUM 3 //5
 #define REMOTE_MACHINES (MACHINE_NUM - 1)
 #define GROUP_MEMBERSHIP_ARRAY_SIZE CEILING(MACHINE_NUM, 8) //assuming uint8_t
-#define WORKERS_PER_MACHINE 30
+#define WORKERS_PER_MACHINE 15
 #define KV_SOCKET 0
 #define SOCKET_TO_START_SPAWNING_THREADS 0
 #define USE_ALL_SOCKETS 1
 #define ENABLE_HYPERTHREADING 1
 #define BATCH_POST_RECVS_TO_NIC 1
-#define WRITE_RATIO 50
-#define MAX_BATCH_OPS_SIZE 50 // up to 254
+#define WRITE_RATIO 20
+#define MAX_BATCH_OPS_SIZE 50 //50 //50 // up to 254
 
 
 //LATENCY
@@ -30,6 +30,15 @@
 #define LATENCY_BUCKETS 200
 #define LATENCY_PRECISION (MAX_LATENCY / LATENCY_BUCKETS) //latency granularity in us
 
+// Fairness
+#define ENABLE_VIRTUAL_NODE_IDS 1
+#define VIRTUAL_NODE_IDS_PER_NODE 20
+static_assert(!ENABLE_VIRTUAL_NODE_IDS || VIRTUAL_NODE_IDS_PER_NODE > MACHINE_NUM, "");
+static_assert(!ENABLE_VIRTUAL_NODE_IDS || MACHINE_NUM * VIRTUAL_NODE_IDS_PER_NODE < 255, "");
+
+// SKEW
+#define ENABLE_COALESCE_OF_HOT_REQS 1
+#define COALESCE_N_HOTTEST_KEYS 100
 
 //DEBUG
 #define ENABLE_ASSERTIONS 0
@@ -37,10 +46,10 @@
 #define KEY_NUM 0 //use 0 to disable
 
 //REQUESTS
-#define NUM_OF_REP_REQS K_128
 #define FEED_FROM_TRACE 1
-#define USE_A_SINGLE_KEY 0
-
+#define NUM_OF_REP_REQS K_256 // if FEED_FROM_TRACE == 0
+#define USE_A_SINGLE_KEY 0    // if FEED_FROM_TRACE == 0
+#define ST_KEY_ID_255_OR_HIGHER 255
 /*-------------------------------------------------
 ----------------- REQ COALESCING -------------------
 --------------------------------------------------*/
@@ -53,7 +62,7 @@
 /*-------------------------------------------------
 -----------------FLOW CONTROL---------------------
 --------------------------------------------------*/
-#define CREDITS_PER_REMOTE_WORKER 5
+#define CREDITS_PER_REMOTE_WORKER 15
 #define INV_CREDITS CREDITS_PER_REMOTE_WORKER
 #define ACK_CREDITS CREDITS_PER_REMOTE_WORKER
 #define VAL_CREDITS CREDITS_PER_REMOTE_WORKER

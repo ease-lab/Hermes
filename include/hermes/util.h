@@ -11,7 +11,6 @@
 #include "hrd.h"
 #include "config.h"
 #include "spacetime.h"
-//#include "time_rdtsc.h"
 
 struct worker_stats { // 2 cache lines
     long long completed_ops_per_worker;
@@ -119,30 +118,6 @@ void setup_incoming_buffs_and_post_initial_recvs(ud_req_inv_t *incoming_invs, ud
 												 struct ibv_recv_wr *crd_recv_wr, struct hrd_ctrl_blk *cb,
 												 uint16_t worker_lid);
 
-
-//static inline double time_elapsed_in_ms(long long start)
-//{
-//    return (hrd_get_cycles() - start) * 2.1 / 1000000;
-//}
-//
-//static inline int time_has_elapsed(long long start, int time_in_ms)
-//{
-//	int upp = (int) (2.1 * 1000000 * time_in_ms);
-//    return hrd_get_cycles() - start > upp;
-//}
-
-//static inline double time_elapsed_in_ms(struct timespec start)
-//{
-//	struct timespec end, *diff;
-//	get_rdtsc_timespec(&end);
-//	diff = timespec_diff(&end,&start);
-//	return  diff->tv_nsec * 1000000;
-//}
-//
-//static inline int time_has_elapsed(struct timespec start, int time_in_ms)
-//{
-//    return  time_elapsed_in_ms(start) > time_in_ms;
-//}
 extern int qps_published;
 extern volatile struct worker_stats w_stats[WORKERS_PER_MACHINE];
 #endif //HERMES_UTIL_H

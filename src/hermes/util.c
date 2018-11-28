@@ -238,6 +238,7 @@ void manufacture_trace(struct spacetime_trace_command **cmds, int worker_gid)
 //        memcpy(&(*cmds)[i].key_hash, &key_hash, 16); // this is for 16B keys
         memcpy(&(*cmds)[i].key_hash, &((uint64_t*)&key_hash)[1], 8);
         if ((*cmds)[i].opcode == ST_OP_PUT) writes++;
+        (*cmds)[i].key_id = (uint8_t) (key_id < 255 ? key_id : ST_KEY_ID_255_OR_HIGHER);
     }
 
     if (worker_gid % WORKERS_PER_MACHINE == 0)
@@ -261,6 +262,8 @@ parse_trace(char* path, struct spacetime_trace_command **cmds, int worker_gid)
     int cmd_count = 0;
     int writes = 0;
     uint32_t hottest_key_counter = 0;
+    uint32_t ten_hottest_keys_counter = 0;
+    uint32_t twenty_hottest_keys_counter = 0;
 
     fp = fopen(path, "r");
     if (fp == NULL){
@@ -313,9 +316,14 @@ parse_trace(char* path, struct spacetime_trace_command **cmds, int worker_gid)
                 uint32_t key_id = (uint32_t) strtoul(word, &ptr, 10);
                 if(key_id == 0)
                     hottest_key_counter++;
+                if(key_id < 10)
+                    ten_hottest_keys_counter++;
+                if(key_id < 20)
+                    twenty_hottest_keys_counter++;
                 uint128 key_hash = CityHash128((char *) &(key_id), 4);
 //              memcpy(&(*cmds)[i].key_hash, &key_hash, 16); // this is for 16B keys
                 memcpy(&(*cmds)[i].key_hash, &((uint64_t*)&key_hash)[1], 8); // this is for 8B keys
+                (*cmds)[i].key_id = (uint8_t) (key_id < 255 ? key_id : ST_KEY_ID_255_OR_HIGHER);
                 debug_cnt++;
             } //else DO NOTHING
 
@@ -330,8 +338,11 @@ parse_trace(char* path, struct spacetime_trace_command **cmds, int worker_gid)
 
     }
     if (worker_gid % WORKERS_PER_MACHINE == 0)
-        printf("Trace size: %d | Hottest key accessed: %.2f%% | Write Ratio: %.2f%% \n",
-               cmd_count, (100 * hottest_key_counter / (double) cmd_count),
+        printf("Trace size: %d | Hottest key (10 | 20 keys): %.2f%% (%.2f | %.2f %%)|"
+               " Write Ratio: %.2f%% \n", cmd_count,
+               (100 * hottest_key_counter / (double) cmd_count),
+               (100 * ten_hottest_keys_counter / (double) cmd_count),
+               (100 * twenty_hottest_keys_counter / (double) cmd_count),
                (double) (writes * 100) / cmd_count);
 
     (*cmds)[cmd_count].opcode = NOP;

@@ -31,6 +31,7 @@ void *run_worker(void *arg){
 	ud_req_ack_t *incoming_acks = (ud_req_ack_t *) &cb->dgram_buf[INV_RECV_REQ_SIZE * RECV_INV_Q_DEPTH];
 	ud_req_val_t *incoming_vals = (ud_req_val_t *) &cb->dgram_buf[INV_RECV_REQ_SIZE * RECV_INV_Q_DEPTH +
 																  ACK_RECV_REQ_SIZE * RECV_ACK_Q_DEPTH];
+
 	///Send declarations
 	struct ibv_send_wr inv_send_wr[MAX_SEND_INV_WRS],
 			           ack_send_wr[MAX_SEND_ACK_WRS],
@@ -84,11 +85,16 @@ void *run_worker(void *arg){
 	if(DISABLE_ACK_INLINING) ack_mr = register_buffer(cb->pd, ack_send_packet_ops, ACK_SEND_OPS_SIZE * sizeof(spacetime_ack_packet_t));
 	if(DISABLE_VAL_INLINING) val_mr = register_buffer(cb->pd, val_send_packet_ops, VAL_SEND_OPS_SIZE * sizeof(spacetime_val_packet_t));
 
+
+
 	int inv_push_recv_ptr = 0, inv_pull_recv_ptr = -1,
 		ack_push_recv_ptr = 0, ack_pull_recv_ptr = -1,
 		val_push_recv_ptr = 0, val_pull_recv_ptr = -1;
 	int inv_push_send_ptr = 0, ack_push_send_ptr =  0, val_push_send_ptr = 0;
+
+
 	spacetime_group_membership last_group_membership = *((spacetime_group_membership*) &group_membership);
+
 	struct spacetime_trace_command *trace;
 	trace_init(&trace, worker_gid);
 	setup_recv_WRs(inv_recv_wr,inv_recv_sgl,ack_recv_wr,ack_recv_sgl,val_recv_wr,val_recv_sgl,cb);
@@ -112,6 +118,16 @@ void *run_worker(void *arg){
 	uint16_t rolling_inv_index = 0;
 	uint8_t has_outstanding_vals = 0, has_outstanding_vals_from_memb_change = 0;
 
+	////
+	spacetime_op_t* n_hottest_keys_in_ops_get[COALESCE_N_HOTTEST_KEYS];
+	spacetime_op_t* n_hottest_keys_in_ops_put[COALESCE_N_HOTTEST_KEYS];
+	for(int i = 0; i < COALESCE_N_HOTTEST_KEYS; ++i){
+		n_hottest_keys_in_ops_get[i] = NULL;
+		n_hottest_keys_in_ops_put[i] = NULL;
+	}
+	////
+
+
 //	if(INCREASE_TAIL_LATENCY) {
 		//Latency enhancement
 		init_rdtsc();
@@ -132,7 +148,9 @@ void *run_worker(void *arg){
 //				printf("Op[%d]:%s(%" PRIu64 ")--> state: %s\n", k, code_to_str(ops[k].opcode), ((uint64_t *) &ops[k].key)[0], code_to_str(ops[k].state));
 //		}
 		node_suspected = refill_ops_n_suspect_failed_nodes(&trace_iter, worker_lid, trace, ops,
-														   num_of_iters_serving_op, last_group_membership);
+														   num_of_iters_serving_op, last_group_membership,
+														   n_hottest_keys_in_ops_get, n_hottest_keys_in_ops_put);
+
 
 		batch_ops_to_KVS(MAX_BATCH_OPS_SIZE, &ops, worker_lid, last_group_membership);
 
