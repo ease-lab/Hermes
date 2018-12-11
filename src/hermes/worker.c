@@ -1,5 +1,5 @@
 #include <spacetime.h>
-#include <optik_mod.h>
+#include <seqlock.h>
 #include <time.h>
 #include "util.h"
 #include "inline-util.h"
@@ -93,7 +93,7 @@ void *run_worker(void *arg){
 	int inv_push_send_ptr = 0, ack_push_send_ptr =  0, val_push_send_ptr = 0;
 
 
-	spacetime_group_membership last_group_membership = *((spacetime_group_membership*) &group_membership);
+	spacetime_group_membership last_group_membership = group_membership;
 
 	struct spacetime_trace_command *trace;
 	trace_init(&trace, worker_gid);

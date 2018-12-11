@@ -25,7 +25,9 @@ set(SOURCE_FILES_hermes
         include/libhrd/hrd_sizes.h
 
         include/hermes/util.h
-        include/hermes/config.h )
+        include/hermes/config.h
+        include/hermes/seqlock.h
+        include/hermes/bit_vector.h)
 
 
 add_executable(hermes ${SOURCE_FILES_hermes})

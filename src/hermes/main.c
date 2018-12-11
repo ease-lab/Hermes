@@ -8,7 +8,8 @@
 #include "spacetime.h"
 #include "config.h"
 #include "util.h"
-#include <optik_mod.h>
+#include <seqlock.h>
+#include <bit_vector.h>
 
 //Global vars
 volatile char worker_needed_ah_ready;
@@ -112,6 +113,9 @@ int main(int argc, char *argv[])
 	spacetime_init(machine_id, WORKERS_PER_MACHINE);
 	init_stats();
 
+//	//TODO only for testing
+//	bv_unit_test();
+//	return 0;
 
 //	// Register signal and signal handler
 //	signal(SIGINT, signal_callback_handler);
@@ -141,6 +145,14 @@ int main(int argc, char *argv[])
 				 sizeof(spacetime_inv_t), sizeof(spacetime_ack_t), sizeof(spacetime_val_t), sizeof(spacetime_crd_t));
 	yellow_printf("{Max Coalesce Packet Sizes} Inv: %d, Ack: %d, Val: %d\n",
 				 sizeof(spacetime_inv_packet_t), sizeof(spacetime_ack_packet_t), sizeof(spacetime_val_packet_t));
+
+	green_printf("Size of lock: %d, size of packed lock: %d\n",
+				 sizeof(seqlock_t), sizeof(seqlock_t));
+
+	green_printf("Size of spacetime_obj_meta: %d, vs _t: %d , vs: %d\n",
+				 sizeof(spacetime_object_meta),
+				 sizeof(spacetime_object_meta),
+				 sizeof(spacetime_object_meta2));
 
 	for(i = 0; i < WORKERS_PER_MACHINE; i++)
 		pthread_join(thread_arr[i], NULL);

@@ -6,7 +6,7 @@
 #define HERMES_INLINE_UTIL_H
 
 #include <infiniband/verbs.h>
-#include <optik_mod.h>
+#include <seqlock.h>
 #include "spacetime.h"
 #include "config.h"
 #include "util.h"
@@ -1188,19 +1188,26 @@ follower_removal(int suspected_node_id)
 {
 	red_printf("Suspected node %d!\n", suspected_node_id);
 
-	optik_lock_membership(&group_membership.optik_lock);
+	seqlock_lock(&group_membership.lock);
     if(ENABLE_ASSERTIONS == 1){
 		assert(suspected_node_id != machine_id);
 		assert(suspected_node_id < MACHINE_NUM);
 		assert(node_is_in_membership(*((spacetime_group_membership*) &group_membership), suspected_node_id));
 	}
-    group_membership.write_ack_init  [suspected_node_id / 8] |= (uint8_t) 1 << suspected_node_id % 8;
-	group_membership.group_membership[suspected_node_id / 8] &= ~((uint8_t) 1 << suspected_node_id % 8);
-	group_membership.num_of_alive_remotes--;
-//	green_printf("Group mem. bit array: "BYTE_TO_BINARY_PATTERN" \n",
-//					   BYTE_TO_BINARY(group_membership.group_membership[0]));
-	optik_unlock_membership(&group_membership.optik_lock);
+    group_membership.num_of_alive_remotes--;
 
+	bv_bit_reset(&group_membership.g_membership, (uint8_t) suspected_node_id);
+	bv_copy(&group_membership.w_ack_init, group_membership.g_membership);
+	bv_reverse(&group_membership.w_ack_init);
+
+	green_printf("Group Membership: ");
+	bv_print(group_membership.g_membership);
+	printf("\n");
+//    group_membership.write_ack_init  [suspected_node_id / 8] |= (uint8_t) 1 << suspected_node_id % 8;
+//	group_membership.group_membership[suspected_node_id / 8] &= ~((uint8_t) 1 << suspected_node_id % 8);
+//	green_printf("Group mem. bit array: "BYTE_TO_BINARY_PATTERN" \n",
+//				 BYTE_TO_BINARY(group_membership.group_membership[0]));
+	seqlock_unlock(&group_membership.lock);
 
 	red_printf("Group membership changed --> Removed follower %d!\n", suspected_node_id);
 
@@ -1225,11 +1232,14 @@ group_membership_has_changed(spacetime_group_membership* last_group_membership, 
 			}
 		}
 		lock_free_read_group_membership = *((spacetime_group_membership*) &group_membership);
-	} while (!(group_mem_timestamp_is_same_and_valid(group_membership.optik_lock.version,
-													 lock_free_read_group_membership.optik_lock.version)));
+	} while (!(group_mem_timestamp_is_same_and_valid(group_membership.lock.version,
+													 lock_free_read_group_membership.lock.version)));
 	for(i = 0; i < GROUP_MEMBERSHIP_ARRAY_SIZE; i++)
-		if(lock_free_read_group_membership.group_membership[i] !=
-				last_group_membership->group_membership[i]){
+//		if(lock_free_read_group_membership.group_membership[i] !=
+//				last_group_membership->group_membership[i])
+	    if(!bv_are_equal(lock_free_read_group_membership.g_membership,
+	    		last_group_membership->g_membership))
+		{
 			*last_group_membership = lock_free_read_group_membership;
 			return 1;
 		}
@@ -1239,7 +1249,7 @@ group_membership_has_changed(spacetime_group_membership* last_group_membership, 
 static inline uint8_t
 node_is_in_membership(spacetime_group_membership last_group_membership, int node_id)
 {
-	if((last_group_membership.group_membership[node_id / 8] >> (node_id % 8)) % 2 == 1)
+	if(bv_bit_get(last_group_membership.g_membership, node_id) == 1)
 		return 1;
 	return 0;
 }

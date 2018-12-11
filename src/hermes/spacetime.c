@@ -3,7 +3,7 @@
 //
 #include <config.h>
 #include <spacetime.h>
-#include <optik_mod.h>
+#include <seqlock.h>
 #include <util.h>
 #include <inline-util.h>
 
@@ -15,7 +15,8 @@
 struct spacetime_kv kv;
 volatile spacetime_group_membership group_membership;
 
-void meta_reset(struct spacetime_meta_stats* meta)
+void
+meta_reset(struct spacetime_meta_stats* meta)
 {
 	meta->num_get_success = 0;
 	meta->num_put_success = 0;
@@ -33,7 +34,8 @@ void meta_reset(struct spacetime_meta_stats* meta)
 	meta->num_unserved_put_miss = 0;
 }
 
-void extended_meta_reset(struct extended_spacetime_meta_stats* meta)
+void
+extended_meta_reset(struct extended_spacetime_meta_stats* meta)
 {
 	meta->num_hit = 0;
 	meta->num_miss = 0;
@@ -44,29 +46,27 @@ void extended_meta_reset(struct extended_spacetime_meta_stats* meta)
 	meta_reset(&meta->metadata);
 }
 
-static inline uint8_t is_last_ack(uint8_t const * gathered_acks,
-								  spacetime_group_membership curr_g_membership,
-								  int worker_lid)
+static inline uint8_t
+is_last_ack(bit_vector_t gathered_acks,
+			spacetime_group_membership curr_g_membership)
 {
-	int i = 0;
-	for(i = 0; i < GROUP_MEMBERSHIP_ARRAY_SIZE; i++)
-		if((gathered_acks[i] & curr_g_membership.group_membership[i]) !=
-		   curr_g_membership.group_membership[i])
-			return 0;
-	return 1;
+	bv_and(&gathered_acks, curr_g_membership.g_membership);
+	return bv_are_equal(gathered_acks, curr_g_membership.g_membership);
 }
 
-void spacetime_object_meta_init(spacetime_object_meta* ol)
+void
+spacetime_object_meta_init(spacetime_object_meta* ol)
 {
 	ol->tie_breaker_id = TIE_BREAKER_ID_EMPTY;
 	ol->last_writer_id = LAST_WRITER_ID_EMPTY;
 	ol->version = 0;
 	ol->state = VALID_STATE;
 	ol->op_buffer_index = ST_OP_BUFFER_INDEX_EMPTY;
-	ol->lock = OPTIK_FREE;
+	ol->lock = SEQLOCK_FREE;
 }
 
-void spacetime_init(int instance_id, int num_threads)
+void
+spacetime_init(int instance_id, int num_threads)
 {
 	int i;
 	///assert(sizeof(spacetime_object_meta) == 8); //make sure that the meta are 8B and thus can fit in mica unused key
@@ -83,7 +83,8 @@ void spacetime_init(int instance_id, int num_threads)
 	spacetime_populate_fixed_len(&kv, SPACETIME_NUM_KEYS, KVS_VALUE_SIZE);
 }
 
-void spacetime_populate_fixed_len(struct spacetime_kv* kv, int n, int val_len)
+void
+spacetime_populate_fixed_len(struct spacetime_kv* kv, int n, int val_len)
 {
 	assert(n > 0);
 	assert(val_len > 0 && val_len <= KVS_VALUE_SIZE);
@@ -107,7 +108,8 @@ void spacetime_populate_fixed_len(struct spacetime_kv* kv, int n, int val_len)
 	for(i = n - 1; i >= 0; i--) {
 		op_key[0] = key_arr[i].first;
 		op_key[1] = key_arr[i].second;
-		///printf("Key Metadata: Lock(%u), State(%u), Counter(%u:%u)\n", op.key.meta.lock, op.key.meta.state, op.key.meta.version, op.key.meta.cid);
+		///printf("Key Metadata: Lock(%u), State(%u), Counter(%u:%u)\n", op.key.meta.lock,
+		/// op.key.meta.state, op.key.meta.version, op.key.meta.cid);
 		uint8_t val = (uint8_t) ('a' + (i % 20));
 
 		memset((void*) &value_ptr[1], val, (uint8_t) ST_VALUE_SIZE);
@@ -116,27 +118,30 @@ void spacetime_populate_fixed_len(struct spacetime_kv* kv, int n, int val_len)
 
 	assert(kv->hash_table.num_insert_op == n);
 	yellow_printf("Spacetime: Populated instance %d with %d keys, length = %d. "
-						  "Index eviction fraction = %.4f.\n",
+				  "Index eviction fraction = %.4f.\n",
 				  kv->hash_table.instance_id, n, val_len,
 				  (double) kv->hash_table.num_index_evictions / kv->hash_table.num_insert_op);
 }
 
 
-uint8_t node_of_missing_ack(spacetime_group_membership curr_membership, uint8_t write_acks){
+uint8_t
+node_of_missing_ack(spacetime_group_membership curr_membership, bit_vector_t write_acks)
+{
 	if(ENABLE_ASSERTIONS)
 		assert(MACHINE_NUM <= 8);
-	uint8_t k = 0;
-	uint8_t bitvector = curr_membership.group_membership[0] & ~write_acks;
-	while(k < 7 && bitvector % 2 == 0){
-		k++;
-		bitvector = bitvector >> 1;
-	}
-    if(ENABLE_ASSERTIONS)
-		assert(k >= 0 && k < MACHINE_NUM);
-	return k;
+
+	bv_and(&write_acks, curr_membership.g_membership);
+
+	for(uint8_t i = 0; i < MACHINE_NUM; ++i)
+		if(bv_bit_get(write_acks, i) == 0)
+			return i;
+
+	assert(0);
 }
 
-int find_suspected_node(spacetime_op_t *op, int thread_id, spacetime_group_membership curr_membership)
+int
+find_suspected_node(spacetime_op_t *op, int thread_id,
+					spacetime_group_membership curr_membership)
 {
 #if SPACETIME_DEBUG == 1
 	//assert(kv.hash_table != NULL);
@@ -198,11 +203,13 @@ int find_suspected_node(spacetime_op_t *op, int thread_id, spacetime_group_membe
 		if(key_ptr_log[1] == key_ptr_req[0]){ //Key Found 8 Byte keys
 			spacetime_object_meta *curr_meta = (spacetime_object_meta *) kv_ptr->value;
 			optik_lock(curr_meta);
-			suspected_node = node_of_missing_ack(curr_membership, curr_meta->write_acks[0]);
+			suspected_node = node_of_missing_ack(curr_membership, curr_meta->ack_bv);
+
 //			printf("ops: (%s) ops-state %s state: %s\n", code_to_str(op->opcode),
 //				   code_to_str(op->state), code_to_str(curr_meta->state));
-//			yellow_printf("Write acks bit array: "BYTE_TO_BINARY_PATTERN" \n",
-//						  BYTE_TO_BINARY(curr_meta->write_acks[0]));
+//			yellow_printf("Write acks bit array: ");
+//			bv_print(curr_meta->ack_bv);
+//			printf("\n");
 			optik_unlock_decrement_version(curr_meta);
 			return suspected_node;
 		}
@@ -214,8 +221,9 @@ int find_suspected_node(spacetime_op_t *op, int thread_id, spacetime_group_membe
 
 
 static uint64_t g_seed = 0xdeadbeef;
-void batch_ops_to_KVS(int op_num, spacetime_op_t **op, int thread_id,
-					  spacetime_group_membership curr_membership)
+void
+batch_ops_to_KVS(int op_num, spacetime_op_t **op, int thread_id,
+				 spacetime_group_membership curr_membership)
 {
 	int I, j;	/* I is batch index */
 #if SPACETIME_DEBUG == 1
@@ -314,7 +322,7 @@ void batch_ops_to_KVS(int op_num, spacetime_op_t **op, int thread_id,
 					uint8_t was_locked_read = 0;
 					(*op)[I].state = ST_EMPTY;
 					do {
-					    uint8_t node_id; // used for virtual --> physical node ids mapping
+						uint8_t node_id; // used for virtual --> physical node ids mapping
 						prev_meta = *curr_meta;
 						//switch template with all states
 						switch(curr_meta->state) {
@@ -343,9 +351,9 @@ void batch_ops_to_KVS(int op_num, spacetime_op_t **op, int thread_id,
 										(*op)[I].state = ST_GET_STALL;
 										break;
 									case INVALID_STATE:
-									    node_id = (uint8_t) (!ENABLE_VIRTUAL_NODE_IDS ?
-																	 curr_meta->last_writer_id :
-																	 curr_meta->last_writer_id % MACHINE_NUM);
+										node_id = (uint8_t) (!ENABLE_VIRTUAL_NODE_IDS ?
+															 curr_meta->last_writer_id :
+															 curr_meta->last_writer_id % MACHINE_NUM);
 										if(node_is_in_membership(curr_membership, node_id))
 											(*op)[I].state = ST_GET_STALL;
 //										if(node_is_in_membership(curr_membership, curr_meta->last_writer_id))
@@ -365,8 +373,7 @@ void batch_ops_to_KVS(int op_num, spacetime_op_t **op, int thread_id,
 											(*op)[I].val_len = ST_VALUE_SIZE;
 											memcpy((*op)[I].value, kv_value_ptr, ST_VALUE_SIZE);
 											///update group membership mask for replay acks
-											memcpy((void *) curr_meta->write_acks, (void *) curr_membership.write_ack_init,
-												   GROUP_MEMBERSHIP_ARRAY_SIZE);
+											bv_copy(&curr_meta->ack_bv, curr_membership.w_ack_init);
 										}
 										break;
 									default:
@@ -390,15 +397,14 @@ void batch_ops_to_KVS(int op_num, spacetime_op_t **op, int thread_id,
 						case INVALID_STATE:
 							if(curr_meta->op_buffer_index != ST_OP_BUFFER_INDEX_EMPTY){
 								///stall write: until all acks from last write arrive
-                                /// on multiple threads we can't complete writes / replays on VAL
+								/// on multiple threads we can't complete writes / replays on VAL
 								optik_unlock_decrement_version(curr_meta);
 							} else {
 								curr_meta->state = WRITE_STATE;
 								memcpy(kv_value_ptr, (*op)[I].value, ST_VALUE_SIZE);
 								kv_ptr[I]->val_len = (*op)[I].val_len + sizeof(spacetime_object_meta);
 								///update group membership mask
-								memcpy((void *) curr_meta->write_acks, (void *) curr_membership.write_ack_init,
-									   GROUP_MEMBERSHIP_ARRAY_SIZE);
+								bv_copy(&curr_meta->ack_bv, curr_membership.w_ack_init);
 								if(ENABLE_ASSERTIONS)
 									assert(I < ST_OP_BUFFER_INDEX_EMPTY);
 								curr_meta->op_buffer_index = (uint8_t) I;
@@ -436,8 +442,9 @@ void batch_ops_to_KVS(int op_num, spacetime_op_t **op, int thread_id,
 	}
 }
 
-void batch_invs_to_KVS(int op_num, spacetime_inv_t **op, spacetime_op_t *read_write_op, int thread_id,
-					   int* node_suspected, uint32_t* refilled_per_ops_debug_cnt)
+void
+batch_invs_to_KVS(int op_num, spacetime_inv_t **op, spacetime_op_t *read_write_op, int thread_id,
+				  int* node_suspected, uint32_t* refilled_per_ops_debug_cnt)
 {
 	int I, j;	/* I is batch index */
 #if SPACETIME_DEBUG == 1
@@ -468,9 +475,9 @@ void batch_invs_to_KVS(int op_num, spacetime_inv_t **op, spacetime_op_t *read_wr
 	 * for both GETs and PUTs.
 	 */
 	for(I = 0; I < op_num; I++) {
-        if(ENABLE_ASSERTIONS){
+		if(ENABLE_ASSERTIONS){
 			assert((*op)[I].version % 2 == 0);
-            assert((*op)[I].opcode == ST_OP_INV || (*op)[I].opcode == ST_OP_MEMBERSHIP_CHANGE);
+			assert((*op)[I].opcode == ST_OP_INV || (*op)[I].opcode == ST_OP_MEMBERSHIP_CHANGE);
 			assert((*op)[I].val_len == ST_VALUE_SIZE);
 			assert(REMOTE_MACHINES != 1 || (*op)[I].sender == REMOTE_MACHINES - machine_id);
 			assert(REMOTE_MACHINES != 1 || (*op)[I].tie_breaker_id == REMOTE_MACHINES - machine_id);
@@ -478,7 +485,7 @@ void batch_invs_to_KVS(int op_num, spacetime_inv_t **op, spacetime_op_t *read_wr
 //					   ((uint64_t *) &(*op)[I].key)[0], (*op)[I].version, (*op)[I].tie_breaker_id);
 		}
 		if((*op)[I].opcode == ST_OP_MEMBERSHIP_CHANGE){
-            printf("RECEIVED NODE SUSPICION: %d\n",(*op)[I].value[0]);
+			printf("RECEIVED NODE SUSPICION: %d\n",(*op)[I].value[0]);
 			*node_suspected = (*op)[I].value[0];
 			continue;
 		}
@@ -615,8 +622,9 @@ void batch_invs_to_KVS(int op_num, spacetime_inv_t **op, spacetime_op_t *read_wr
 	}
 }
 
-void batch_acks_to_KVS(int op_num, spacetime_ack_t **op, spacetime_op_t *read_write_op,
-					   spacetime_group_membership curr_membership, int thread_id)
+void
+batch_acks_to_KVS(int op_num, spacetime_ack_t **op, spacetime_op_t *read_write_op,
+				  spacetime_group_membership curr_membership, int thread_id)
 {
 	int I, j;	/* I is batch index */
 #if SPACETIME_DEBUG == 1
@@ -646,18 +654,18 @@ void batch_acks_to_KVS(int op_num, spacetime_ack_t **op, spacetime_op_t *read_wr
 	 * for both GETs and PUTs.
 	 */
 	for(I = 0; I < op_num; I++) {
-        if(ENABLE_ASSERTIONS){
+		if(ENABLE_ASSERTIONS){
 			assert((*op)[I].version % 2 == 0);
-            assert((*op)[I].opcode == ST_OP_ACK || (*op)[I].opcode == ST_OP_MEMBERSHIP_CHANGE);
+			assert((*op)[I].opcode == ST_OP_ACK || (*op)[I].opcode == ST_OP_MEMBERSHIP_CHANGE);
 			assert(group_membership.num_of_alive_remotes != REMOTE_MACHINES ||
-						   (*op)[I].tie_breaker_id == machine_id ||
+				   (*op)[I].tie_breaker_id == machine_id ||
 				   (ENABLE_VIRTUAL_NODE_IDS && (*op)[I].tie_breaker_id  % MACHINE_NUM == machine_id));
 			assert(REMOTE_MACHINES != 1 || (*op)[I].sender == REMOTE_MACHINES - machine_id);
 //			yellow_printf("ACKS: Ops[%d]vvv hash(1st 8B):%" PRIu64 " version: %d, tie: %d\n", I,
 //					   ((uint64_t *) &(*op)[I].key)[0], (*op)[I].version, (*op)[I].tie_breaker_id);
 		}
 		if((*op)[I].opcode == ST_OP_MEMBERSHIP_CHANGE){
-            //Could add measurments
+			//Could add measurments
 			continue;
 		}
 		bkt[I] = (*op)[I].key.bkt & kv.hash_table.bkt_mask;
@@ -725,20 +733,21 @@ void batch_acks_to_KVS(int op_num, spacetime_ack_t **op, spacetime_op_t *read_wr
 						lock_free_read_meta = *curr_meta;
 					} while (!is_same_version_and_valid(&lock_free_read_meta, curr_meta));
 
-                    if(ENABLE_ASSERTIONS)
+					if(ENABLE_ASSERTIONS)
 						assert(!timestamp_is_smaller(lock_free_read_meta.version, lock_free_read_meta.tie_breaker_id,
-													(*op)[I].version, (*op)[I].tie_breaker_id));
+													 (*op)[I].version, (*op)[I].tie_breaker_id));
 
 					if(timestamp_is_equal((*op)[I].version,    (*op)[I].tie_breaker_id,
 										  lock_free_read_meta.last_local_write_version,
 										  lock_free_read_meta.last_local_write_tie_breaker_id)){
 						///Lock and check again if ack TS == last local write
 						optik_lock(curr_meta);
-                        if(timestamp_is_equal((*op)[I].version,    (*op)[I].tie_breaker_id,
-										  curr_meta->last_local_write_version,
-										  curr_meta->last_local_write_tie_breaker_id)) {
-							update_ack_bit_vector((*op)[I].sender, (uint8_t *) curr_meta->write_acks);
-							if (is_last_ack((uint8_t *) curr_meta->write_acks, curr_membership, thread_id)) { //if last local write completed
+						if(timestamp_is_equal((*op)[I].version,    (*op)[I].tie_breaker_id,
+											  curr_meta->last_local_write_version,
+											  curr_meta->last_local_write_tie_breaker_id))
+						{
+							bv_bit_set(&curr_meta->ack_bv, (*op)[I].sender);
+							if (is_last_ack(curr_meta->ack_bv, curr_membership)) { //if last local write completed
 								op_buff_indx = curr_meta->op_buffer_index;
 								switch (curr_meta->state) {
 									case VALID_STATE:
@@ -765,7 +774,7 @@ void batch_acks_to_KVS(int op_num, spacetime_ack_t **op, spacetime_op_t *read_wr
 						optik_unlock_decrement_version(curr_meta);
 					}
 					if((*op)[I].opcode == ST_LAST_ACK_SUCCESS ||
-						(*op)[I].opcode == ST_LAST_ACK_NO_BCAST_SUCCESS){
+					   (*op)[I].opcode == ST_LAST_ACK_NO_BCAST_SUCCESS){
 						///completed read / write --> remove it from the ops buffer
 						if(ENABLE_ASSERTIONS){
 //								printf("W%d--> ACK[%d]: Key Hash:%" PRIu64 " complete buff: %d\n\t op: %s, TS: %d | %d, sender: %d\n",
@@ -775,11 +784,11 @@ void batch_acks_to_KVS(int op_num, spacetime_ack_t **op, spacetime_op_t *read_wr
 							assert(read_write_op[op_buff_indx].state == ST_IN_PROGRESS_PUT ||
 								   read_write_op[op_buff_indx].state == ST_OP_MEMBERSHIP_CHANGE ||
 								   read_write_op[op_buff_indx].state == ST_IN_PROGRESS_REPLAY);
-                            assert(((uint64_t *) &read_write_op[op_buff_indx].key)[0] == ((uint64_t *) &(*op)[I].key)[0]);
+							assert(((uint64_t *) &read_write_op[op_buff_indx].key)[0] == ((uint64_t *) &(*op)[I].key)[0]);
 						}
-                        if(read_write_op[op_buff_indx].opcode == ST_OP_PUT)
+						if(read_write_op[op_buff_indx].opcode == ST_OP_PUT)
 							read_write_op[op_buff_indx].state = ST_PUT_COMPLETE;
-                        else if(read_write_op[op_buff_indx].opcode == ST_OP_GET){
+						else if(read_write_op[op_buff_indx].opcode == ST_OP_GET){
 							read_write_op[op_buff_indx].state = ST_NEW;
 						}else assert(0);
 					}
@@ -804,7 +813,8 @@ void batch_acks_to_KVS(int op_num, spacetime_ack_t **op, spacetime_op_t *read_wr
 				   read_write_op[I].state == ST_IN_PROGRESS_REPLAY);
 }
 
-void batch_vals_to_KVS(int op_num, spacetime_val_t **op, spacetime_op_t *read_write_op, int thread_id)
+void
+batch_vals_to_KVS(int op_num, spacetime_val_t **op, spacetime_op_t *read_write_op, int thread_id)
 {
 	int I, j;	/* I is batch index */
 #if SPACETIME_DEBUG == 1
@@ -838,7 +848,7 @@ void batch_vals_to_KVS(int op_num, spacetime_val_t **op, spacetime_op_t *read_wr
 	for(I = 0; I < op_num; I++) {
 		if(ENABLE_ASSERTIONS){
 			assert((*op)[I].version % 2 == 0);
-            assert((*op)[I].opcode == ST_OP_VAL);
+			assert((*op)[I].opcode == ST_OP_VAL);
 			assert(REMOTE_MACHINES != 1 || (*op)[I].sender == REMOTE_MACHINES - machine_id);
 			assert(REMOTE_MACHINES != 1 || (*op)[I].tie_breaker_id == REMOTE_MACHINES - machine_id);
 //			green_printf("VALS: Ops[%d]vvv hash(1st 8B):%" PRIu64 " version: %d, tie: %d\n", I,
@@ -861,12 +871,12 @@ void batch_vals_to_KVS(int op_num, spacetime_val_t **op, spacetime_op_t *read_wr
 									  kv.hash_table.log_mask;
 
 
-				 // We can interpret the log entry as mica_op, even though it
-				 // may not contain the full MICA_MAX_VALUE value.
+				// We can interpret the log entry as mica_op, even though it
+				// may not contain the full MICA_MAX_VALUE value.
 
 				kv_ptr[I] = (struct mica_op*) &kv.hash_table.ht_log[log_offset];
 
-				 //Small values (1--64 bytes) can span 2 cache lines
+				//Small values (1--64 bytes) can span 2 cache lines
 				__builtin_prefetch(kv_ptr[I], 0, 0);
 				__builtin_prefetch((uint8_t *) kv_ptr[I] + 64, 0, 0);
 
@@ -913,7 +923,7 @@ void batch_vals_to_KVS(int op_num, spacetime_val_t **op, spacetime_op_t *read_wr
 						///Warning: use op.version + 1 bellow since optik_lock() increases curr_meta->version by 1
 						if(timestamp_is_equal(curr_meta->version - 1, curr_meta->tie_breaker_id,
 											  (*op)[I].version,   (*op)[I].tie_breaker_id)){
-                            if(ENABLE_ASSERTIONS)
+							if(ENABLE_ASSERTIONS)
 								assert(curr_meta->state != WRITE_STATE); ///WARNING: this should not happen w/o this node removed from the group
 							curr_meta->state = VALID_STATE;
 						}
@@ -928,9 +938,10 @@ void batch_vals_to_KVS(int op_num, spacetime_val_t **op, spacetime_op_t *read_wr
 	}
 }
 
-void complete_writes_and_replays_on_follower_removal(int op_num, spacetime_op_t **op,
-													 spacetime_group_membership curr_membership,
-													 int thread_id)
+void
+complete_writes_and_replays_on_follower_removal(int op_num, spacetime_op_t **op,
+												spacetime_group_membership curr_membership,
+												int thread_id)
 {
 	int I, j;	/* I is batch index */
 	long long stalled_brces = 0;
@@ -945,7 +956,7 @@ void complete_writes_and_replays_on_follower_removal(int op_num, spacetime_op_t 
 	for(I = 0; I < op_num; I++)
 		mica_print_op(&(*op)[I]);
 #endif
-    int i;
+	int i;
 	unsigned int bkt[MAX_BATCH_OPS_SIZE];
 	struct mica_bkt *bkt_ptr[MAX_BATCH_OPS_SIZE];
 	unsigned int tag[MAX_BATCH_OPS_SIZE];
@@ -1007,7 +1018,7 @@ void complete_writes_and_replays_on_follower_removal(int op_num, spacetime_op_t 
 		if ((*op)[I].state != ST_IN_PROGRESS_PUT &&
 			(*op)[I].state != ST_IN_PROGRESS_REPLAY &&
 			(*op)[I].state != ST_OP_MEMBERSHIP_CHANGE) continue;
-        uint8_t prev_state = (*op)[I].state;
+		uint8_t prev_state = (*op)[I].state;
 		if(kv_ptr[I] != NULL) {
 			/* We had a tag match earlier. Now compare log entry. */
 			long long *key_ptr_log = (long long *) kv_ptr[I];
@@ -1030,9 +1041,9 @@ void complete_writes_and_replays_on_follower_removal(int op_num, spacetime_op_t 
 					lock_free_read_meta = *curr_meta;
 				} while (!is_same_version_and_valid(&lock_free_read_meta, curr_meta));
 
-				if(is_last_ack((uint8_t *) lock_free_read_meta.write_acks , curr_membership,  thread_id)) {
+				if(is_last_ack(lock_free_read_meta.ack_bv, curr_membership)) {
 					optik_lock(curr_meta);
-					if(is_last_ack((uint8_t *) curr_meta->write_acks, curr_membership, thread_id)){
+					if(is_last_ack(curr_meta->ack_bv, curr_membership)){
 						if(ENABLE_ASSERTIONS)
 							assert(curr_meta->op_buffer_index == I);
 						curr_meta->op_buffer_index = ST_OP_BUFFER_INDEX_EMPTY; //reset the write buff index
@@ -1040,7 +1051,7 @@ void complete_writes_and_replays_on_follower_removal(int op_num, spacetime_op_t 
 							case VALID_STATE:
 							case INVALID_STATE:
 								(*op)[I].state = ST_PUT_COMPLETE;
-                                break;
+								break;
 							case INVALID_WRITE_STATE:
 								if(ENABLE_ASSERTIONS) assert((*op)[I].state == ST_IN_PROGRESS_PUT || (*op)[I].state == ST_OP_MEMBERSHIP_CHANGE);
 								curr_meta->state = INVALID_STATE;
@@ -1054,7 +1065,7 @@ void complete_writes_and_replays_on_follower_removal(int op_num, spacetime_op_t 
 								(*op)[I].state = DISABLE_VALS_FOR_DEBUGGING == 1 ? ST_PUT_COMPLETE : ST_PUT_COMPLETE_SEND_VALS; ///ops state for sending VALs
 								break;
 							case REPLAY_STATE:
-                                if(ENABLE_ASSERTIONS) assert((*op)[I].state == ST_IN_PROGRESS_REPLAY);
+								if(ENABLE_ASSERTIONS) assert((*op)[I].state == ST_IN_PROGRESS_REPLAY);
 								curr_meta->state = VALID_STATE;
 								(*op)[I].version = curr_meta->version - 1; // -1 because of optik lock does version + 1
 								(*op)[I].tie_breaker_id = curr_meta->tie_breaker_id;
@@ -1077,40 +1088,34 @@ void complete_writes_and_replays_on_follower_removal(int op_num, spacetime_op_t 
 	}
 }
 
-void group_membership_init(void)
+void
+group_membership_init(void)
 {
-	int i,j;
-    group_membership.num_of_alive_remotes = REMOTE_MACHINES;
-	for(i = 0; i < GROUP_MEMBERSHIP_ARRAY_SIZE; i++) {
-		group_membership.group_membership[i] = 0;
-		group_membership.write_ack_init[i] = 1;
-		for (j = 0; j < 8; j++) {
-			if (i * 8 + j == MACHINE_NUM){
-//				green_printf("Group mem. bit array: "BYTE_TO_BINARY_PATTERN" \n",
-//					   BYTE_TO_BINARY(group_membership.group_membership[i]));
-//				green_printf("Write init bit array: "BYTE_TO_BINARY_PATTERN" \n",
-//							 BYTE_TO_BINARY(group_membership.write_ack_init[i]));
-				return;
-			}
-			group_membership.group_membership[i] = (uint8_t)
-					((group_membership.group_membership[i] << 1) + 1);
-			if(i * 8 + j < machine_id)
-				group_membership.write_ack_init[i] = (uint8_t)
-						group_membership.write_ack_init[i] << 1;
-		}
-	}
+	group_membership.num_of_alive_remotes = REMOTE_MACHINES;
+	bv_init(&group_membership.g_membership);
+
+	for(uint8_t i = 0; i < MACHINE_NUM; ++i)
+		bv_bit_set(&group_membership.g_membership, i);
+
+	bv_copy(&group_membership.w_ack_init, group_membership.g_membership);
+	bv_reverse(&group_membership.w_ack_init);
+	bv_bit_set(&group_membership.w_ack_init, (uint8_t) machine_id);
+
+//	green_printf("Group mem. bit array: ");
+//	bv_print(group_membership.g_membership);
+//	green_printf("\n Write init bit array: ");
+//	bv_print(group_membership.w_ack_init);
+//	printf("\n");
 }
 
-//static inline void
 void
 reconfigure_wrs(struct ibv_send_wr *inv_send_wr, struct ibv_sge *inv_send_sgl,
 				struct ibv_send_wr *val_send_wr, struct ibv_sge *val_send_sgl,
 				spacetime_group_membership last_g_membership, uint16_t worker_lid)
-//void reconfigure_wrs(void)
 {
 	int i_mod_remotes, sgl_index;
 	uint16_t curr_machine_id, i , j;
-	uint16_t rm_id, rm_worker_gid, rm_id_index = 0;
+	uint16_t rm_worker_gid, rm_id_index = 0;
 	int remote_machine_ids[GROUP_MEMBERSHIP_ARRAY_SIZE * 8] = {0};
 	//first get all alive remote ids
 	for(i = 0; i < GROUP_MEMBERSHIP_ARRAY_SIZE; i++){
@@ -1121,7 +1126,7 @@ reconfigure_wrs(struct ibv_send_wr *inv_send_wr, struct ibv_sge *inv_send_sgl,
 				remote_machine_ids[rm_id_index++] = curr_machine_id;
 		}
 	}
-	if(worker_lid == 0){
+	if(worker_lid == WORKER_EMULATING_FAILURE_DETECTOR){
 		green_printf("Alive Remotes(%d): {", last_g_membership.num_of_alive_remotes);
 		for(i = 0; i < rm_id_index; i++)
 			yellow_printf(" %d,",remote_machine_ids[i]);
@@ -1131,12 +1136,12 @@ reconfigure_wrs(struct ibv_send_wr *inv_send_wr, struct ibv_sge *inv_send_sgl,
 	for(i = 0; i < MAX_PCIE_BCAST_BATCH * last_g_membership.num_of_alive_remotes; i++){
 		i_mod_remotes = i % group_membership.num_of_alive_remotes;
 		sgl_index = i / group_membership.num_of_alive_remotes;
-        rm_worker_gid = (uint16_t) (remote_machine_ids[i_mod_remotes] * WORKERS_PER_MACHINE + worker_lid);
+		rm_worker_gid = (uint16_t) (remote_machine_ids[i_mod_remotes] * WORKERS_PER_MACHINE + worker_lid);
 		inv_send_wr[i].wr.ud.ah = remote_worker_qps[rm_worker_gid][INV_UD_QP_ID].ah;
-        val_send_wr[i].wr.ud.ah = remote_worker_qps[rm_worker_gid][VAL_UD_QP_ID].ah;
+		val_send_wr[i].wr.ud.ah = remote_worker_qps[rm_worker_gid][VAL_UD_QP_ID].ah;
 
-        inv_send_wr[i].wr.ud.remote_qpn = (uint32) remote_worker_qps[rm_worker_gid][INV_UD_QP_ID].qpn;
-        val_send_wr[i].wr.ud.remote_qpn = (uint32) remote_worker_qps[rm_worker_gid][VAL_UD_QP_ID].qpn;
+		inv_send_wr[i].wr.ud.remote_qpn = (uint32) remote_worker_qps[rm_worker_gid][INV_UD_QP_ID].qpn;
+		val_send_wr[i].wr.ud.remote_qpn = (uint32) remote_worker_qps[rm_worker_gid][VAL_UD_QP_ID].qpn;
 
 		inv_send_wr[i].sg_list = &inv_send_sgl[sgl_index];
 		val_send_wr[i].sg_list = &val_send_sgl[sgl_index];
@@ -1145,19 +1150,22 @@ reconfigure_wrs(struct ibv_send_wr *inv_send_wr, struct ibv_sge *inv_send_sgl,
 
 }
 
-void reset_bcast_send_buffers(spacetime_inv_packet_t *inv_send_packet_ops, int *inv_push_ptr,
-							  spacetime_val_packet_t *val_send_packet_ops, int *val_push_ptr)
+void
+reset_bcast_send_buffers(spacetime_inv_packet_t *inv_send_packet_ops, int *inv_push_ptr,
+						 spacetime_val_packet_t *val_send_packet_ops, int *val_push_ptr)
 {
 	int i , j;
 	*inv_push_ptr = 0;
 	*val_push_ptr = 0;
+
 	for(i = 0; i < INV_SEND_OPS_SIZE; i++){
-        inv_send_packet_ops[i].req_num = 0;
+		inv_send_packet_ops[i].req_num = 0;
 		for(j = 0; j < INV_MAX_REQ_COALESCE; j++)
 			inv_send_packet_ops[i].reqs[j].opcode = ST_EMPTY;
 	}
-    for(i = 0; i < VAL_SEND_OPS_SIZE; i++){
-        val_send_packet_ops[i].req_num = 0;
+
+	for(i = 0; i < VAL_SEND_OPS_SIZE; i++){
+		val_send_packet_ops[i].req_num = 0;
 		for(j = 0; j < VAL_MAX_REQ_COALESCE; j++)
 			val_send_packet_ops[i].reqs[j].opcode = ST_EMPTY;
 	}

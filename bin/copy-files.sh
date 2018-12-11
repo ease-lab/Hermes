@@ -14,7 +14,7 @@ HOSTS=( ##### network  cluster #####
 
 FILES=(
         "hermes"
-        "run-hermes.sh"
+#        "run-hermes.sh"
       )
 
 USERNAME="s1671850" # "user"
@@ -33,3 +33,12 @@ do
 	parallel scp ${HOME_FOLDER}/${FILE} {}:${DEST_FOLDER}/${FILE} ::: $(echo ${HOSTS[@]/$LOCAL_HOST})
 	echo "${FILE} copied to {${HOSTS[@]/$LOCAL_HOST}}"
 done
+
+
+## TODO this is only for indianapolis
+#DEST_FOLDER_2="/home/user/hermes-exec/src/hermes"
+#for FILE in "${FILES[@]}"
+#do
+#	scp ${HOME_FOLDER}/${FILE} user@indianapolis:${DEST_FOLDER_2}/${FILE}
+#	echo "${FILE} copied to {indianapolis}}"
+#done

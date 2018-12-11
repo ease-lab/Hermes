@@ -11,10 +11,10 @@
 # define CORE_NUM 8
 #endif
 
-#include <optik_mod.h>
+#include <seqlock.h>
 #include "hrd.h"
 #include "mica.h"
-#include "optik_mod.h"
+#include "seqlock.h"
 #include "config.h"
 
 ///#define NUM_KEYS (250 * 1000)
@@ -205,9 +205,11 @@ typedef struct {
 
 typedef struct{
     uint8_t num_of_alive_remotes;
-    uint8_t group_membership[GROUP_MEMBERSHIP_ARRAY_SIZE];
-    uint8_t write_ack_init[GROUP_MEMBERSHIP_ARRAY_SIZE];
-    spacetime_lock optik_lock;
+//    uint8_t group_membership[GROUP_MEMBERSHIP_ARRAY_SIZE];
+//    uint8_t write_ack_init[GROUP_MEMBERSHIP_ARRAY_SIZE];
+    bit_vector_t g_membership;
+    bit_vector_t w_ack_init;
+    seqlock_t lock;
 }spacetime_group_membership;
 
 struct spacetime_meta_stats {
