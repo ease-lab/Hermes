@@ -141,11 +141,11 @@ poll_buff_and_post_recvs(void *incoming_buff, uint8_t buff_type, int *buf_pull_p
 				if(ENABLE_ASSERTIONS){
 					assert(*next_packet_req_num_ptr > 0 && *next_packet_req_num_ptr <= INV_MAX_REQ_COALESCE);
 					for(j = 0; j < *next_packet_req_num_ptr; j++){
-						assert(((spacetime_inv_t*) next_packet_reqs)[j].version % 2 == 0);
+						assert(((spacetime_inv_t*) next_packet_reqs)[j].ts.version % 2 == 0);
 						assert(((spacetime_inv_t*) next_packet_reqs)[j].opcode == ST_OP_INV ||
 						       ((spacetime_inv_t*) next_packet_reqs)[j].opcode == ST_OP_MEMBERSHIP_CHANGE);
 						assert(((spacetime_inv_t*) next_packet_reqs)[j].val_len == ST_VALUE_SIZE);
-						assert(REMOTE_MACHINES != 1 || ((spacetime_inv_t*) next_packet_reqs)[j].tie_breaker_id == REMOTE_MACHINES - machine_id);
+						assert(REMOTE_MACHINES != 1 || ((spacetime_inv_t*) next_packet_reqs)[j].ts.tie_breaker_id == REMOTE_MACHINES - machine_id);
 						assert(REMOTE_MACHINES != 1 || ((spacetime_inv_t*) next_packet_reqs)[j].sender == REMOTE_MACHINES - machine_id);
 					}
 				}
@@ -157,13 +157,13 @@ poll_buff_and_post_recvs(void *incoming_buff, uint8_t buff_type, int *buf_pull_p
 				if(ENABLE_ASSERTIONS){
 					assert(*next_packet_req_num_ptr > 0 && *next_packet_req_num_ptr <= ACK_MAX_REQ_COALESCE);
 					for(j = 0; j < *next_packet_req_num_ptr; j++){
-						assert(((spacetime_ack_t*) next_packet_reqs)[j].version % 2 == 0);
+						assert(((spacetime_ack_t*) next_packet_reqs)[j].ts.version % 2 == 0);
 						assert(((spacetime_ack_t*) next_packet_reqs)[j].opcode == ST_OP_ACK ||
 							   ((spacetime_ack_t*) next_packet_reqs)[j].opcode == ST_OP_MEMBERSHIP_CHANGE);
 						assert(REMOTE_MACHINES != 1 || ((spacetime_ack_t*) next_packet_reqs)[j].sender == REMOTE_MACHINES - machine_id);
 						assert(group_membership.num_of_alive_remotes != REMOTE_MACHINES ||
 							   ENABLE_VIRTUAL_NODE_IDS ||
-							   ((spacetime_ack_t*) next_packet_reqs)[j].tie_breaker_id == machine_id);
+							   ((spacetime_ack_t*) next_packet_reqs)[j].ts.tie_breaker_id == machine_id);
 					}
 				}
 				break;
@@ -174,9 +174,9 @@ poll_buff_and_post_recvs(void *incoming_buff, uint8_t buff_type, int *buf_pull_p
 				if(ENABLE_ASSERTIONS){
 					assert(*next_packet_req_num_ptr > 0 && *next_packet_req_num_ptr <= VAL_MAX_REQ_COALESCE);
 					for(j = 0; j < *next_packet_req_num_ptr; j++){
-						assert(((spacetime_val_t*) next_packet_reqs)[j].version % 2 == 0);
+						assert(((spacetime_val_t*) next_packet_reqs)[j].ts.version % 2 == 0);
 						assert(((spacetime_val_t*) next_packet_reqs)[j].opcode == ST_OP_VAL);
-						assert(REMOTE_MACHINES != 1 || ((spacetime_val_t*) next_packet_reqs)[j].tie_breaker_id == REMOTE_MACHINES - machine_id);
+						assert(REMOTE_MACHINES != 1 || ((spacetime_val_t*) next_packet_reqs)[j].ts.tie_breaker_id == REMOTE_MACHINES - machine_id);
 						assert(REMOTE_MACHINES != 1 || ((spacetime_val_t*) next_packet_reqs)[j].sender == REMOTE_MACHINES - machine_id);
 					}
 				}
@@ -357,9 +357,9 @@ batch_invs_2_NIC(struct ibv_send_wr *send_inv_wr, struct ibv_sge *send_inv_sgl,
 				       ((spacetime_inv_packet_t *) send_inv_sgl[sgl_index].addr)->reqs[k].opcode == ST_OP_MEMBERSHIP_CHANGE);
 				assert(((spacetime_inv_packet_t *) send_inv_sgl[sgl_index].addr)->reqs[k].sender == machine_id);
 				assert(num_of_alive_remotes != REMOTE_MACHINES ||
-					   ((spacetime_inv_packet_t *) send_inv_sgl[sgl_index].addr)->reqs[k].tie_breaker_id == machine_id ||
+					   ((spacetime_inv_packet_t *) send_inv_sgl[sgl_index].addr)->reqs[k].ts.tie_breaker_id == machine_id ||
 					   (ENABLE_VIRTUAL_NODE_IDS && ((spacetime_inv_packet_t *) send_inv_sgl[sgl_index].addr)
-														   ->reqs[k].tie_breaker_id % MACHINE_NUM == machine_id));
+														   ->reqs[k].ts.tie_breaker_id % MACHINE_NUM == machine_id));
 			}
 //			green_printf("Ops[%d]--> hash(1st 8B):%" PRIu64 "\n",
 //						 j, ((uint64_t *) &((spacetime_inv_packet_t*) send_inv_sgl[sgl_index].addr)->reqs[0].key)[1]);
@@ -619,7 +619,7 @@ issue_acks(spacetime_inv_t *inv_recv_ops, spacetime_ack_packet_t* ack_send_packe
 			assert(inv_recv_ops[i].opcode == ST_INV_SUCCESS || inv_recv_ops[i].opcode == ST_OP_INV ||
 				   inv_recv_ops[i].opcode == ST_OP_MEMBERSHIP_CHANGE);
 			assert(inv_recv_ops[i].val_len == ST_VALUE_SIZE);
-			assert(REMOTE_MACHINES != 1 || inv_recv_ops[i].tie_breaker_id == REMOTE_MACHINES - machine_id);
+			assert(REMOTE_MACHINES != 1 || inv_recv_ops[i].ts.tie_breaker_id == REMOTE_MACHINES - machine_id);
 			assert(REMOTE_MACHINES != 1 || inv_recv_ops[i].value[0] == (uint8_t) 'x' + (REMOTE_MACHINES - machine_id));
 			assert(REMOTE_MACHINES != 1 || inv_recv_ops[i].sender == REMOTE_MACHINES - machine_id);
 		}
@@ -1345,8 +1345,8 @@ refill_ops_n_suspect_failed_nodes(uint32_t *trace_iter, uint16_t worker_lid,
 				if (ENABLE_REQ_PRINTS && worker_lid < MAX_THREADS_TO_PRINT)
 					green_printf("W%d--> Key Hash:%" PRIu64 "\n\t\tType: %s, version %d, tie-b: %d, value(len-%d): %c\n",
 								 worker_lid, ((uint64_t *) &ops[i].key)[0],
-								 code_to_str(ops[i].state), ops[i].version,
-								 ops[i].tie_breaker_id, ops[i].val_len, ops[i].value[0]);
+								 code_to_str(ops[i].state), ops[i].ts.version,
+								 ops[i].ts.tie_breaker_id, ops[i].val_len, ops[i].value[0]);
 
 				if(MEASURE_LATENCY && machine_id == 0 && worker_lid == THREAD_MEASURING_LATENCY && i == 0)
 					stop_latency_measurment(ops[i].opcode, &start);

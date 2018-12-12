@@ -18,8 +18,8 @@
 #define BV_BITS_IN_A_BYTE 8
 #define BV_BIT_VECTOR_SIZE_IN_BYTES BV_CEILING(BV_BIT_VECTOR_SIZE, BV_BITS_IN_A_BYTE)
 
-#define BIT_SLOT(bit) (bit / BV_BITS_IN_A_BYTE)
-#define BIT_MOD(bit)  ((uint8_t) 1 << bit % BV_BITS_IN_A_BYTE)
+#define BV_BIT_SLOT(bit) (bit / BV_BITS_IN_A_BYTE)
+#define BV_BIT_MOD(bit)  ((uint8_t) 1 << bit % BV_BITS_IN_A_BYTE)
 
 
 typedef struct
@@ -47,7 +47,7 @@ bv_bit_set(bit_vector_t *bv, uint8_t bit)
 {
     if(BV_ENABLE_BIT_VECTOR_ASSERTS)
         assert(bit < BV_BIT_VECTOR_SIZE);
-    bv->bit_array[BIT_SLOT(bit)] |= BIT_MOD(bit);
+    bv->bit_array[BV_BIT_SLOT(bit)] |= BV_BIT_MOD(bit);
 }
 
 static inline void
@@ -56,7 +56,7 @@ bv_bit_reset(bit_vector_t *bv, uint8_t bit)
     if(BV_ENABLE_BIT_VECTOR_ASSERTS)
         assert(bit < BV_BIT_VECTOR_SIZE);
 
-    bv->bit_array[BIT_SLOT(bit)] &= ~(BIT_MOD(bit));
+    bv->bit_array[BV_BIT_SLOT(bit)] &= ~(BV_BIT_MOD(bit));
 }
 
 static inline uint8_t
@@ -65,7 +65,7 @@ bv_bit_get(bit_vector_t bv, uint8_t bit)
     if(BV_ENABLE_BIT_VECTOR_ASSERTS)
         assert(bit < BV_BIT_VECTOR_SIZE);
 
-    return (uint8_t) ((bv.bit_array[BIT_SLOT(bit)] & BIT_MOD(bit)) == 0 ? 0 : 1);
+    return (uint8_t) ((bv.bit_array[BV_BIT_SLOT(bit)] & BV_BIT_MOD(bit)) == 0 ? 0 : 1);
 }
 
 static inline void
@@ -146,24 +146,20 @@ bv_print_enhanced(bit_vector_t bv)
 
 /////
 static inline void
-bv_unit_test()
+bv_unit_test(void)
 {
     bit_vector_t bv;
     bit_vector_t bv_set__all;
     bv_init(&bv);
     bv_set_all(&bv_set__all);
 
-    for(uint8_t i = 0; i < BV_BIT_VECTOR_SIZE; ++i){
+    for(uint8_t i = 0; i < BV_BIT_VECTOR_SIZE; ++i)
         bv_bit_set(&bv, i);
-//        bv_print_enhanced(bv);
-    }
     assert(bv_are_equal(bv, bv_set__all) == 1);
 
 
-    for(uint8_t i = 0; i < BV_BIT_VECTOR_SIZE; ++i){
+    for(uint8_t i = 0; i < BV_BIT_VECTOR_SIZE; ++i)
         bv_bit_reset(&bv, i);
-//        bv_print_enhanced(bv);
-    }
     bv_reverse(&bv);
     assert(bv_are_equal(bv, bv_set__all) == 1);
 

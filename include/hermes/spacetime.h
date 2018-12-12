@@ -16,14 +16,9 @@
 #include "mica.h"
 #include "seqlock.h"
 #include "config.h"
+#include "bit_vector.h"
 
-///#define NUM_KEYS (250 * 1000)
-///#define NUM_BKTS (64 * 1024) //64K buckets seems to be enough to store most of our keys
-//#define SPACETIME_NUM_KEYS (50 * 1000)
-//#define SPACETIME_NUM_KEYS (250 * 1000)
-//#define SPACETIME_NUM_KEYS (500 * 1000)
 #define SPACETIME_NUM_KEYS (1000 * 1000)
-//#define SPACETIME_NUM_BKTS (1 * 1024 * 1024)
 #define SPACETIME_NUM_BKTS (2 * 1024 * 1024)
 
 ///WARNING the monotonically increasing assigned numbers to States are used for comparisons (do not reorder / change numbers)
@@ -90,27 +85,7 @@
 #define LAST_WRITER_ID_EMPTY 255
 #define TIE_BREAKER_ID_EMPTY 255
 
-//print binary numbers
-#define BYTE_TO_BINARY_PATTERN "%c%c%c%c%c%c%c%c"
-#define BYTE_TO_BINARY(byte)  \
-  (byte & 0x80 ? '1' : '0'), \
-  (byte & 0x40 ? '1' : '0'), \
-  (byte & 0x20 ? '1' : '0'), \
-  (byte & 0x10 ? '1' : '0'), \
-  (byte & 0x08 ? '1' : '0'), \
-  (byte & 0x04 ? '1' : '0'), \
-  (byte & 0x02 ? '1' : '0'), \
-  (byte & 0x01 ? '1' : '0')
 
-
-
-typedef struct {
-    uint8_t opcode; //both recv / resp
-    uint8_t state_or_sender;
-    uint8_t val_len_or_packet_mark;
-    uint8_t tie_breaker_id;
-    uint32_t version; ///timestamp{version+tie_braker_id}
-}spacetime_op_meta_t;
 
 ///* Fixed-size 16 byte keys */
 //typedef struct {
@@ -121,98 +96,155 @@ typedef struct {
 //}spacetime_key_t;
 
 /* Fixed-size 8 byte keys */
-typedef struct {
+typedef struct
+{
     unsigned int bkt			:32;
     unsigned int server			:16;
     unsigned int tag			:16;
-}spacetime_key_t;
+}
+spacetime_key_t;
 
-typedef struct{ ///May add    uint8_t session_id;
+typedef volatile struct
+{
+    uint8_t state;
+    bit_vector_t ack_bv;
+    uint8_t last_writer_id;
+    uint8_t op_buffer_index; //TODO change to uint16_t for a buffer >= 256
+    conc_ctrl_t conc_ctrl;
+    timestamp_t last_local_write_ts;
+}
+spacetime_object_meta;
+
+
+typedef struct
+{
+    spacetime_key_t key;	/* This must be the 1st field and 16B aligned */
+    uint8_t opcode; //both recv / resp
+    union {
+        uint8_t state;
+        uint8_t sender;
+    };
+    uint8_t val_len; // unused for spacetime_ack_t and spacetime_val_t (align for using a single memcpy)
+    timestamp_t ts;
+}
+spacetime_op_meta_t;
+
+typedef struct
+{
+    ///May add    uint8_t session_id;
+//    spacetime_op_meta_t op_meta; // uses the state part of the op_meta union (not sender)
     spacetime_key_t key;	/* This must be the 1st field and 16B aligned */
     uint8_t opcode; //both recv / resp
     uint8_t state;
     uint8_t val_len;
-    uint8_t tie_breaker_id;
-    uint32_t version; ///timestamp{version+tie_braker_id}
-    uint16_t no_req_coalescing; //todo this is only for skew optimizations
+    timestamp_t ts;
+    uint16_t no_req_coalescing; //used only for skew optimizations
     uint8_t value[ST_VALUE_SIZE];
-}spacetime_op_t;
+}
+spacetime_op_t;
 
-typedef struct{
+typedef struct
+{
+//    spacetime_op_meta_t op_meta; // uses the sender part of the op_meta union (not state)
     spacetime_key_t key;	/* This must be the 1st field and 16B aligned */
     uint8_t opcode; //both recv / batch_op resp
     uint8_t sender;
     uint8_t val_len;
-    uint8_t tie_breaker_id;
-    uint32_t version; ///timestamp{version+tie_braker_id}
-    uint16_t no_coales; //todo this is only for skew optimizations
+    timestamp_t ts;
+    uint16_t no_coales; //used only for skew optimizations
     uint8_t value[ST_VALUE_SIZE];
-}spacetime_inv_t;
+}
+spacetime_inv_t;
 
-typedef struct{
-    spacetime_key_t key;	/* This must be the 1st field and 16B aligned */
-    uint8_t opcode; //both recv / batch_op resp
-    uint8_t sender;
-    uint8_t __unused; //align for using a single memcpy ///Warning currently in use for marking coalesed packets!
-    uint8_t tie_breaker_id;
-    uint32_t version; ///timestamp{version+tie_braker_id}
-}spacetime_ack_t, spacetime_val_t;
+typedef spacetime_op_meta_t
+//    uint8_t __unused; ///Warning currently in use for marking coalesed packets!
+//    timestamp_t ts;
+//}
+spacetime_ack_t, spacetime_val_t;
 
-typedef struct{ //always send as immediate
+typedef struct
+{
     uint8_t opcode; //we do not really need this
     uint8_t sender;
     uint8_t val_credits;
-}spacetime_crd_t;
+}
+spacetime_crd_t; //always send as immediate
 
-/*Packet types (used for coalescing)*/
-typedef struct {
+
+
+
+// Packets for coalescing
+typedef struct
+{
     uint8_t req_num;
     spacetime_inv_t reqs[INV_MAX_REQ_COALESCE];
-}spacetime_inv_packet_t;
+}
+spacetime_inv_packet_t;
 
-typedef struct {
+typedef struct
+{
     uint8_t req_num;
     spacetime_ack_t reqs[ACK_MAX_REQ_COALESCE];
-}spacetime_ack_packet_t;
+}
+spacetime_ack_packet_t;
 
-typedef struct {
+typedef struct
+{
     uint8_t req_num;
     spacetime_val_t reqs[VAL_MAX_REQ_COALESCE];
-}spacetime_val_packet_t;
+}
+spacetime_val_packet_t;
 
-/*Packets with GRH*/
 
-typedef struct {
+
+
+
+// Packets with GRH
+
+typedef struct
+{
     struct ibv_grh grh;
     spacetime_inv_packet_t packet;
-}ud_req_inv_t;
+}
+ud_req_inv_t;
 
-typedef struct {
+typedef struct
+{
     struct ibv_grh grh;
     spacetime_ack_packet_t packet;
-}ud_req_ack_t;
+}
+ud_req_ack_t;
 
-typedef struct {
+typedef struct
+{
     struct ibv_grh grh;
     spacetime_val_packet_t packet;
-}ud_req_val_t;
+}
+ud_req_val_t;
 
-typedef struct {
+typedef struct
+{
     struct ibv_grh grh;
     spacetime_crd_t req;
-}ud_req_crd_t;
+}
+ud_req_crd_t;
 
 
-typedef struct{
+
+
+
+
+typedef struct
+{
     uint8_t num_of_alive_remotes;
-//    uint8_t group_membership[GROUP_MEMBERSHIP_ARRAY_SIZE];
-//    uint8_t write_ack_init[GROUP_MEMBERSHIP_ARRAY_SIZE];
     bit_vector_t g_membership;
     bit_vector_t w_ack_init;
     seqlock_t lock;
-}spacetime_group_membership;
+}
+spacetime_group_membership;
 
-struct spacetime_meta_stats {
+struct spacetime_meta_stats
+{
     /* Stats */
     long long num_get_success;
     long long num_put_success;
@@ -230,7 +262,8 @@ struct spacetime_meta_stats {
     long long num_unserved_put_miss;
 };
 
-struct extended_spacetime_meta_stats {
+struct extended_spacetime_meta_stats
+{
     long long num_hit;
     long long num_miss;
     long long num_stall;
@@ -239,7 +272,8 @@ struct extended_spacetime_meta_stats {
     struct spacetime_meta_stats metadata;
 };
 
-struct spacetime_kv {
+struct spacetime_kv
+{
     int num_threads;
     struct mica_kv hash_table;
     long long total_ops_issued; ///this is only for get and puts
@@ -247,7 +281,8 @@ struct spacetime_kv {
     struct extended_spacetime_meta_stats aggregated_meta;
 };
 
-struct spacetime_trace_command {
+struct spacetime_trace_command
+{
     spacetime_key_t key_hash;
     uint8_t opcode;
     uint8_t key_id; // stores key ids 0-254 otherwise it is set to 255 to indicate other key ids
@@ -255,24 +290,25 @@ struct spacetime_trace_command {
 
 void spacetime_init(int spacetime_id, int num_threads);
 void spacetime_populate_fixed_len(struct spacetime_kv* kv,  int n,  int val_len);
+
 void batch_ops_to_KVS(int op_num, spacetime_op_t **ops, int thread_id, spacetime_group_membership curr_membership);
 void batch_invs_to_KVS(int op_num, spacetime_inv_t **op, spacetime_op_t *read_write_op, int thread_id,
                        int* node_suspected, uint32_t* refilled_per_ops_debug_cnt);
-//void batch_invs_to_KVS(int op_num, spacetime_inv_t **op, spacetime_op_t *read_write_op, int thread_id);
 void batch_acks_to_KVS(int op_num, spacetime_ack_t **op, spacetime_op_t *read_write_op,
                        spacetime_group_membership curr_membership, int thread_id);
 void batch_vals_to_KVS(int op_num, spacetime_val_t **op, spacetime_op_t *read_write_op, int thread_id);
+
+
+void group_membership_init(void);
+int find_suspected_node(spacetime_op_t *op, int thread_id,
+                        spacetime_group_membership curr_membership);
 void complete_writes_and_replays_on_follower_removal(int op_num, spacetime_op_t **op,
                                                      spacetime_group_membership curr_membership, int thread_id);
-void group_membership_init(void);
 void reset_bcast_send_buffers(spacetime_inv_packet_t *inv_send_packet_ops, int *inv_push_ptr,
                               spacetime_val_packet_t *val_send_packet_ops, int *val_push_ptr);
 void reconfigure_wrs(struct ibv_send_wr *inv_send_wr, struct ibv_sge *inv_send_sgl,
                      struct ibv_send_wr *val_send_wr, struct ibv_sge *val_send_sgl,
                      spacetime_group_membership last_g_membership, uint16_t worker_lid);
-
-int find_suspected_node(spacetime_op_t *op, int thread_id,
-                        spacetime_group_membership curr_membership);
 
 static inline void
 update_ack_bit_vector(uint16_t sender_int_id, uint8_t* ack_bit_vector){

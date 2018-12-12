@@ -57,12 +57,12 @@ is_last_ack(bit_vector_t gathered_acks,
 void
 spacetime_object_meta_init(spacetime_object_meta* ol)
 {
-	ol->tie_breaker_id = TIE_BREAKER_ID_EMPTY;
+	ol->conc_ctrl.ts.tie_breaker_id = TIE_BREAKER_ID_EMPTY;
 	ol->last_writer_id = LAST_WRITER_ID_EMPTY;
-	ol->version = 0;
+	ol->conc_ctrl.ts.version = 0;
 	ol->state = VALID_STATE;
 	ol->op_buffer_index = ST_OP_BUFFER_INDEX_EMPTY;
-	ol->lock = SEQLOCK_FREE;
+	ol->conc_ctrl.lock = SEQLOCK_FREE;
 }
 
 void
@@ -202,7 +202,7 @@ find_suspected_node(spacetime_op_t *op, int thread_id,
 
 		if(key_ptr_log[1] == key_ptr_req[0]){ //Key Found 8 Byte keys
 			spacetime_object_meta *curr_meta = (spacetime_object_meta *) kv_ptr->value;
-			optik_lock(curr_meta);
+			optik_lock(&curr_meta->conc_ctrl);
 			suspected_node = node_of_missing_ack(curr_membership, curr_meta->ack_bv);
 
 //			printf("ops: (%s) ops-state %s state: %s\n", code_to_str(op->opcode),
@@ -210,7 +210,7 @@ find_suspected_node(spacetime_op_t *op, int thread_id,
 //			yellow_printf("Write acks bit array: ");
 //			bv_print(curr_meta->ack_bv);
 //			printf("\n");
-			optik_unlock_decrement_version(curr_meta);
+			optik_unlock_decrement_version(&curr_meta->conc_ctrl);
 			return suspected_node;
 		}
 	}
@@ -338,7 +338,7 @@ batch_ops_to_KVS(int op_num, spacetime_op_t **op, int thread_id,
 								break;
 							default:
 								was_locked_read = 1;
-								optik_lock(curr_meta);
+								optik_lock(&curr_meta->conc_ctrl);
 								switch(curr_meta->state) {
 									case VALID_STATE:
 										memcpy((*op)[I].value, kv_value_ptr, ST_VALUE_SIZE);
@@ -365,11 +365,11 @@ batch_ops_to_KVS(int op_num, spacetime_op_t **op, int thread_id,
 											if(ENABLE_ASSERTIONS)
 												assert(I < ST_OP_BUFFER_INDEX_EMPTY);
 											curr_meta->op_buffer_index = (uint8_t) I;
-											curr_meta->last_local_write_version = curr_meta->version - 1;
-											curr_meta->last_local_write_tie_breaker_id = curr_meta->tie_breaker_id;
+											curr_meta->last_local_write_ts.version= curr_meta->conc_ctrl.ts.version - 1;
+											curr_meta->last_local_write_ts.tie_breaker_id = curr_meta->conc_ctrl.ts.tie_breaker_id;
 											(*op)[I].state = ST_REPLAY_SUCCESS;
-											(*op)[I].version = curr_meta->version - 1;
-											(*op)[I].tie_breaker_id = curr_meta->tie_breaker_id;
+											(*op)[I].ts.version = curr_meta->conc_ctrl.ts.version - 1;
+											(*op)[I].ts.tie_breaker_id = curr_meta->conc_ctrl.ts.tie_breaker_id;
 											(*op)[I].val_len = ST_VALUE_SIZE;
 											memcpy((*op)[I].value, kv_value_ptr, ST_VALUE_SIZE);
 											///update group membership mask for replay acks
@@ -380,17 +380,18 @@ batch_ops_to_KVS(int op_num, spacetime_op_t **op, int thread_id,
 										printf("Wrong opcode %s\n",code_to_str(curr_meta->state));
 										assert(0);
 								}
-								optik_unlock_decrement_version(curr_meta);
+								optik_unlock_decrement_version(&curr_meta->conc_ctrl);
 								break;
 						}
-					} while (!is_same_version_and_valid(&prev_meta, curr_meta) && was_locked_read == 0);
+					} while (!is_same_version_and_valid(&prev_meta.conc_ctrl, &curr_meta->conc_ctrl) && was_locked_read == 0);
 
 				} else if ((*op)[I].opcode == ST_OP_PUT){
 					if(ENABLE_ASSERTIONS)
 						assert((*op)[I].val_len == ST_VALUE_SIZE);
 					///Warning: even if a write is in progress write we may need to update the value of write_buffer_index
 					(*op)[I].state = ST_EMPTY;
-					optik_lock(curr_meta);
+
+					optik_lock(&curr_meta->conc_ctrl);
 					uint8_t v_node_id = (uint8_t) machine_id;
 					switch(curr_meta->state) {
 						case VALID_STATE:
@@ -398,7 +399,7 @@ batch_ops_to_KVS(int op_num, spacetime_op_t **op, int thread_id,
 							if(curr_meta->op_buffer_index != ST_OP_BUFFER_INDEX_EMPTY){
 								///stall write: until all acks from last write arrive
 								/// on multiple threads we can't complete writes / replays on VAL
-								optik_unlock_decrement_version(curr_meta);
+								optik_unlock_decrement_version(&curr_meta->conc_ctrl);
 							} else {
 								curr_meta->state = WRITE_STATE;
 								memcpy(kv_value_ptr, (*op)[I].value, ST_VALUE_SIZE);
@@ -408,12 +409,12 @@ batch_ops_to_KVS(int op_num, spacetime_op_t **op, int thread_id,
 								if(ENABLE_ASSERTIONS)
 									assert(I < ST_OP_BUFFER_INDEX_EMPTY);
 								curr_meta->op_buffer_index = (uint8_t) I;
-								curr_meta->last_local_write_version = curr_meta->version + 1;
+								curr_meta->last_local_write_ts.version = curr_meta->conc_ctrl.ts.version + 1;
 
 								v_node_id = (uint8_t) (!ENABLE_VIRTUAL_NODE_IDS ? machine_id :
 													   machine_id + MACHINE_NUM * (hrd_fastrand(&g_seed) % VIRTUAL_NODE_IDS_PER_NODE));
-								curr_meta->last_local_write_tie_breaker_id = v_node_id;
-								optik_unlock_write(curr_meta, v_node_id, &((*op)[I].version));
+								curr_meta->last_local_write_ts.tie_breaker_id = v_node_id;
+								optik_unlock_write(&curr_meta->conc_ctrl, v_node_id, &((*op)[I].ts.version));
 
 								(*op)[I].state = ST_PUT_SUCCESS;
 							}
@@ -421,14 +422,14 @@ batch_ops_to_KVS(int op_num, spacetime_op_t **op, int thread_id,
 						case INVALID_WRITE_STATE:
 						case WRITE_STATE:
 						case REPLAY_STATE:
-							optik_unlock_decrement_version(curr_meta);
+							optik_unlock_decrement_version(&curr_meta->conc_ctrl);
 							break;
 						default: assert(0);
 							break;
 					}
 					//Fill this deterministic stuff after releasing the lock
 					if((*op)[I].state == ST_PUT_SUCCESS)
-						(*op)[I].tie_breaker_id = v_node_id;
+						(*op)[I].ts.tie_breaker_id = v_node_id;
 					else
 						(*op)[I].state = ST_PUT_STALL;
 
@@ -476,11 +477,11 @@ batch_invs_to_KVS(int op_num, spacetime_inv_t **op, spacetime_op_t *read_write_o
 	 */
 	for(I = 0; I < op_num; I++) {
 		if(ENABLE_ASSERTIONS){
-			assert((*op)[I].version % 2 == 0);
+			assert((*op)[I].ts.version % 2 == 0);
 			assert((*op)[I].opcode == ST_OP_INV || (*op)[I].opcode == ST_OP_MEMBERSHIP_CHANGE);
 			assert((*op)[I].val_len == ST_VALUE_SIZE);
 			assert(REMOTE_MACHINES != 1 || (*op)[I].sender == REMOTE_MACHINES - machine_id);
-			assert(REMOTE_MACHINES != 1 || (*op)[I].tie_breaker_id == REMOTE_MACHINES - machine_id);
+			assert(REMOTE_MACHINES != 1 || (*op)[I].ts.tie_breaker_id == REMOTE_MACHINES - machine_id);
 //			red_printf("INVs: Ops[%d]vvv hash(1st 8B):%" PRIu64 " version: %d, tie: %d\n", I,
 //					   ((uint64_t *) &(*op)[I].key)[0], (*op)[I].version, (*op)[I].tie_breaker_id);
 		}
@@ -553,16 +554,20 @@ batch_invs_to_KVS(int op_num, spacetime_inv_t **op, spacetime_op_t *read_write_o
 							}
 						}
 						lock_free_meta = *curr_meta;
-					} while (!is_same_version_and_valid(&lock_free_meta, curr_meta));
+					} while (!is_same_version_and_valid(&lock_free_meta.conc_ctrl, &curr_meta->conc_ctrl));
 					//lock and proceed iff remote.TS >= local.TS
 					//inv TS >= local timestamp
-					if(!timestamp_is_smaller((*op)[I].version,  (*op)[I].tie_breaker_id,
-											 lock_free_meta.version, lock_free_meta.tie_breaker_id)){
+					if(!timestamp_is_smaller((*op)[I].ts.version,  (*op)[I].ts.tie_breaker_id,
+											 lock_free_meta.conc_ctrl.ts.version,
+											 lock_free_meta.conc_ctrl.ts.tie_breaker_id))
+					{
 						//Lock and check again if inv TS > local timestamp
-						optik_lock(curr_meta);
+						optik_lock(&curr_meta->conc_ctrl);
 						///Warning: use op.version + 1 bellow since optik_lock() increases curr_meta->version by 1
-						if(timestamp_is_smaller(curr_meta->version - 1, curr_meta->tie_breaker_id,
-												(*op)[I].version,   (*op)[I].tie_breaker_id)){
+						if(timestamp_is_smaller(curr_meta->conc_ctrl.ts.version - 1,
+												curr_meta->conc_ctrl.ts.tie_breaker_id,
+												(*op)[I].ts.version,   (*op)[I].ts.tie_breaker_id))
+						{
 //							printf("Received an invalidation with >= timestamp\n");
 							///Update Value, TS and last_writer_id
 							curr_meta->last_writer_id = (*op)[I].sender;
@@ -598,15 +603,20 @@ batch_invs_to_KVS(int op_num, spacetime_inv_t **op, spacetime_op_t *read_write_o
 //									break;
 								default: assert(0);
 							}
-							optik_unlock(curr_meta, (*op)[I].tie_breaker_id, (*op)[I].version);
-						} else if(timestamp_is_equal(curr_meta->version - 1, curr_meta->tie_breaker_id,
-													 (*op)[I].version,   (*op)[I].tie_breaker_id)) {
+							optik_unlock(&curr_meta->conc_ctrl, (*op)[I].ts.tie_breaker_id, (*op)[I].ts.version);
+						} else if(timestamp_is_equal(curr_meta->conc_ctrl.ts.version - 1,
+													 curr_meta->conc_ctrl.ts.tie_breaker_id,
+													 (*op)[I].ts.version,   (*op)[I].ts.tie_breaker_id))
+						{
+
 							if (curr_meta->state == WRITE_STATE)
 								(*op)[I].opcode = ST_INV_OUT_OF_GROUP;
+
 							curr_meta->last_writer_id = (*op)[I].sender;
-							optik_unlock(curr_meta, (*op)[I].tie_breaker_id, (*op)[I].version);
-						}else
-							optik_unlock_decrement_version(curr_meta);
+							optik_unlock(&curr_meta->conc_ctrl, (*op)[I].ts.tie_breaker_id, (*op)[I].ts.version);
+
+						} else
+							optik_unlock_decrement_version(&curr_meta->conc_ctrl);
 					}
 				}
 				if((*op)[I].opcode != ST_INV_OUT_OF_GROUP)
@@ -655,11 +665,11 @@ batch_acks_to_KVS(int op_num, spacetime_ack_t **op, spacetime_op_t *read_write_o
 	 */
 	for(I = 0; I < op_num; I++) {
 		if(ENABLE_ASSERTIONS){
-			assert((*op)[I].version % 2 == 0);
+			assert((*op)[I].ts.version % 2 == 0);
 			assert((*op)[I].opcode == ST_OP_ACK || (*op)[I].opcode == ST_OP_MEMBERSHIP_CHANGE);
 			assert(group_membership.num_of_alive_remotes != REMOTE_MACHINES ||
-				   (*op)[I].tie_breaker_id == machine_id ||
-				   (ENABLE_VIRTUAL_NODE_IDS && (*op)[I].tie_breaker_id  % MACHINE_NUM == machine_id));
+				   (*op)[I].ts.tie_breaker_id == machine_id ||
+				   (ENABLE_VIRTUAL_NODE_IDS && (*op)[I].ts.tie_breaker_id  % MACHINE_NUM == machine_id));
 			assert(REMOTE_MACHINES != 1 || (*op)[I].sender == REMOTE_MACHINES - machine_id);
 //			yellow_printf("ACKS: Ops[%d]vvv hash(1st 8B):%" PRIu64 " version: %d, tie: %d\n", I,
 //					   ((uint64_t *) &(*op)[I].key)[0], (*op)[I].version, (*op)[I].tie_breaker_id);
@@ -731,20 +741,22 @@ batch_acks_to_KVS(int op_num, spacetime_ack_t **op, spacetime_op_t *read_write_o
 							}
 						}
 						lock_free_read_meta = *curr_meta;
-					} while (!is_same_version_and_valid(&lock_free_read_meta, curr_meta));
+					} while (!is_same_version_and_valid(&lock_free_read_meta.conc_ctrl, &curr_meta->conc_ctrl));
 
 					if(ENABLE_ASSERTIONS)
-						assert(!timestamp_is_smaller(lock_free_read_meta.version, lock_free_read_meta.tie_breaker_id,
-													 (*op)[I].version, (*op)[I].tie_breaker_id));
+						assert(!timestamp_is_smaller(lock_free_read_meta.conc_ctrl.ts.version,
+													 lock_free_read_meta.conc_ctrl.ts.tie_breaker_id,
+													 (*op)[I].ts.version, (*op)[I].ts.tie_breaker_id));
 
-					if(timestamp_is_equal((*op)[I].version,    (*op)[I].tie_breaker_id,
-										  lock_free_read_meta.last_local_write_version,
-										  lock_free_read_meta.last_local_write_tie_breaker_id)){
+					if(timestamp_is_equal((*op)[I].ts.version,    (*op)[I].ts.tie_breaker_id,
+										  lock_free_read_meta.last_local_write_ts.version,
+										  lock_free_read_meta.last_local_write_ts.tie_breaker_id))
+					{
 						///Lock and check again if ack TS == last local write
-						optik_lock(curr_meta);
-						if(timestamp_is_equal((*op)[I].version,    (*op)[I].tie_breaker_id,
-											  curr_meta->last_local_write_version,
-											  curr_meta->last_local_write_tie_breaker_id))
+						optik_lock(&curr_meta->conc_ctrl);
+						if(timestamp_is_equal((*op)[I].ts.version,    (*op)[I].ts.tie_breaker_id,
+											  curr_meta->last_local_write_ts.version,
+											  curr_meta->last_local_write_ts.tie_breaker_id))
 						{
 							bv_bit_set(&curr_meta->ack_bv, (*op)[I].sender);
 							if (is_last_ack(curr_meta->ack_bv, curr_membership)) { //if last local write completed
@@ -771,7 +783,7 @@ batch_acks_to_KVS(int op_num, spacetime_ack_t **op, spacetime_op_t *read_write_o
 								}
 							}
 						}
-						optik_unlock_decrement_version(curr_meta);
+						optik_unlock_decrement_version(&curr_meta->conc_ctrl);
 					}
 					if((*op)[I].opcode == ST_LAST_ACK_SUCCESS ||
 					   (*op)[I].opcode == ST_LAST_ACK_NO_BCAST_SUCCESS){
@@ -847,10 +859,10 @@ batch_vals_to_KVS(int op_num, spacetime_val_t **op, spacetime_op_t *read_write_o
 
 	for(I = 0; I < op_num; I++) {
 		if(ENABLE_ASSERTIONS){
-			assert((*op)[I].version % 2 == 0);
+			assert((*op)[I].ts.version % 2 == 0);
 			assert((*op)[I].opcode == ST_OP_VAL);
 			assert(REMOTE_MACHINES != 1 || (*op)[I].sender == REMOTE_MACHINES - machine_id);
-			assert(REMOTE_MACHINES != 1 || (*op)[I].tie_breaker_id == REMOTE_MACHINES - machine_id);
+			assert(REMOTE_MACHINES != 1 || (*op)[I].ts.tie_breaker_id == REMOTE_MACHINES - machine_id);
 //			green_printf("VALS: Ops[%d]vvv hash(1st 8B):%" PRIu64 " version: %d, tie: %d\n", I,
 //					   ((uint64_t *) &(*op)[I].key)[0], (*op)[I].version, (*op)[I].tie_breaker_id);
 		}
@@ -914,20 +926,24 @@ batch_vals_to_KVS(int op_num, spacetime_val_t **op, spacetime_op_t *read_write_o
 							}
 						}
 						lock_free_read_meta = *curr_meta;
-					} while (!is_same_version_and_valid(&lock_free_read_meta, curr_meta));
+					} while (!is_same_version_and_valid(&lock_free_read_meta.conc_ctrl, &curr_meta->conc_ctrl));
 					///lock and proceed iff remote.TS == local.TS
-					if(timestamp_is_equal(lock_free_read_meta.version, lock_free_read_meta.tie_breaker_id,
-										  (*op)[I].version,   (*op)[I].tie_breaker_id)){
+					if(timestamp_is_equal(lock_free_read_meta.conc_ctrl.ts.version,
+										  lock_free_read_meta.conc_ctrl.ts.tie_breaker_id,
+										  (*op)[I].ts.version,   (*op)[I].ts.tie_breaker_id))
+					{
 						///Lock and check again if still TS == local timestamp
-						optik_lock(curr_meta);
+						optik_lock(&curr_meta->conc_ctrl);
 						///Warning: use op.version + 1 bellow since optik_lock() increases curr_meta->version by 1
-						if(timestamp_is_equal(curr_meta->version - 1, curr_meta->tie_breaker_id,
-											  (*op)[I].version,   (*op)[I].tie_breaker_id)){
+						if(timestamp_is_equal(curr_meta->conc_ctrl.ts.version - 1,
+											  curr_meta->conc_ctrl.ts.tie_breaker_id,
+											  (*op)[I].ts.version,   (*op)[I].ts.tie_breaker_id))
+						{
 							if(ENABLE_ASSERTIONS)
 								assert(curr_meta->state != WRITE_STATE); ///WARNING: this should not happen w/o this node removed from the group
 							curr_meta->state = VALID_STATE;
 						}
-						optik_unlock_decrement_version(curr_meta);
+						optik_unlock_decrement_version(&curr_meta->conc_ctrl);
 					}
 				}
 			}
@@ -1039,10 +1055,10 @@ complete_writes_and_replays_on_follower_removal(int op_num, spacetime_op_t **op,
 						}
 					}
 					lock_free_read_meta = *curr_meta;
-				} while (!is_same_version_and_valid(&lock_free_read_meta, curr_meta));
+				} while (!is_same_version_and_valid(&lock_free_read_meta.conc_ctrl, &curr_meta->conc_ctrl));
 
 				if(is_last_ack(lock_free_read_meta.ack_bv, curr_membership)) {
-					optik_lock(curr_meta);
+					optik_lock(&curr_meta->conc_ctrl);
 					if(is_last_ack(curr_meta->ack_bv, curr_membership)){
 						if(ENABLE_ASSERTIONS)
 							assert(curr_meta->op_buffer_index == I);
@@ -1060,22 +1076,22 @@ complete_writes_and_replays_on_follower_removal(int op_num, spacetime_op_t **op,
 							case WRITE_STATE:
 								if(ENABLE_ASSERTIONS) assert((*op)[I].state == ST_IN_PROGRESS_PUT || (*op)[I].state == ST_OP_MEMBERSHIP_CHANGE);
 								curr_meta->state = VALID_STATE;
-								(*op)[I].version = curr_meta->version - 1; // -1 because of optik lock does version + 1
-								(*op)[I].tie_breaker_id = curr_meta->tie_breaker_id;
+								(*op)[I].ts.version = curr_meta->conc_ctrl.ts.version - 1; // -1 because of optik lock does version + 1
+								(*op)[I].ts.tie_breaker_id = curr_meta->conc_ctrl.ts.tie_breaker_id;
 								(*op)[I].state = DISABLE_VALS_FOR_DEBUGGING == 1 ? ST_PUT_COMPLETE : ST_PUT_COMPLETE_SEND_VALS; ///ops state for sending VALs
 								break;
 							case REPLAY_STATE:
 								if(ENABLE_ASSERTIONS) assert((*op)[I].state == ST_IN_PROGRESS_REPLAY);
 								curr_meta->state = VALID_STATE;
-								(*op)[I].version = curr_meta->version - 1; // -1 because of optik lock does version + 1
-								(*op)[I].tie_breaker_id = curr_meta->tie_breaker_id;
+								(*op)[I].ts.version = curr_meta->conc_ctrl.ts.version - 1; // -1 because of optik lock does version + 1
+								(*op)[I].ts.tie_breaker_id = curr_meta->conc_ctrl.ts.tie_breaker_id;
 								(*op)[I].state = DISABLE_VALS_FOR_DEBUGGING == 1 ? ST_GET_COMPLETE : ST_REPLAY_COMPLETE; ///ops state for sending VALs
 								break;
 							default:
 								assert(0);
 						}
 					}
-					optik_unlock_decrement_version(curr_meta);
+					optik_unlock_decrement_version(&curr_meta->conc_ctrl);
 				}
 			}
 		}

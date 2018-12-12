@@ -149,10 +149,7 @@ int main(int argc, char *argv[])
 	green_printf("Size of lock: %d, size of packed lock: %d\n",
 				 sizeof(seqlock_t), sizeof(seqlock_t));
 
-	green_printf("Size of spacetime_obj_meta: %d, vs _t: %d , vs: %d\n",
-				 sizeof(spacetime_object_meta),
-				 sizeof(spacetime_object_meta),
-				 sizeof(spacetime_object_meta2));
+	green_printf("Size of spacetime_obj_meta: %d\n", sizeof(spacetime_object_meta));
 
 	for(i = 0; i < WORKERS_PER_MACHINE; i++)
 		pthread_join(thread_arr[i], NULL);
