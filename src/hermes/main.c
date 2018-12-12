@@ -139,9 +139,9 @@ int main(int argc, char *argv[])
 		pthread_create(&thread_arr[i], &attr, run_worker, &param_arr[i]);
 	}
 
-	yellow_printf("{Sizes} Op: %d, Meta %d, Value %d,\n",
+	yellow_printf("{Sizes} Op: %d, Object Meta %d, Value %d,\n",
 				 sizeof(spacetime_op_t), sizeof(spacetime_object_meta), ST_VALUE_SIZE);
-	yellow_printf("{Op Sizes} Inv: %d, Ack: %d, Val: %d, Crd: %d\n",
+	yellow_printf("{Coherence msg Sizes} Inv: %d, Ack: %d, Val: %d, Crd: %d\n",
 				 sizeof(spacetime_inv_t), sizeof(spacetime_ack_t), sizeof(spacetime_val_t), sizeof(spacetime_crd_t));
 	yellow_printf("{Max Coalesce Packet Sizes} Inv: %d, Ack: %d, Val: %d\n",
 				 sizeof(spacetime_inv_packet_t), sizeof(spacetime_ack_packet_t), sizeof(spacetime_val_packet_t));

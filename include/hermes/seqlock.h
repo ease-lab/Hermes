@@ -46,7 +46,6 @@ typedef volatile struct
 } __attribute__((packed))
 conc_ctrl_t;
 
-
 static inline int
 seqlock_lock(seqlock_t *ol)
 {

@@ -86,18 +86,10 @@
 #define TIE_BREAKER_ID_EMPTY 255
 
 
-
-///* Fixed-size 16 byte keys */
-//typedef struct {
-//    uint64 __unused; // This should be 8B
-//    unsigned int bkt			:32;
-//    unsigned int server			:16;
-//    unsigned int tag			:16;
-//}spacetime_key_t;
-
-/* Fixed-size 8 byte keys */
+// Fixed-size 8 (or 16) byte keys
 typedef struct
 {
+//    uint64 __unused; // This should be 8B ////// Uncomment this for fixed-size 16 byte keys instead
     unsigned int bkt			:32;
     unsigned int server			:16;
     unsigned int tag			:16;
@@ -121,8 +113,8 @@ typedef struct
     spacetime_key_t key;	/* This must be the 1st field and 16B aligned */
     uint8_t opcode; //both recv / resp
     union {
-        uint8_t state;
-        uint8_t sender;
+        uint8_t state; //used by spacetime_op_t
+        uint8_t sender; //used by spacetime_inv/ack/val_t
     };
     uint8_t val_len; // unused for spacetime_ack_t and spacetime_val_t (align for using a single memcpy)
     timestamp_t ts;
@@ -132,12 +124,7 @@ spacetime_op_meta_t;
 typedef struct
 {
     ///May add    uint8_t session_id;
-//    spacetime_op_meta_t op_meta; // uses the state part of the op_meta union (not sender)
-    spacetime_key_t key;	/* This must be the 1st field and 16B aligned */
-    uint8_t opcode; //both recv / resp
-    uint8_t state;
-    uint8_t val_len;
-    timestamp_t ts;
+    spacetime_op_meta_t op_meta; // uses the state part of the op_meta union (not sender)
     uint16_t no_req_coalescing; //used only for skew optimizations
     uint8_t value[ST_VALUE_SIZE];
 }
@@ -145,22 +132,13 @@ spacetime_op_t;
 
 typedef struct
 {
-//    spacetime_op_meta_t op_meta; // uses the sender part of the op_meta union (not state)
-    spacetime_key_t key;	/* This must be the 1st field and 16B aligned */
-    uint8_t opcode; //both recv / batch_op resp
-    uint8_t sender;
-    uint8_t val_len;
-    timestamp_t ts;
+    spacetime_op_meta_t op_meta; // uses the sender part of the op_meta union (not state)
     uint16_t no_coales; //used only for skew optimizations
     uint8_t value[ST_VALUE_SIZE];
 }
 spacetime_inv_t;
 
-typedef spacetime_op_meta_t
-//    uint8_t __unused; ///Warning currently in use for marking coalesed packets!
-//    timestamp_t ts;
-//}
-spacetime_ack_t, spacetime_val_t;
+typedef spacetime_op_meta_t spacetime_ack_t, spacetime_val_t;
 
 typedef struct
 {

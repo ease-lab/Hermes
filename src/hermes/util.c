@@ -461,7 +461,7 @@ void setup_ops(spacetime_op_t **ops,
 	memset(*val_send_packet_ops, 0, VAL_SEND_OPS_SIZE * sizeof(spacetime_val_packet_t));
 
     for(i = 0; i < INV_RECV_OPS_SIZE; i++)
-        (*inv_recv_ops)[i].opcode = ST_EMPTY;
+        (*inv_recv_ops)[i].op_meta.opcode = ST_EMPTY;
 
     for(i = 0; i < ACK_RECV_OPS_SIZE; i++)
         (*ack_recv_ops)[i].opcode = ST_EMPTY;
@@ -470,14 +470,14 @@ void setup_ops(spacetime_op_t **ops,
         (*val_recv_ops)[i].opcode = ST_EMPTY;
 
 	for(i = 0; i < MAX_BATCH_OPS_SIZE; i++) {
-		(*ops)[i].opcode = ST_EMPTY;
-		(*ops)[i].state = ST_EMPTY;
+		(*ops)[i].op_meta.opcode = ST_EMPTY;
+		(*ops)[i].op_meta.state = ST_EMPTY;
 	}
 
     for(i = 0; i < INV_SEND_OPS_SIZE; i++) {
         (*inv_send_packet_ops)[i].req_num = 0;
         for (j = 0; j < INV_MAX_REQ_COALESCE; j++)
-            (*inv_send_packet_ops)[i].reqs[j].opcode = ST_EMPTY;
+            (*inv_send_packet_ops)[i].reqs[j].op_meta.opcode = ST_EMPTY;
     }
     for(i = 0; i < ACK_SEND_OPS_SIZE; i++) {
         (*ack_send_packet_ops)[i].req_num = 0;
