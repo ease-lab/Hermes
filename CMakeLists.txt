@@ -26,7 +26,7 @@ set(SOURCE_FILES_hermes
 
         include/hermes/util.h
         include/hermes/config.h
-        include/hermes/seqlock.h
+        include/hermes/concur_ctrl.h
         include/hermes/bit_vector.h)
 
 

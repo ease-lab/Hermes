@@ -1,6 +1,3 @@
-//
-// Adapted from  https://aufather.wordpress.com/2010/09/08/high-performance-time-measuremen-in-linux/ (on 02/08/18)
-//
 
 #ifndef HERMES_TIME_H
 #define HERMES_TIME_H
@@ -9,11 +6,11 @@
 #include <stdio.h>
 
 #define ENABLE_STATIC_TICKS_PER_NS 1
-#define TICKS_PER_NS 2.1
+#define TICKS_PER_NS 2.2
 
 double g_ticks_per_ns;
 
-/* assembly code to read the TSC */
+// assembly code to read the TSC
 static inline uint64_t RDTSC()
 {
     unsigned int hi, lo;
@@ -22,8 +19,8 @@ static inline uint64_t RDTSC()
 }
 
 const int NANO_SECONDS_IN_SEC = 1000000000;
-/* returns a static buffer of struct timespec with the time difference of ts1 and ts2
-   ts1 is assumed to be greater than ts2 */
+// returns a static buffer of struct timespec with the time difference of
+// ts1 and ts2 ts1 is assumed to be greater than ts2
 struct timespec *timespec_diff(struct timespec *ts1, struct timespec *ts2)
 {
     static struct timespec ts;
@@ -50,10 +47,10 @@ calibrate_ticks()
     struct timespec *tmp_ts = timespec_diff(&end_ts, &begin_ts);
     uint64_t ns_elapsed = (uint64_t) (tmp_ts->tv_sec * 1000000000LL + tmp_ts->tv_nsec);
     g_ticks_per_ns = (double) (end - begin) / (double) ns_elapsed;
-    printf("RDTSC calibration is done (ticks_per_ns: %.2f \n", g_ticks_per_ns);
+    printf("RDTSC calibration is done (ticks_per_ns: %.2f)\n", g_ticks_per_ns);
 }
 
-/* Call once before using RDTSC, has side effect of binding process to CPU1 */
+// Call once before using RDTSC, has side effect of binding process to CPU1
 static inline void
 init_rdtsc()
 {

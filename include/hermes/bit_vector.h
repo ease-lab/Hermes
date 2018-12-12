@@ -13,7 +13,7 @@
 #define BV_BIT_VECTOR_SIZE 8
 #define BV_ENABLE_BIT_VECTOR_ASSERTS 1
 
-// Do not change
+// Do not change the following defines
 #define BV_CEILING(x,y) (((x) + (y) - 1) / (y))
 #define BV_BITS_IN_A_BYTE 8
 #define BV_BIT_VECTOR_SIZE_IN_BYTES BV_CEILING(BV_BIT_VECTOR_SIZE, BV_BITS_IN_A_BYTE)
@@ -28,19 +28,27 @@ typedef struct
 }
 bit_vector_t;
 
+
+
+/////////////////////////////////////////
+/// Bitvector API functions
+/////////////////////////////////////////
+
 static inline void
-bv_reset_all(bit_vector_t *bv)
+bv_init(bit_vector_t* bv)
 {
     for(int i = 0; i < BV_BIT_VECTOR_SIZE_IN_BYTES; ++i)
         bv->bit_array[i] = 0;
 }
 
-static inline void
-bv_init(bit_vector_t* bv)
+static inline uint8_t
+bv_bit_get(bit_vector_t bv, uint8_t bit)
 {
-    return bv_reset_all(bv);
-}
+    if(BV_ENABLE_BIT_VECTOR_ASSERTS)
+        assert(bit < BV_BIT_VECTOR_SIZE);
 
+    return (uint8_t) ((bv.bit_array[BV_BIT_SLOT(bit)] & BV_BIT_MOD(bit)) == 0 ? 0 : 1);
+}
 
 static inline void
 bv_bit_set(bit_vector_t *bv, uint8_t bit)
@@ -59,15 +67,6 @@ bv_bit_reset(bit_vector_t *bv, uint8_t bit)
     bv->bit_array[BV_BIT_SLOT(bit)] &= ~(BV_BIT_MOD(bit));
 }
 
-static inline uint8_t
-bv_bit_get(bit_vector_t bv, uint8_t bit)
-{
-    if(BV_ENABLE_BIT_VECTOR_ASSERTS)
-        assert(bit < BV_BIT_VECTOR_SIZE);
-
-    return (uint8_t) ((bv.bit_array[BV_BIT_SLOT(bit)] & BV_BIT_MOD(bit)) == 0 ? 0 : 1);
-}
-
 static inline void
 bv_set_all(bit_vector_t* bv)
 {
@@ -76,11 +75,14 @@ bv_set_all(bit_vector_t* bv)
 }
 
 static inline void
-bv_reverse(bit_vector_t* bv)
+bv_reset_all(bit_vector_t *bv)
 {
     for(int i = 0; i < BV_BIT_VECTOR_SIZE_IN_BYTES; ++i)
-        bv->bit_array[i] = ~bv->bit_array[i];
+        bv->bit_array[i] = 0;
 }
+
+
+
 
 static inline uint8_t
 bv_are_equal(bit_vector_t bv1, bit_vector_t bv2)
@@ -100,6 +102,17 @@ bv_copy(bit_vector_t *bv_dst, bit_vector_t bv_src)
     memcpy(bv_dst->bit_array, bv_src.bit_array, BV_BIT_VECTOR_SIZE_IN_BYTES);
 }
 
+
+/////////////////////////////////////////
+/// Bitvector bitwise ops
+/////////////////////////////////////////
+static inline void
+bv_reverse(bit_vector_t* bv)
+{
+    for(int i = 0; i < BV_BIT_VECTOR_SIZE_IN_BYTES; ++i)
+        bv->bit_array[i] = ~bv->bit_array[i];
+}
+
 static inline void
 bv_and(bit_vector_t *bv_dst, bit_vector_t bv_src)
 {
@@ -114,7 +127,9 @@ bv_or(bit_vector_t *bv_dst, bit_vector_t bv_src)
         bv_dst->bit_array[i] |= bv_src.bit_array[i];
 }
 
-////////// Prints
+/////////////////////////////////////////
+/// Bitvector Print functions
+/////////////////////////////////////////
 #include <stdio.h>
 //print binary numbers
 #define BYTE_TO_BINARY_PATTERN "%c%c%c%c%c%c%c%c"
@@ -144,7 +159,9 @@ bv_print_enhanced(bit_vector_t bv)
     printf("\n");
 }
 
-/////
+/////////////////////////////////////////
+/// Bitvector unit test functions
+/////////////////////////////////////////
 static inline void
 bv_unit_test(void)
 {

@@ -27,13 +27,6 @@
 
 typedef volatile struct
 {
-    uint8_t lock;
-    uint32_t version;  /// for lock-free reads
-} __attribute__((packed))
-seqlock_t;
-
-typedef volatile struct
-{
     uint8_t tie_breaker_id;
     uint32_t version;
 } __attribute__((packed))
@@ -42,9 +35,44 @@ timestamp_t;
 typedef volatile struct
 {
     uint8_t lock;
+    uint32_t version;  /// for lock-free reads
+} __attribute__((packed))
+seqlock_t;
+
+typedef volatile struct
+{
+    uint8_t lock;
     timestamp_t ts; /// ts.version used for both lock-free reads & as part of timestamp
 } __attribute__((packed))
 conc_ctrl_t;
+
+
+
+
+/////////////////////////////////////////
+/// Timestamp  comparison  functions
+/////////////////////////////////////////
+
+static inline int
+timestamp_is_equal(uint32_t v1, uint8_t tie_breaker1,
+                   uint32_t v2, uint8_t tie_breaker2)
+{
+    return (v1 == v2 && tie_breaker1 == tie_breaker2);
+}
+
+static inline int
+timestamp_is_smaller(uint32_t v1, uint8_t tie_breaker1,
+                     uint32_t v2, uint8_t tie_breaker2)
+{
+    return (v1 < v2 || (v1 == v2 && tie_breaker1 < tie_breaker2));
+}
+
+
+
+
+/////////////////////////////////////////
+/// seqlock locking / unlocking functions
+/////////////////////////////////////////
 
 static inline int
 seqlock_lock(seqlock_t *ol)
@@ -79,21 +107,24 @@ seqlock_unlock(seqlock_t *ol)
     COMPILER_NO_REORDER(ol->lock = SEQLOCK_FREE);
 }
 
-
-
-
-
+// This is used to validate a lock-free read
+// i.e. --> do { <Lock free read>  } while (!(seqlock_version_is_same_and_valid(...));
 static inline int
-is_same_version_and_valid(volatile conc_ctrl_t* cctrl1,
-                          volatile conc_ctrl_t* cctrl2)
+seqlock_version_is_same_and_valid(seqlock_t *seqlock1, seqlock_t *seqlock2)
 {
-    return  cctrl1->ts.version == cctrl2->ts.version &&
-            cctrl1->ts.tie_breaker_id == cctrl2->ts.tie_breaker_id &&
-            cctrl1->ts.version % 2 == 0;
+    return (seqlock1->version == seqlock2->version &&
+            seqlock1->version % 2 == 0);
 }
 
+
+
+
+/////////////////////////////////////////
+/// ccctrl locking / unlocking functions
+/////////////////////////////////////////
+
 static inline int
-optik_lock(conc_ctrl_t* cctrl)
+cctrl_lock(conc_ctrl_t *cctrl)
 {
     conc_ctrl_t prev_cctrl;
     do{
@@ -114,7 +145,7 @@ optik_lock(conc_ctrl_t* cctrl)
 }
 
 static inline void
-optik_unlock_write(conc_ctrl_t* cctrl, uint8_t cid, uint32_t* resp_version)
+cctrl_unlock_write(conc_ctrl_t *cctrl, uint8_t cid, uint32_t *resp_version)
 {
     if(ENABLE_LOCK_ASSERTS){
         assert(cctrl->lock == SEQLOCK_LOCKED);
@@ -126,7 +157,7 @@ optik_unlock_write(conc_ctrl_t* cctrl, uint8_t cid, uint32_t* resp_version)
 }
 
 static inline void
-optik_unlock(conc_ctrl_t* conc_ctrl, uint8_t cid, uint32_t version)
+cctrl_unlock(conc_ctrl_t *conc_ctrl, uint8_t cid, uint32_t version)
 {
     assert(version % 2 == 0);
     conc_ctrl->ts.tie_breaker_id = cid;
@@ -135,12 +166,23 @@ optik_unlock(conc_ctrl_t* conc_ctrl, uint8_t cid, uint32_t version)
 }
 
 static inline void
-optik_unlock_decrement_version(conc_ctrl_t* cctrl)
+cctrl_unlock_decrement_version(conc_ctrl_t *cctrl)
 {
     --cctrl->ts.version;
     if(ENABLE_LOCK_ASSERTS)
         assert(cctrl->ts.version % 2 == 0);
     COMPILER_NO_REORDER(cctrl->lock = SEQLOCK_FREE);
+}
+
+// This is used to validate a lock-free read
+// i.e. --> do { <Lock free read>  } while (!(cctrl_timestamp_is_same_and_valid(...));
+static inline int
+cctrl_timestamp_is_same_and_valid(volatile conc_ctrl_t *cctrl1,
+                                  volatile conc_ctrl_t *cctrl2)
+{
+    return cctrl1->ts.version % 2 == 0 &&
+           timestamp_is_equal(cctrl1->ts.version, cctrl1->ts.tie_breaker_id,
+                              cctrl2->ts.version, cctrl2->ts.tie_breaker_id);
 }
 
 #endif //HERMES_SEQLOCK_H

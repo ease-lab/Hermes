@@ -3,7 +3,7 @@
 //
 #include <config.h>
 #include <spacetime.h>
-#include <seqlock.h>
+#include <concur_ctrl.h>
 #include <util.h>
 #include <inline-util.h>
 
@@ -202,7 +202,7 @@ find_suspected_node(spacetime_op_t *op, int thread_id,
 
 		if(key_ptr_log[1] == key_ptr_req[0]){ //Key Found 8 Byte keys
 			spacetime_object_meta *curr_meta = (spacetime_object_meta *) kv_ptr->value;
-			optik_lock(&curr_meta->conc_ctrl);
+			cctrl_lock(&curr_meta->conc_ctrl);
 			suspected_node = node_of_missing_ack(curr_membership, curr_meta->ack_bv);
 
 //			printf("ops: (%s) ops-state %s state: %s\n", code_to_str(op->opcode),
@@ -210,7 +210,7 @@ find_suspected_node(spacetime_op_t *op, int thread_id,
 //			yellow_printf("Write acks bit array: ");
 //			bv_print(curr_meta->ack_bv);
 //			printf("\n");
-			optik_unlock_decrement_version(&curr_meta->conc_ctrl);
+			cctrl_unlock_decrement_version(&curr_meta->conc_ctrl);
 			return suspected_node;
 		}
 	}
@@ -338,7 +338,7 @@ batch_ops_to_KVS(int op_num, spacetime_op_t **op, int thread_id,
 								break;
 							default:
 								was_locked_read = 1;
-								optik_lock(&curr_meta->conc_ctrl);
+								cctrl_lock(&curr_meta->conc_ctrl);
 								switch(curr_meta->state) {
 									case VALID_STATE:
 										memcpy((*op)[I].value, kv_value_ptr, ST_VALUE_SIZE);
@@ -380,10 +380,10 @@ batch_ops_to_KVS(int op_num, spacetime_op_t **op, int thread_id,
 										printf("Wrong opcode %s\n",code_to_str(curr_meta->state));
 										assert(0);
 								}
-								optik_unlock_decrement_version(&curr_meta->conc_ctrl);
+								cctrl_unlock_decrement_version(&curr_meta->conc_ctrl);
 								break;
 						}
-					} while (!is_same_version_and_valid(&prev_meta.conc_ctrl, &curr_meta->conc_ctrl) && was_locked_read == 0);
+					} while (!cctrl_timestamp_is_same_and_valid(&prev_meta.conc_ctrl, &curr_meta->conc_ctrl) && was_locked_read == 0);
 
 				} else if ((*op)[I].op_meta.opcode == ST_OP_PUT){
 					if(ENABLE_ASSERTIONS)
@@ -391,7 +391,7 @@ batch_ops_to_KVS(int op_num, spacetime_op_t **op, int thread_id,
 					///Warning: even if a write is in progress write we may need to update the value of write_buffer_index
 					(*op)[I].op_meta.state = ST_EMPTY;
 
-					optik_lock(&curr_meta->conc_ctrl);
+					cctrl_lock(&curr_meta->conc_ctrl);
 					uint8_t v_node_id = (uint8_t) machine_id;
 					switch(curr_meta->state) {
 						case VALID_STATE:
@@ -399,7 +399,7 @@ batch_ops_to_KVS(int op_num, spacetime_op_t **op, int thread_id,
 							if(curr_meta->op_buffer_index != ST_OP_BUFFER_INDEX_EMPTY){
 								///stall write: until all acks from last write arrive
 								/// on multiple threads we can't complete writes / replays on VAL
-								optik_unlock_decrement_version(&curr_meta->conc_ctrl);
+								cctrl_unlock_decrement_version(&curr_meta->conc_ctrl);
 							} else {
 								curr_meta->state = WRITE_STATE;
 								memcpy(kv_value_ptr, (*op)[I].value, ST_VALUE_SIZE);
@@ -414,7 +414,7 @@ batch_ops_to_KVS(int op_num, spacetime_op_t **op, int thread_id,
 								v_node_id = (uint8_t) (!ENABLE_VIRTUAL_NODE_IDS ? machine_id :
 													   machine_id + MACHINE_NUM * (hrd_fastrand(&g_seed) % VIRTUAL_NODE_IDS_PER_NODE));
 								curr_meta->last_local_write_ts.tie_breaker_id = v_node_id;
-								optik_unlock_write(&curr_meta->conc_ctrl, v_node_id, &((*op)[I].op_meta.ts.version));
+								cctrl_unlock_write(&curr_meta->conc_ctrl, v_node_id, &((*op)[I].op_meta.ts.version));
 
 								(*op)[I].op_meta.state = ST_PUT_SUCCESS;
 							}
@@ -422,7 +422,7 @@ batch_ops_to_KVS(int op_num, spacetime_op_t **op, int thread_id,
 						case INVALID_WRITE_STATE:
 						case WRITE_STATE:
 						case REPLAY_STATE:
-							optik_unlock_decrement_version(&curr_meta->conc_ctrl);
+							cctrl_unlock_decrement_version(&curr_meta->conc_ctrl);
 							break;
 						default: assert(0);
 							break;
@@ -557,7 +557,7 @@ batch_invs_to_KVS(int op_num, spacetime_inv_t **op, spacetime_op_t *read_write_o
 							}
 						}
 						lock_free_meta = *curr_meta;
-					} while (!is_same_version_and_valid(&lock_free_meta.conc_ctrl, &curr_meta->conc_ctrl));
+					} while (!cctrl_timestamp_is_same_and_valid(&lock_free_meta.conc_ctrl, &curr_meta->conc_ctrl));
 					//lock and proceed iff remote.TS >= local.TS
 					//inv TS >= local timestamp
 					if(!timestamp_is_smaller((*op)[I].op_meta.ts.version,  (*op)[I].op_meta.ts.tie_breaker_id,
@@ -565,7 +565,7 @@ batch_invs_to_KVS(int op_num, spacetime_inv_t **op, spacetime_op_t *read_write_o
 											 lock_free_meta.conc_ctrl.ts.tie_breaker_id))
 					{
 						//Lock and check again if inv TS > local timestamp
-						optik_lock(&curr_meta->conc_ctrl);
+						cctrl_lock(&curr_meta->conc_ctrl);
 						///Warning: use op.version + 1 bellow since optik_lock() increases curr_meta->version by 1
 						if(timestamp_is_smaller(curr_meta->conc_ctrl.ts.version - 1,
 												curr_meta->conc_ctrl.ts.tie_breaker_id,
@@ -607,7 +607,7 @@ batch_invs_to_KVS(int op_num, spacetime_inv_t **op, spacetime_op_t *read_write_o
 //									break;
 								default: assert(0);
 							}
-							optik_unlock(&curr_meta->conc_ctrl, (*op)[I].op_meta.ts.tie_breaker_id,
+							cctrl_unlock(&curr_meta->conc_ctrl, (*op)[I].op_meta.ts.tie_breaker_id,
 										 (*op)[I].op_meta.ts.version);
 						} else if(timestamp_is_equal(curr_meta->conc_ctrl.ts.version - 1,
 													 curr_meta->conc_ctrl.ts.tie_breaker_id,
@@ -619,11 +619,11 @@ batch_invs_to_KVS(int op_num, spacetime_inv_t **op, spacetime_op_t *read_write_o
 								(*op)[I].op_meta.opcode = ST_INV_OUT_OF_GROUP;
 
 							curr_meta->last_writer_id = (*op)[I].op_meta.sender;
-							optik_unlock(&curr_meta->conc_ctrl,
+							cctrl_unlock(&curr_meta->conc_ctrl,
 										 (*op)[I].op_meta.ts.tie_breaker_id, (*op)[I].op_meta.ts.version);
 
 						} else
-							optik_unlock_decrement_version(&curr_meta->conc_ctrl);
+							cctrl_unlock_decrement_version(&curr_meta->conc_ctrl);
 					}
 				}
 				if((*op)[I].op_meta.opcode != ST_INV_OUT_OF_GROUP)
@@ -748,7 +748,7 @@ batch_acks_to_KVS(int op_num, spacetime_ack_t **op, spacetime_op_t *read_write_o
 							}
 						}
 						lock_free_read_meta = *curr_meta;
-					} while (!is_same_version_and_valid(&lock_free_read_meta.conc_ctrl, &curr_meta->conc_ctrl));
+					} while (!cctrl_timestamp_is_same_and_valid(&lock_free_read_meta.conc_ctrl, &curr_meta->conc_ctrl));
 
 					if(ENABLE_ASSERTIONS)
 						assert(!timestamp_is_smaller(lock_free_read_meta.conc_ctrl.ts.version,
@@ -760,7 +760,7 @@ batch_acks_to_KVS(int op_num, spacetime_ack_t **op, spacetime_op_t *read_write_o
 										  lock_free_read_meta.last_local_write_ts.tie_breaker_id))
 					{
 						///Lock and check again if ack TS == last local write
-						optik_lock(&curr_meta->conc_ctrl);
+						cctrl_lock(&curr_meta->conc_ctrl);
 						if(timestamp_is_equal((*op)[I].ts.version,    (*op)[I].ts.tie_breaker_id,
 											  curr_meta->last_local_write_ts.version,
 											  curr_meta->last_local_write_ts.tie_breaker_id))
@@ -790,7 +790,7 @@ batch_acks_to_KVS(int op_num, spacetime_ack_t **op, spacetime_op_t *read_write_o
 								}
 							}
 						}
-						optik_unlock_decrement_version(&curr_meta->conc_ctrl);
+						cctrl_unlock_decrement_version(&curr_meta->conc_ctrl);
 					}
 					if((*op)[I].opcode == ST_LAST_ACK_SUCCESS ||
 					   (*op)[I].opcode == ST_LAST_ACK_NO_BCAST_SUCCESS){
@@ -933,14 +933,14 @@ batch_vals_to_KVS(int op_num, spacetime_val_t **op, spacetime_op_t *read_write_o
 							}
 						}
 						lock_free_read_meta = *curr_meta;
-					} while (!is_same_version_and_valid(&lock_free_read_meta.conc_ctrl, &curr_meta->conc_ctrl));
+					} while (!cctrl_timestamp_is_same_and_valid(&lock_free_read_meta.conc_ctrl, &curr_meta->conc_ctrl));
 					///lock and proceed iff remote.TS == local.TS
 					if(timestamp_is_equal(lock_free_read_meta.conc_ctrl.ts.version,
 										  lock_free_read_meta.conc_ctrl.ts.tie_breaker_id,
 										  (*op)[I].ts.version,   (*op)[I].ts.tie_breaker_id))
 					{
 						///Lock and check again if still TS == local timestamp
-						optik_lock(&curr_meta->conc_ctrl);
+						cctrl_lock(&curr_meta->conc_ctrl);
 						///Warning: use op.version + 1 bellow since optik_lock() increases curr_meta->version by 1
 						if(timestamp_is_equal(curr_meta->conc_ctrl.ts.version - 1,
 											  curr_meta->conc_ctrl.ts.tie_breaker_id,
@@ -950,7 +950,7 @@ batch_vals_to_KVS(int op_num, spacetime_val_t **op, spacetime_op_t *read_write_o
 								assert(curr_meta->state != WRITE_STATE); ///WARNING: this should not happen w/o this node removed from the group
 							curr_meta->state = VALID_STATE;
 						}
-						optik_unlock_decrement_version(&curr_meta->conc_ctrl);
+						cctrl_unlock_decrement_version(&curr_meta->conc_ctrl);
 					}
 				}
 			}
@@ -1062,10 +1062,10 @@ complete_writes_and_replays_on_follower_removal(int op_num, spacetime_op_t **op,
 						}
 					}
 					lock_free_read_meta = *curr_meta;
-				} while (!is_same_version_and_valid(&lock_free_read_meta.conc_ctrl, &curr_meta->conc_ctrl));
+				} while (!cctrl_timestamp_is_same_and_valid(&lock_free_read_meta.conc_ctrl, &curr_meta->conc_ctrl));
 
 				if(is_last_ack(lock_free_read_meta.ack_bv, curr_membership)) {
-					optik_lock(&curr_meta->conc_ctrl);
+					cctrl_lock(&curr_meta->conc_ctrl);
 					if(is_last_ack(curr_meta->ack_bv, curr_membership)){
 						if(ENABLE_ASSERTIONS)
 							assert(curr_meta->op_buffer_index == I);
@@ -1102,7 +1102,7 @@ complete_writes_and_replays_on_follower_removal(int op_num, spacetime_op_t **op,
 								assert(0);
 						}
 					}
-					optik_unlock_decrement_version(&curr_meta->conc_ctrl);
+					cctrl_unlock_decrement_version(&curr_meta->conc_ctrl);
 				}
 			}
 		}

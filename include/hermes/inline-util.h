@@ -6,7 +6,7 @@
 #define HERMES_INLINE_UTIL_H
 
 #include <infiniband/verbs.h>
-#include <seqlock.h>
+#include <concur_ctrl.h>
 #include "spacetime.h"
 #include "config.h"
 #include "util.h"
@@ -1236,8 +1236,8 @@ group_membership_has_changed(spacetime_group_membership* last_group_membership, 
 			}
 		}
 		lock_free_read_group_membership = *((spacetime_group_membership*) &group_membership);
-	} while (!(group_mem_timestamp_is_same_and_valid(group_membership.lock.version,
-													 lock_free_read_group_membership.lock.version)));
+	} while (!(seqlock_version_is_same_and_valid(&group_membership.lock,
+												 &lock_free_read_group_membership.lock)));
 	for(i = 0; i < GROUP_MEMBERSHIP_ARRAY_SIZE; i++)
 //		if(lock_free_read_group_membership.group_membership[i] !=
 //				last_group_membership->group_membership[i])

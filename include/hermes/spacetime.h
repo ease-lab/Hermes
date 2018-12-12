@@ -11,10 +11,10 @@
 # define CORE_NUM 8
 #endif
 
-#include <seqlock.h>
+#include <concur_ctrl.h>
 #include "hrd.h"
 #include "mica.h"
-#include "seqlock.h"
+#include "concur_ctrl.h"
 #include "config.h"
 #include "bit_vector.h"
 
@@ -288,28 +288,6 @@ void reconfigure_wrs(struct ibv_send_wr *inv_send_wr, struct ibv_sge *inv_send_s
                      struct ibv_send_wr *val_send_wr, struct ibv_sge *val_send_sgl,
                      spacetime_group_membership last_g_membership, uint16_t worker_lid);
 
-static inline void
-update_ack_bit_vector(uint16_t sender_int_id, uint8_t* ack_bit_vector){
-    if(ENABLE_ASSERTIONS == 1) assert(sender_int_id < MACHINE_NUM);
-	ack_bit_vector[sender_int_id / 8] |= (uint8_t) 1 << sender_int_id % 8;
-}
-
-static inline int
-timestamp_is_equal(uint32_t v1, uint8_t tie_breaker1,
-                   uint32_t v2, uint8_t tie_breaker2){
-    return (v1 == v2 && tie_breaker1 == tie_breaker2);
-}
-
-static inline int
-timestamp_is_smaller(uint32_t v1, uint8_t tie_breaker1,
-                     uint32_t v2, uint8_t tie_breaker2){
-    return (v1 < v2 || (v1 == v2 && tie_breaker1 < tie_breaker2));
-}
-
-static inline int
-group_mem_timestamp_is_same_and_valid(uint32_t v1, uint32_t v2){
-    return (v1 == v2 && v1 % 2 == 0);
-}
 
 extern volatile spacetime_group_membership group_membership;
 
