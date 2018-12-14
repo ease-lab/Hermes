@@ -100,8 +100,8 @@ seqlock_unlock(seqlock_t *seqlock)
         assert(seqlock->lock == SEQLOCK_LOCKED);
         assert(seqlock->version % 2 == 1);
     }
-    seqlock->version++;
 
+    COMPILER_NO_REORDER(seqlock->version++);
     COMPILER_NO_REORDER(seqlock->lock = SEQLOCK_FREE);
 }
 
@@ -148,7 +148,7 @@ cctrl_unlock_write(conc_ctrl_t *cctrl, uint8_t cid, uint32_t *resp_version)
         assert(cctrl->ts.version % 2 == 1);
     }
     cctrl->ts.tie_breaker_id = cid;
-    *resp_version = ++cctrl->ts.version;
+    COMPILER_NO_REORDER(*resp_version = ++cctrl->ts.version);
     COMPILER_NO_REORDER(cctrl->lock = SEQLOCK_FREE);
 }
 
@@ -157,17 +157,17 @@ cctrl_unlock(conc_ctrl_t *cctrl, uint8_t cid, uint32_t version)
 {
     assert(version % 2 == 0);
     cctrl->ts.tie_breaker_id = cid;
-    cctrl->ts.version = version;
+    COMPILER_NO_REORDER(cctrl->ts.version = version);
     COMPILER_NO_REORDER(cctrl->lock = SEQLOCK_FREE);
 }
 
 static inline void
 cctrl_unlock_decrement_version(conc_ctrl_t *cctrl)
 {
-    --cctrl->ts.version;
     if(ENABLE_LOCK_ASSERTS)
-        assert(cctrl->ts.version % 2 == 0);
+        assert(cctrl->ts.version % 2 == 1);
 
+    COMPILER_NO_REORDER(cctrl->ts.version--);
     COMPILER_NO_REORDER(cctrl->lock = SEQLOCK_FREE);
 }
 
