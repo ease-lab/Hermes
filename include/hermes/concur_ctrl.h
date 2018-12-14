@@ -10,20 +10,21 @@
 
 #define ENABLE_LOCK_ASSERTS 1
 
-#define COMPILER_BARRIER() asm volatile ("" ::: "memory")
-#define LOCK_PAUSE() asm volatile ("mfence");
-
-#if !defined(COMPILER_NO_REORDER)
-# define COMPILER_NO_REORDER(exec)	\
-  COMPILER_BARRIER();				\
-  exec;						        \
-  COMPILER_BARRIER()
-#endif
 
 
 #define SEQLOCK_LOCKED  0x1
 #define SEQLOCK_FREE    0x0
 
+#define LOCK_PAUSE() asm volatile ("mfence");
+
+#define COMPILER_BARRIER() asm volatile ("" ::: "memory")
+
+#if !defined(COMPILER_NO_REORDER)
+#     define COMPILER_NO_REORDER(exec)	\
+        COMPILER_BARRIER();				\
+        exec;						    \
+        COMPILER_BARRIER()
+#endif
 
 typedef volatile struct
 {
@@ -32,7 +33,7 @@ typedef volatile struct
 } __attribute__((packed))
 timestamp_t;
 
-typedef volatile struct
+typedef struct
 {
     uint8_t lock;
     uint32_t version;  /// for lock-free reads
@@ -69,42 +70,39 @@ timestamp_is_smaller(uint32_t v1, uint8_t tie_breaker1,
 
 
 
-
 /////////////////////////////////////////
 /// seqlock locking / unlocking functions
 /////////////////////////////////////////
 
 static inline int
-seqlock_lock(seqlock_t *ol)
+seqlock_lock(seqlock_t *seqlock)
 {
-    seqlock_t prev_lock;
     do{
-        while (1){
-            prev_lock = *ol;
-            if (prev_lock.lock != SEQLOCK_LOCKED)
-                break;
-            LOCK_PAUSE();
-        }
+        // Spin until the seqlock is unlocked
+        while(seqlock->lock == SEQLOCK_LOCKED){ LOCK_PAUSE(); }
 
-        if(__sync_val_compare_and_swap(&ol->lock, 0, 1) == 0){
-            ol->version++;
+        // try to atomically get the lock via a CAS
+        if(__sync_val_compare_and_swap(&seqlock->lock, 0, 1) == 0) {
+            seqlock->version++;
             break;
         }
-    }while (1);
+
+    }while (1); // retry if CAS failed
 
     return 1;
 }
 
 
 static inline void
-seqlock_unlock(seqlock_t *ol)
+seqlock_unlock(seqlock_t *seqlock)
 {
-    if(ENABLE_LOCK_ASSERTS){
-        assert(ol->lock == SEQLOCK_LOCKED);
-        assert(ol->version % 2 == 1);
+    if(ENABLE_LOCK_ASSERTS) {
+        assert(seqlock->lock == SEQLOCK_LOCKED);
+        assert(seqlock->version % 2 == 1);
     }
-    ol->version++;
-    COMPILER_NO_REORDER(ol->lock = SEQLOCK_FREE);
+    seqlock->version++;
+
+    COMPILER_NO_REORDER(seqlock->lock = SEQLOCK_FREE);
 }
 
 // This is used to validate a lock-free read
@@ -123,23 +121,21 @@ seqlock_version_is_same_and_valid(seqlock_t *seqlock1, seqlock_t *seqlock2)
 /// ccctrl locking / unlocking functions
 /////////////////////////////////////////
 
+
 static inline int
 cctrl_lock(conc_ctrl_t *cctrl)
 {
-    conc_ctrl_t prev_cctrl;
     do{
-        while (1){
-            prev_cctrl = *cctrl;
-            if (prev_cctrl.lock != SEQLOCK_LOCKED)
-                break;
-            LOCK_PAUSE();
-        }
+        // Spin until the seqlock is unlocked
+        while(cctrl->lock == SEQLOCK_LOCKED){ LOCK_PAUSE(); }
 
+        // try to atomically get the lock via a CAS
         if(__sync_val_compare_and_swap(&cctrl->lock, 0, 1) == 0){
             cctrl->ts.version++;
             break;
         }
-    } while (1);
+
+    } while (1); // retry if CAS failed
 
     return 1;
 }
@@ -157,12 +153,12 @@ cctrl_unlock_write(conc_ctrl_t *cctrl, uint8_t cid, uint32_t *resp_version)
 }
 
 static inline void
-cctrl_unlock(conc_ctrl_t *conc_ctrl, uint8_t cid, uint32_t version)
+cctrl_unlock(conc_ctrl_t *cctrl, uint8_t cid, uint32_t version)
 {
     assert(version % 2 == 0);
-    conc_ctrl->ts.tie_breaker_id = cid;
-    conc_ctrl->ts.version = version;
-    COMPILER_NO_REORDER(conc_ctrl->lock = SEQLOCK_FREE);
+    cctrl->ts.tie_breaker_id = cid;
+    cctrl->ts.version = version;
+    COMPILER_NO_REORDER(cctrl->lock = SEQLOCK_FREE);
 }
 
 static inline void
@@ -171,6 +167,7 @@ cctrl_unlock_decrement_version(conc_ctrl_t *cctrl)
     --cctrl->ts.version;
     if(ENABLE_LOCK_ASSERTS)
         assert(cctrl->ts.version % 2 == 0);
+
     COMPILER_NO_REORDER(cctrl->lock = SEQLOCK_FREE);
 }
 
