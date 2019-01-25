@@ -63,7 +63,7 @@ void *run_worker(void *arg){
 			           crd_recv_wc[MAX_RECV_CRD_WRS];
 
 	//Intermediate buffs where reqs are copied from incoming_* buffs in order to get passed to the KVS
-	spacetime_op_t *ops;
+	spacetime_op_t  *ops;
 	spacetime_inv_t *inv_recv_ops;
 	spacetime_ack_t *ack_recv_ops;
 	spacetime_val_t *val_recv_ops;
@@ -77,7 +77,7 @@ void *run_worker(void *arg){
 			  &val_recv_ops, &inv_send_packet_ops,
 			  &ack_send_packet_ops, &val_send_packet_ops);
 
-	//Used to register the intermidiate send_packet_buffs to the NIC iff inlining is disabled
+	//Used to register the intermediate send_packet_buffs to the NIC iff inlining is disabled
 	struct ibv_mr *inv_mr = NULL;
 	struct ibv_mr *ack_mr = NULL;
 	struct ibv_mr *val_mr = NULL;
@@ -99,7 +99,7 @@ void *run_worker(void *arg){
 	trace_init(&trace, worker_gid);
 	setup_recv_WRs(inv_recv_wr,inv_recv_sgl,ack_recv_wr,ack_recv_sgl,val_recv_wr,val_recv_sgl,cb);
 
-    /* Post receives, we need to do th is early */
+    /* Post receives, we need to do this early */
     if(WRITE_RATIO > 0)
 		setup_incoming_buffs_and_post_initial_recvs(incoming_invs, incoming_acks, incoming_vals, &inv_push_recv_ptr,
 													&ack_push_recv_ptr, &val_push_recv_ptr, inv_recv_wr,

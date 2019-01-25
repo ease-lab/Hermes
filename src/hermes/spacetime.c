@@ -13,7 +13,7 @@
  */
 
 struct spacetime_kv kv;
-volatile spacetime_group_membership group_membership;
+spacetime_group_membership group_membership;
 
 void
 meta_reset(struct spacetime_meta_stats* meta)
@@ -57,27 +57,22 @@ is_last_ack(bit_vector_t gathered_acks,
 void
 spacetime_object_meta_init(spacetime_object_meta* ol)
 {
-	ol->conc_ctrl.ts.tie_breaker_id = TIE_BREAKER_ID_EMPTY;
-	ol->last_writer_id = LAST_WRITER_ID_EMPTY;
-	ol->conc_ctrl.ts.version = 0;
+	cctrl_init(&ol->cctrl);
 	ol->state = VALID_STATE;
+	ol->last_writer_id = LAST_WRITER_ID_EMPTY;
 	ol->op_buffer_index = ST_OP_BUFFER_INDEX_EMPTY;
-	ol->conc_ctrl.lock = SEQLOCK_FREE;
 }
 
 void
 spacetime_init(int instance_id, int num_threads)
 {
-	int i;
-	///assert(sizeof(spacetime_object_meta) == 8); //make sure that the meta are 8B and thus can fit in mica unused key
-
 	kv.num_threads = num_threads;
 	//TODO add a Define for stats
 	kv.total_ops_issued = 0;
 	/// allocate and init metadata for the spacetime & threads
 	extended_meta_reset(&kv.aggregated_meta);
 	kv.meta = malloc(num_threads * sizeof(struct spacetime_meta_stats));
-	for(i = 0; i < num_threads; i++)
+	for(int i = 0; i < num_threads; i++)
 		meta_reset(&kv.meta[i]);
 	mica_init(&kv.hash_table, instance_id, KV_SOCKET, SPACETIME_NUM_BKTS, HERD_LOG_CAP);
 	spacetime_populate_fixed_len(&kv, SPACETIME_NUM_KEYS, KVS_VALUE_SIZE);
@@ -92,7 +87,6 @@ spacetime_populate_fixed_len(struct spacetime_kv* kv, int n, int val_len)
 	/* This is needed for the eviction message below to make sense */
 	assert(kv->hash_table.num_insert_op == 0 && kv->hash_table.num_index_evictions == 0);
 
-	int i;
 	struct mica_op op;
 	struct mica_resp resp;
 	unsigned long long *op_key = (unsigned long long *) &op.key;
@@ -105,7 +99,7 @@ spacetime_populate_fixed_len(struct spacetime_kv* kv, int n, int val_len)
 	op.opcode = ST_OP_PUT;
 	spacetime_object_meta *value_ptr = (spacetime_object_meta*) op.value;
 	memcpy((void*) value_ptr, (void*) &initial_meta, sizeof(spacetime_object_meta));
-	for(i = n - 1; i >= 0; i--) {
+	for(int i = n - 1; i >= 0; i--) {
 		op_key[0] = key_arr[i].first;
 		op_key[1] = key_arr[i].second;
 		///printf("Key Metadata: Lock(%u), State(%u), Counter(%u:%u)\n", op.key.meta.lock,
@@ -202,7 +196,7 @@ find_suspected_node(spacetime_op_t *op, int thread_id,
 
 		if(key_ptr_log[1] == key_ptr_req[0]){ //Key Found 8 Byte keys
 			spacetime_object_meta *curr_meta = (spacetime_object_meta *) kv_ptr->value;
-			cctrl_lock(&curr_meta->conc_ctrl);
+			cctrl_lock(&curr_meta->cctrl);
 			suspected_node = node_of_missing_ack(curr_membership, curr_meta->ack_bv);
 
 //			printf("ops: (%s) ops-state %s state: %s\n", code_to_str(op->opcode),
@@ -210,7 +204,21 @@ find_suspected_node(spacetime_op_t *op, int thread_id,
 //			yellow_printf("Write acks bit array: ");
 //			bv_print(curr_meta->ack_bv);
 //			printf("\n");
-			cctrl_unlock_decrement_version(&curr_meta->conc_ctrl);
+			cctrl_unlock_dec_version(&curr_meta->cctrl);
+			if(ENABLE_ASSERTIONS){
+				if(machine_id == suspected_node){
+					//todo only for dbg
+					printf("ack BV: ");
+					bv_print(curr_meta->ack_bv);
+					printf("\n g membership BV: ");
+					bv_print(group_membership.g_membership);
+					printf("\n w_ack init BV: ");
+					bv_print(group_membership.w_ack_init);
+					printf("\n");
+				}
+				assert(machine_id != suspected_node);
+				assert(node_is_in_membership(curr_membership, suspected_node));
+			}
 			return suspected_node;
 		}
 	}
@@ -338,7 +346,7 @@ batch_ops_to_KVS(int op_num, spacetime_op_t **op, int thread_id,
 								break;
 							default:
 								was_locked_read = 1;
-								cctrl_lock(&curr_meta->conc_ctrl);
+								cctrl_lock(&curr_meta->cctrl);
 								switch(curr_meta->state) {
 									case VALID_STATE:
 										memcpy((*op)[I].value, kv_value_ptr, ST_VALUE_SIZE);
@@ -358,32 +366,37 @@ batch_ops_to_KVS(int op_num, spacetime_op_t **op, int thread_id,
 											(*op)[I].op_meta.state = ST_GET_STALL;
 //										if(node_is_in_membership(curr_membership, curr_meta->last_writer_id))
 //											(*op)[I].state = ST_GET_STALL;
-										else if(curr_meta->op_buffer_index == ST_OP_BUFFER_INDEX_EMPTY){
+										else if(curr_meta->op_buffer_index == ST_OP_BUFFER_INDEX_EMPTY) {
 											///stall replay: until all acks from last write arrive
 											///on multiple threads we can't complete writes / replays on VAL
-											curr_meta->state = REPLAY_STATE;
+
 											if(ENABLE_ASSERTIONS)
 												assert(I < ST_OP_BUFFER_INDEX_EMPTY);
+
+											yellow_printf("Write replay for i: %d\n", I);
+											curr_meta->state = REPLAY_STATE;
 											curr_meta->op_buffer_index = (uint8_t) I;
-											curr_meta->last_local_write_ts.version= curr_meta->conc_ctrl.ts.version - 1;
-											curr_meta->last_local_write_ts.tie_breaker_id = curr_meta->conc_ctrl.ts.tie_breaker_id;
+											curr_meta->last_local_write_ts.version= curr_meta->cctrl.ts.version - 1;
+											curr_meta->last_local_write_ts.tie_breaker_id = curr_meta->cctrl.ts.tie_breaker_id;
+
 											(*op)[I].op_meta.state = ST_REPLAY_SUCCESS;
-											(*op)[I].op_meta.ts.version = curr_meta->conc_ctrl.ts.version - 1;
-											(*op)[I].op_meta.ts.tie_breaker_id = curr_meta->conc_ctrl.ts.tie_breaker_id;
+											(*op)[I].op_meta.ts.version = curr_meta->cctrl.ts.version - 1;
+											(*op)[I].op_meta.ts.tie_breaker_id = curr_meta->cctrl.ts.tie_breaker_id;
 											(*op)[I].op_meta.val_len = ST_VALUE_SIZE;
 											memcpy((*op)[I].value, kv_value_ptr, ST_VALUE_SIZE);
 											///update group membership mask for replay acks
-											bv_copy(&curr_meta->ack_bv, curr_membership.w_ack_init);
+											bv_copy((bit_vector_t*) &curr_meta->ack_bv, curr_membership.w_ack_init);
 										}
 										break;
 									default:
-										printf("Wrong opcode %s\n",code_to_str(curr_meta->state));
+										printf("A1 Wrong opcode: (%d)", curr_meta->state);
+										printf("%s\n",code_to_str(curr_meta->state));
 										assert(0);
 								}
-								cctrl_unlock_decrement_version(&curr_meta->conc_ctrl);
+								cctrl_unlock_dec_version(&curr_meta->cctrl);
 								break;
 						}
-					} while (!cctrl_timestamp_is_same_and_valid(&prev_meta.conc_ctrl, &curr_meta->conc_ctrl) && was_locked_read == 0);
+					} while (!cctrl_timestamp_is_same_and_valid(&prev_meta.cctrl, &curr_meta->cctrl) && was_locked_read == 0);
 
 				} else if ((*op)[I].op_meta.opcode == ST_OP_PUT){
 					if(ENABLE_ASSERTIONS)
@@ -391,7 +404,7 @@ batch_ops_to_KVS(int op_num, spacetime_op_t **op, int thread_id,
 					///Warning: even if a write is in progress write we may need to update the value of write_buffer_index
 					(*op)[I].op_meta.state = ST_EMPTY;
 
-					cctrl_lock(&curr_meta->conc_ctrl);
+					cctrl_lock(&curr_meta->cctrl);
 					uint8_t v_node_id = (uint8_t) machine_id;
 					switch(curr_meta->state) {
 						case VALID_STATE:
@@ -399,22 +412,23 @@ batch_ops_to_KVS(int op_num, spacetime_op_t **op, int thread_id,
 							if(curr_meta->op_buffer_index != ST_OP_BUFFER_INDEX_EMPTY){
 								///stall write: until all acks from last write arrive
 								/// on multiple threads we can't complete writes / replays on VAL
-								cctrl_unlock_decrement_version(&curr_meta->conc_ctrl);
+								cctrl_unlock_dec_version(&curr_meta->cctrl);
 							} else {
 								curr_meta->state = WRITE_STATE;
 								memcpy(kv_value_ptr, (*op)[I].value, ST_VALUE_SIZE);
 								kv_ptr[I]->val_len = (*op)[I].op_meta.val_len + sizeof(spacetime_object_meta);
 								///update group membership mask
-								bv_copy(&curr_meta->ack_bv, curr_membership.w_ack_init);
+								bv_copy((bit_vector_t*) &curr_meta->ack_bv, curr_membership.w_ack_init);
 								if(ENABLE_ASSERTIONS)
 									assert(I < ST_OP_BUFFER_INDEX_EMPTY);
 								curr_meta->op_buffer_index = (uint8_t) I;
-								curr_meta->last_local_write_ts.version = curr_meta->conc_ctrl.ts.version + 1;
+								curr_meta->last_local_write_ts.version = curr_meta->cctrl.ts.version + 1;
 
 								v_node_id = (uint8_t) (!ENABLE_VIRTUAL_NODE_IDS ? machine_id :
 													   machine_id + MACHINE_NUM * (hrd_fastrand(&g_seed) % VIRTUAL_NODE_IDS_PER_NODE));
 								curr_meta->last_local_write_ts.tie_breaker_id = v_node_id;
-								cctrl_unlock_write(&curr_meta->conc_ctrl, v_node_id, &((*op)[I].op_meta.ts.version));
+								cctrl_unlock_inc_version(&curr_meta->cctrl, v_node_id,
+														 (uint32_t *) &((*op)[I].op_meta.ts.version));
 
 								(*op)[I].op_meta.state = ST_PUT_SUCCESS;
 							}
@@ -422,7 +436,7 @@ batch_ops_to_KVS(int op_num, spacetime_op_t **op, int thread_id,
 						case INVALID_WRITE_STATE:
 						case WRITE_STATE:
 						case REPLAY_STATE:
-							cctrl_unlock_decrement_version(&curr_meta->conc_ctrl);
+							cctrl_unlock_dec_version(&curr_meta->cctrl);
 							break;
 						default: assert(0);
 							break;
@@ -557,18 +571,18 @@ batch_invs_to_KVS(int op_num, spacetime_inv_t **op, spacetime_op_t *read_write_o
 							}
 						}
 						lock_free_meta = *curr_meta;
-					} while (!cctrl_timestamp_is_same_and_valid(&lock_free_meta.conc_ctrl, &curr_meta->conc_ctrl));
+					} while (!cctrl_timestamp_is_same_and_valid(&lock_free_meta.cctrl, &curr_meta->cctrl));
 					//lock and proceed iff remote.TS >= local.TS
 					//inv TS >= local timestamp
 					if(!timestamp_is_smaller((*op)[I].op_meta.ts.version,  (*op)[I].op_meta.ts.tie_breaker_id,
-											 lock_free_meta.conc_ctrl.ts.version,
-											 lock_free_meta.conc_ctrl.ts.tie_breaker_id))
+											 lock_free_meta.cctrl.ts.version,
+											 lock_free_meta.cctrl.ts.tie_breaker_id))
 					{
 						//Lock and check again if inv TS > local timestamp
-						cctrl_lock(&curr_meta->conc_ctrl);
+						cctrl_lock(&curr_meta->cctrl);
 						///Warning: use op.version + 1 bellow since optik_lock() increases curr_meta->version by 1
-						if(timestamp_is_smaller(curr_meta->conc_ctrl.ts.version - 1,
-												curr_meta->conc_ctrl.ts.tie_breaker_id,
+						if(timestamp_is_smaller(curr_meta->cctrl.ts.version - 1,
+												curr_meta->cctrl.ts.tie_breaker_id,
 												(*op)[I].op_meta.ts.version,
 												(*op)[I].op_meta.ts.tie_breaker_id))
 						{
@@ -607,10 +621,10 @@ batch_invs_to_KVS(int op_num, spacetime_inv_t **op, spacetime_op_t *read_write_o
 //									break;
 								default: assert(0);
 							}
-							cctrl_unlock(&curr_meta->conc_ctrl, (*op)[I].op_meta.ts.tie_breaker_id,
-										 (*op)[I].op_meta.ts.version);
-						} else if(timestamp_is_equal(curr_meta->conc_ctrl.ts.version - 1,
-													 curr_meta->conc_ctrl.ts.tie_breaker_id,
+							cctrl_unlock_custom_version(&curr_meta->cctrl, (*op)[I].op_meta.ts.tie_breaker_id,
+														(*op)[I].op_meta.ts.version);
+						} else if(timestamp_is_equal(curr_meta->cctrl.ts.version - 1,
+													 curr_meta->cctrl.ts.tie_breaker_id,
 													 (*op)[I].op_meta.ts.version,
 													 (*op)[I].op_meta.ts.tie_breaker_id))
 						{
@@ -619,11 +633,11 @@ batch_invs_to_KVS(int op_num, spacetime_inv_t **op, spacetime_op_t *read_write_o
 								(*op)[I].op_meta.opcode = ST_INV_OUT_OF_GROUP;
 
 							curr_meta->last_writer_id = (*op)[I].op_meta.sender;
-							cctrl_unlock(&curr_meta->conc_ctrl,
-										 (*op)[I].op_meta.ts.tie_breaker_id, (*op)[I].op_meta.ts.version);
+							cctrl_unlock_custom_version(&curr_meta->cctrl,
+														(*op)[I].op_meta.ts.tie_breaker_id, (*op)[I].op_meta.ts.version);
 
 						} else
-							cctrl_unlock_decrement_version(&curr_meta->conc_ctrl);
+							cctrl_unlock_dec_version(&curr_meta->cctrl);
 					}
 				}
 				if((*op)[I].op_meta.opcode != ST_INV_OUT_OF_GROUP)
@@ -748,26 +762,28 @@ batch_acks_to_KVS(int op_num, spacetime_ack_t **op, spacetime_op_t *read_write_o
 							}
 						}
 						lock_free_read_meta = *curr_meta;
-					} while (!cctrl_timestamp_is_same_and_valid(&lock_free_read_meta.conc_ctrl, &curr_meta->conc_ctrl));
+					} while (!cctrl_timestamp_is_same_and_valid(&lock_free_read_meta.cctrl, &curr_meta->cctrl));
 
 					if(ENABLE_ASSERTIONS)
-						assert(!timestamp_is_smaller(lock_free_read_meta.conc_ctrl.ts.version,
-													 lock_free_read_meta.conc_ctrl.ts.tie_breaker_id,
+						assert(!timestamp_is_smaller(lock_free_read_meta.cctrl.ts.version,
+													 lock_free_read_meta.cctrl.ts.tie_breaker_id,
 													 (*op)[I].ts.version, (*op)[I].ts.tie_breaker_id));
 
+					uint8_t prev_state = 10; //todo only for dbg
 					if(timestamp_is_equal((*op)[I].ts.version,    (*op)[I].ts.tie_breaker_id,
 										  lock_free_read_meta.last_local_write_ts.version,
 										  lock_free_read_meta.last_local_write_ts.tie_breaker_id))
 					{
 						///Lock and check again if ack TS == last local write
-						cctrl_lock(&curr_meta->conc_ctrl);
+						cctrl_lock(&curr_meta->cctrl);
 						if(timestamp_is_equal((*op)[I].ts.version,    (*op)[I].ts.tie_breaker_id,
 											  curr_meta->last_local_write_ts.version,
 											  curr_meta->last_local_write_ts.tie_breaker_id))
 						{
-							bv_bit_set(&curr_meta->ack_bv, (*op)[I].sender);
+							bv_bit_set((bit_vector_t*) &curr_meta->ack_bv, (*op)[I].sender);
 							if (is_last_ack(curr_meta->ack_bv, curr_membership)) { //if last local write completed
 								op_buff_indx = curr_meta->op_buffer_index;
+								prev_state = curr_meta->state; //todo only for dbg
 								switch (curr_meta->state) {
 									case VALID_STATE:
 									case INVALID_STATE:
@@ -790,15 +806,22 @@ batch_acks_to_KVS(int op_num, spacetime_ack_t **op, spacetime_op_t *read_write_o
 								}
 							}
 						}
-						cctrl_unlock_decrement_version(&curr_meta->conc_ctrl);
+						cctrl_unlock_dec_version(&curr_meta->cctrl);
 					}
 					if((*op)[I].opcode == ST_LAST_ACK_SUCCESS ||
-					   (*op)[I].opcode == ST_LAST_ACK_NO_BCAST_SUCCESS){
+					   (*op)[I].opcode == ST_LAST_ACK_NO_BCAST_SUCCESS)
+					{
 						///completed read / write --> remove it from the ops buffer
 						if(ENABLE_ASSERTIONS){
-//								printf("W%d--> ACK[%d]: Key Hash:%" PRIu64 " complete buff: %d\n\t op: %s, TS: %d | %d, sender: %d\n",
-//								   thread_id, I, ((uint64_t *) &(*op)[I].key)[1], op_buff_indx, code_to_str((*op)[I].opcode),
-//								   (*op)[I].version, (*op)[I].tie_breaker_id, (*op)[I].sender);
+							if(op_buff_indx == ST_OP_BUFFER_INDEX_EMPTY){
+								printf("DADAD\n");
+								printf("W%d--> ACK[%d]: Key state: %s, Key Hash:%" PRIu64
+									   " complete buff: %d\n\t op: %s, TS: %d | %d, sender: %d\n",
+									   thread_id, I, code_to_str(prev_state), ((uint64_t *) &(*op)[I].key)[1],
+									   op_buff_indx, code_to_str((*op)[I].opcode),
+									   (*op)[I].ts.version, (*op)[I].ts.tie_breaker_id,
+									   (*op)[I].sender);
+							}
 							assert(op_buff_indx != ST_OP_BUFFER_INDEX_EMPTY);
 							assert(read_write_op[op_buff_indx].op_meta.state == ST_IN_PROGRESS_PUT ||
 								   read_write_op[op_buff_indx].op_meta.state == ST_OP_MEMBERSHIP_CHANGE ||
@@ -807,9 +830,13 @@ batch_acks_to_KVS(int op_num, spacetime_ack_t **op, spacetime_op_t *read_write_o
 						}
 						if(read_write_op[op_buff_indx].op_meta.opcode == ST_OP_PUT)
 							read_write_op[op_buff_indx].op_meta.state = ST_PUT_COMPLETE;
-						else if(read_write_op[op_buff_indx].op_meta.opcode == ST_OP_GET){
+						else if(read_write_op[op_buff_indx].op_meta.opcode == ST_OP_GET)
 							read_write_op[op_buff_indx].op_meta.state = ST_NEW;
-						}else assert(0);
+						else {
+							printf("Opcode: %d\n", read_write_op[op_buff_indx].op_meta.opcode);
+							printf("Opcode: %s\n",code_to_str(read_write_op[op_buff_indx].op_meta.opcode));
+							assert(0);
+						}
 					}
 				}
 			}
@@ -933,24 +960,24 @@ batch_vals_to_KVS(int op_num, spacetime_val_t **op, spacetime_op_t *read_write_o
 							}
 						}
 						lock_free_read_meta = *curr_meta;
-					} while (!cctrl_timestamp_is_same_and_valid(&lock_free_read_meta.conc_ctrl, &curr_meta->conc_ctrl));
+					} while (!cctrl_timestamp_is_same_and_valid(&lock_free_read_meta.cctrl, &curr_meta->cctrl));
 					///lock and proceed iff remote.TS == local.TS
-					if(timestamp_is_equal(lock_free_read_meta.conc_ctrl.ts.version,
-										  lock_free_read_meta.conc_ctrl.ts.tie_breaker_id,
+					if(timestamp_is_equal(lock_free_read_meta.cctrl.ts.version,
+										  lock_free_read_meta.cctrl.ts.tie_breaker_id,
 										  (*op)[I].ts.version,   (*op)[I].ts.tie_breaker_id))
 					{
 						///Lock and check again if still TS == local timestamp
-						cctrl_lock(&curr_meta->conc_ctrl);
+						cctrl_lock(&curr_meta->cctrl);
 						///Warning: use op.version + 1 bellow since optik_lock() increases curr_meta->version by 1
-						if(timestamp_is_equal(curr_meta->conc_ctrl.ts.version - 1,
-											  curr_meta->conc_ctrl.ts.tie_breaker_id,
+						if(timestamp_is_equal(curr_meta->cctrl.ts.version - 1,
+											  curr_meta->cctrl.ts.tie_breaker_id,
 											  (*op)[I].ts.version,   (*op)[I].ts.tie_breaker_id))
 						{
 							if(ENABLE_ASSERTIONS)
 								assert(curr_meta->state != WRITE_STATE); ///WARNING: this should not happen w/o this node removed from the group
 							curr_meta->state = VALID_STATE;
 						}
-						cctrl_unlock_decrement_version(&curr_meta->conc_ctrl);
+						cctrl_unlock_dec_version(&curr_meta->cctrl);
 					}
 				}
 			}
@@ -967,7 +994,6 @@ complete_writes_and_replays_on_follower_removal(int op_num, spacetime_op_t **op,
 												int thread_id)
 {
 	int I, j;	/* I is batch index */
-	long long stalled_brces = 0;
 #if SPACETIME_DEBUG == 1
 	//assert(kv.hash_table != NULL);
 	assert(op != NULL);
@@ -979,7 +1005,6 @@ complete_writes_and_replays_on_follower_removal(int op_num, spacetime_op_t **op,
 	for(I = 0; I < op_num; I++)
 		mica_print_op(&(*op)[I]);
 #endif
-	int i;
 	unsigned int bkt[MAX_BATCH_OPS_SIZE];
 	struct mica_bkt *bkt_ptr[MAX_BATCH_OPS_SIZE];
 	unsigned int tag[MAX_BATCH_OPS_SIZE];
@@ -1062,13 +1087,14 @@ complete_writes_and_replays_on_follower_removal(int op_num, spacetime_op_t **op,
 						}
 					}
 					lock_free_read_meta = *curr_meta;
-				} while (!cctrl_timestamp_is_same_and_valid(&lock_free_read_meta.conc_ctrl, &curr_meta->conc_ctrl));
+				} while (!cctrl_timestamp_is_same_and_valid(&lock_free_read_meta.cctrl, &curr_meta->cctrl));
 
 				if(is_last_ack(lock_free_read_meta.ack_bv, curr_membership)) {
-					cctrl_lock(&curr_meta->conc_ctrl);
+					cctrl_lock(&curr_meta->cctrl);
 					if(is_last_ack(curr_meta->ack_bv, curr_membership)){
 						if(ENABLE_ASSERTIONS)
 							assert(curr_meta->op_buffer_index == I);
+						printf("AAA\n");
 						curr_meta->op_buffer_index = ST_OP_BUFFER_INDEX_EMPTY; //reset the write buff index
 						switch (curr_meta->state) {
 							case VALID_STATE:
@@ -1087,22 +1113,22 @@ complete_writes_and_replays_on_follower_removal(int op_num, spacetime_op_t **op,
 									assert((*op)[I].op_meta.state == ST_IN_PROGRESS_PUT ||
 									       (*op)[I].op_meta.state == ST_OP_MEMBERSHIP_CHANGE);
 								curr_meta->state = VALID_STATE;
-								(*op)[I].op_meta.ts.version = curr_meta->conc_ctrl.ts.version - 1; // -1 because of optik lock does version + 1
-								(*op)[I].op_meta.ts.tie_breaker_id = curr_meta->conc_ctrl.ts.tie_breaker_id;
+								(*op)[I].op_meta.ts.version = curr_meta->cctrl.ts.version - 1; // -1 because of optik lock does version + 1
+								(*op)[I].op_meta.ts.tie_breaker_id = curr_meta->cctrl.ts.tie_breaker_id;
 								(*op)[I].op_meta.state = DISABLE_VALS_FOR_DEBUGGING == 1 ? ST_PUT_COMPLETE : ST_PUT_COMPLETE_SEND_VALS; ///ops state for sending VALs
 								break;
 							case REPLAY_STATE:
 								if(ENABLE_ASSERTIONS) assert((*op)[I].op_meta.state == ST_IN_PROGRESS_REPLAY);
 								curr_meta->state = VALID_STATE;
-								(*op)[I].op_meta.ts.version = curr_meta->conc_ctrl.ts.version - 1; // -1 because of optik lock does version + 1
-								(*op)[I].op_meta.ts.tie_breaker_id = curr_meta->conc_ctrl.ts.tie_breaker_id;
+								(*op)[I].op_meta.ts.version = curr_meta->cctrl.ts.version - 1; // -1 because of optik lock does version + 1
+								(*op)[I].op_meta.ts.tie_breaker_id = curr_meta->cctrl.ts.tie_breaker_id;
 								(*op)[I].op_meta.state = DISABLE_VALS_FOR_DEBUGGING == 1 ? ST_GET_COMPLETE : ST_REPLAY_COMPLETE; ///ops state for sending VALs
 								break;
 							default:
 								assert(0);
 						}
 					}
-					cctrl_unlock_decrement_version(&curr_meta->conc_ctrl);
+					cctrl_unlock_dec_version(&curr_meta->cctrl);
 				}
 			}
 		}
@@ -1119,20 +1145,15 @@ void
 group_membership_init(void)
 {
 	group_membership.num_of_alive_remotes = REMOTE_MACHINES;
-	bv_init(&group_membership.g_membership);
+	seqlock_init(&group_membership.lock);
+	bv_init((bit_vector_t*) &group_membership.g_membership);
 
 	for(uint8_t i = 0; i < MACHINE_NUM; ++i)
-		bv_bit_set(&group_membership.g_membership, i);
+		bv_bit_set((bit_vector_t*) &group_membership.g_membership, i);
 
-	bv_copy(&group_membership.w_ack_init, group_membership.g_membership);
-	bv_reverse(&group_membership.w_ack_init);
-	bv_bit_set(&group_membership.w_ack_init, (uint8_t) machine_id);
-
-//	green_printf("Group mem. bit array: ");
-//	bv_print(group_membership.g_membership);
-//	green_printf("\n Write init bit array: ");
-//	bv_print(group_membership.w_ack_init);
-//	printf("\n");
+	bv_copy((bit_vector_t*) &group_membership.w_ack_init, group_membership.g_membership);
+	bv_reverse((bit_vector_t*) &group_membership.w_ack_init);
+	bv_bit_set((bit_vector_t*) &group_membership.w_ack_init, (uint8_t) machine_id);
 }
 
 void

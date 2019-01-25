@@ -18,7 +18,7 @@
 #include <time.h>
 #include <infiniband/verbs.h>
 #include <libmemcached/memcached.h>
-#include "hrd_sizes.h"
+#include "sizes.h"
 
 
 //<vasilis> Multicast
@@ -352,4 +352,5 @@ void hrd_get_formatted_time(char *timebuf);
 void hrd_nano_sleep(int ns);
 char *hrd_getenv(const char *name);
 
+extern char dev_name[50];
 #endif /* HRD_H */

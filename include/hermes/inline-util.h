@@ -19,9 +19,11 @@ poll_cq_for_credits(struct ibv_cq *credit_recv_cq, struct ibv_wc *credit_wc,
 
 static inline uint8_t
 node_is_in_membership(spacetime_group_membership last_group_membership, int node_id);
+
 /* ---------------------------------------------------------------------------
 ------------------------------------GENERIC-----------------------------------
 ---------------------------------------------------------------------------*/
+
 static inline void
 post_receives(struct hrd_ctrl_blk *cb, uint16_t num_of_receives,
 			  uint8_t buff_type, void *recv_buff, int *push_ptr,
@@ -139,6 +141,17 @@ poll_buff_and_post_recvs(void *incoming_buff, uint8_t buff_type, int *buf_pull_p
 				next_packet_reqs = &((ud_req_inv_t *) incoming_buff)[index].packet.reqs;
 				next_packet_req_num_ptr = &((ud_req_inv_t *) incoming_buff)[index].packet.req_num;
 				if(ENABLE_ASSERTIONS){
+				    if(!(*next_packet_req_num_ptr > 0 && *next_packet_req_num_ptr <= INV_MAX_REQ_COALESCE)) {
+						printf("AA: %d, coalesce: %d\n", *next_packet_req_num_ptr, INV_MAX_REQ_COALESCE);
+						printf("opcode: %d, state: %d\n",
+							   (((spacetime_inv_t *) next_packet_reqs)[j].op_meta.opcode),
+							   ((spacetime_inv_t *) next_packet_reqs)[j].op_meta.state);
+						printf("opcode: %s\n",
+							   code_to_str(((spacetime_inv_t *) next_packet_reqs)[j].op_meta.opcode));
+						printf("opcode: %s, state: %s\n",
+							   code_to_str(((spacetime_inv_t *) next_packet_reqs)[j].op_meta.opcode),
+							   code_to_str(((spacetime_inv_t *) next_packet_reqs)[j].op_meta.state));
+					}
 					assert(*next_packet_req_num_ptr > 0 && *next_packet_req_num_ptr <= INV_MAX_REQ_COALESCE);
 					for(j = 0; j < *next_packet_req_num_ptr; j++){
 						assert(((spacetime_inv_t*) next_packet_reqs)[j].op_meta.ts.version % 2 == 0);
@@ -353,7 +366,8 @@ batch_invs_2_NIC(struct ibv_send_wr *send_inv_wr, struct ibv_sge *send_inv_sgl,
 			sgl_index = j / num_of_alive_remotes;
 			assert(send_inv_wr[j].num_sge == 1);
 			assert(send_inv_wr[j].next == &send_inv_wr[j + 1]);
-			assert(DISABLE_INV_INLINING || send_inv_wr[j].opcode == (IBV_SEND_INLINE | IBV_SEND_SIGNALED));
+			assert(DISABLE_INV_INLINING || send_inv_wr[j].send_flags == IBV_SEND_INLINE ||
+				   send_inv_wr[j].send_flags == (IBV_SEND_INLINE | IBV_SEND_SIGNALED));
 			assert(send_inv_wr[j].sg_list == &send_inv_sgl[sgl_index]);
 			assert(((spacetime_inv_packet_t *) send_inv_sgl[sgl_index].addr)->req_num > 0);
 			for(k = 0; k < ((spacetime_inv_packet_t *) send_inv_sgl[sgl_index].addr)->req_num; k ++){
@@ -445,7 +459,11 @@ broadcast_invs(spacetime_op_t *ops, spacetime_inv_packet_t *inv_send_packet_ops,
 			ops[index].op_meta.state = ST_IN_PROGRESS_REPLAY;
 		else if(ops[index].op_meta.state == ST_OP_MEMBERSHIP_CHANGE)
 			ops[index].op_meta.state = ST_OP_MEMBERSHIP_COMPLETE;
-		else assert(0);
+		else{
+		    printf("state: %d\n", ops[index].op_meta.state);
+			printf("state: %s\n", code_to_str(ops[index].op_meta.state));
+		  assert(0);
+		}
 
 		total_invs_in_batch++;
 
@@ -463,8 +481,6 @@ broadcast_invs(spacetime_op_t *ops, spacetime_inv_packet_t *inv_send_packet_ops,
 
 			HRD_MOD_ADD(*inv_push_ptr, INV_SEND_OPS_SIZE / REMOTE_MACHINES *
 					     last_g_membership.num_of_alive_remotes); //got to the next "packet" + dealing with failutes
-//			static int mk = 0;
-//			printf("Sent idx: %d (%d)\n", *inv_push_ptr, mk++);
 
 ///			// Reset data left from previous bcasts after ibv_post_send to avoid sending resetted data
 			inv_send_packet_ops[*inv_push_ptr].req_num = 0;
@@ -489,12 +505,10 @@ broadcast_invs(spacetime_op_t *ops, spacetime_inv_packet_t *inv_send_packet_ops,
 		HRD_MOD_ADD(*inv_push_ptr, INV_SEND_OPS_SIZE / REMOTE_MACHINES *
 				     last_g_membership.num_of_alive_remotes); //got to the next "packet" + dealing with failutes
 
-//		static int mk2 = 0;
-//		printf("2 Sent idx: %d (%d)\n", *inv_push_ptr, mk2++);
 		 ///
 		inv_send_packet_ops[*inv_push_ptr].req_num = 0;
 		for(j = 0; j < INV_MAX_REQ_COALESCE; j++)
-			inv_send_packet_ops[*inv_push_ptr].reqs[j].op_meta.opcode = ST_EMPTY;
+			inv_send_packet_ops[*inv_push_ptr].reqs[j].op_meta.opcode = ST_NEW;
 	}
 
 	if(ENABLE_ASSERTIONS)
@@ -659,7 +673,8 @@ issue_acks(spacetime_inv_t *inv_recv_ops, spacetime_ack_packet_t* ack_send_packe
 					 (uint8_t) (inv_recv_ops[i].op_meta.opcode == ST_INV_SUCCESS ? ST_OP_ACK : ST_OP_MEMBERSHIP_CHANGE));
 
 		//empty inv buffer
-		if(inv_recv_ops[i].op_meta.opcode == ST_INV_SUCCESS || inv_recv_ops[i].op_meta.opcode == ST_OP_MEMBERSHIP_CHANGE)
+		if(inv_recv_ops[i].op_meta.opcode == ST_INV_SUCCESS ||
+		   inv_recv_ops[i].op_meta.opcode == ST_OP_MEMBERSHIP_CHANGE)
 			inv_recv_ops[i].op_meta.opcode = ST_EMPTY;
 		else assert(0);
 
@@ -863,7 +878,8 @@ batch_vals_2_NIC(struct ibv_send_wr *send_val_wr, struct ibv_sge *send_val_sgl,
 			sgl_index = j / num_of_alive_remotes;
 			assert(send_val_wr[j].next == &send_val_wr[j + 1]);
 			assert(send_val_wr[j].num_sge == 1);
-			assert(DISABLE_VAL_INLINING || send_val_wr[j].opcode == IBV_SEND_INLINE | IBV_SEND_SIGNALED);
+			assert(DISABLE_INV_INLINING || send_val_wr[j].send_flags == IBV_SEND_INLINE ||
+				   send_val_wr[j].send_flags == (IBV_SEND_INLINE | IBV_SEND_SIGNALED));
 			assert(send_val_wr[j].sg_list == &send_val_sgl[sgl_index]);
 		}
 		assert(send_val_wr[j].next == NULL);
@@ -1113,7 +1129,7 @@ batch_crds_2_NIC(struct ibv_send_wr *send_crd_wr, struct hrd_ctrl_blk *cb,
 			assert(send_crd_wr[j].sg_list->length == 0);
 			assert(send_crd_wr[j].num_sge == 0);
 			assert(send_crd_wr[j].send_flags == IBV_SEND_INLINE ||
-				   send_crd_wr[j].send_flags == IBV_SEND_INLINE | IBV_SEND_SIGNALED);
+				   send_crd_wr[j].send_flags == (IBV_SEND_INLINE | IBV_SEND_SIGNALED));
 			assert(((spacetime_crd_t*) &(send_crd_wr[j].imm_data))->val_credits > 0);
 			assert(((spacetime_crd_t*) &(send_crd_wr[j].imm_data))->opcode == ST_OP_CRD);
 			assert(((spacetime_crd_t*) &(send_crd_wr[j].imm_data))->sender == machine_id);
@@ -1200,17 +1216,15 @@ follower_removal(int suspected_node_id)
 	}
     group_membership.num_of_alive_remotes--;
 
-	bv_bit_reset(&group_membership.g_membership, (uint8_t) suspected_node_id);
-	bv_copy(&group_membership.w_ack_init, group_membership.g_membership);
-	bv_reverse(&group_membership.w_ack_init);
+	bv_bit_reset((bit_vector_t*) &group_membership.g_membership, (uint8_t) suspected_node_id);
+	bv_copy((bit_vector_t*) &group_membership.w_ack_init, group_membership.g_membership);
+	bv_reverse((bit_vector_t*) &group_membership.w_ack_init);
+	bv_bit_set((bit_vector_t*) &group_membership.w_ack_init, (uint8_t) machine_id);
 
 	green_printf("Group Membership: ");
 	bv_print(group_membership.g_membership);
 	printf("\n");
-//    group_membership.write_ack_init  [suspected_node_id / 8] |= (uint8_t) 1 << suspected_node_id % 8;
-//	group_membership.group_membership[suspected_node_id / 8] &= ~((uint8_t) 1 << suspected_node_id % 8);
-//	green_printf("Group mem. bit array: "BYTE_TO_BINARY_PATTERN" \n",
-//				 BYTE_TO_BINARY(group_membership.group_membership[0]));
+
 	seqlock_unlock(&group_membership.lock);
 
 	red_printf("Group membership changed --> Removed follower %d!\n", suspected_node_id);
@@ -1239,8 +1253,6 @@ group_membership_has_changed(spacetime_group_membership* last_group_membership, 
 	} while (!(seqlock_version_is_same_and_valid(&group_membership.lock,
 												 &lock_free_read_group_membership.lock)));
 	for(i = 0; i < GROUP_MEMBERSHIP_ARRAY_SIZE; i++)
-//		if(lock_free_read_group_membership.group_membership[i] !=
-//				last_group_membership->group_membership[i])
 	    if(!bv_are_equal(lock_free_read_group_membership.g_membership,
 	    		last_group_membership->g_membership))
 		{
@@ -1262,7 +1274,8 @@ node_is_in_membership(spacetime_group_membership last_group_membership, int node
 ----------------------------------- LATENCY -------------------------------
 ---------------------------------------------------------------------------*/
 //Add latency to histogram (in microseconds)
-static inline void bookkeep_latency(int useconds, uint8_t op){
+static inline void bookkeep_latency(int useconds, uint8_t op)
+{
 	uint32_t* latency_array;
 	int* max_latency_ptr;
 	switch (op){

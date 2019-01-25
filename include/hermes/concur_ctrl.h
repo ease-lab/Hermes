@@ -11,7 +11,7 @@
 #define ENABLE_LOCK_ASSERTS 1
 
 
-
+#define TIE_BREAKER_ID_EMPTY 255
 #define SEQLOCK_LOCKED  0x1
 #define SEQLOCK_FREE    0x0
 
@@ -53,6 +53,12 @@ conc_ctrl_t;
 /////////////////////////////////////////
 /// Timestamp  comparison  functions
 /////////////////////////////////////////
+static inline void
+timestamp_init(timestamp_t* ts)
+{
+    ts->version = 0;
+    ts->tie_breaker_id = TIE_BREAKER_ID_EMPTY;
+}
 
 static inline int
 timestamp_is_equal(uint32_t v1, uint8_t tie_breaker1,
@@ -73,6 +79,13 @@ timestamp_is_smaller(uint32_t v1, uint8_t tie_breaker1,
 /////////////////////////////////////////
 /// seqlock locking / unlocking functions
 /////////////////////////////////////////
+
+static inline void
+seqlock_init(seqlock_t *seqlock)
+{
+    seqlock->version = 0;
+    seqlock->lock = SEQLOCK_FREE;
+}
 
 static inline int
 seqlock_lock(seqlock_t *seqlock)
@@ -121,6 +134,12 @@ seqlock_version_is_same_and_valid(seqlock_t *seqlock1, seqlock_t *seqlock2)
 /// ccctrl locking / unlocking functions
 /////////////////////////////////////////
 
+static inline void
+cctrl_init(conc_ctrl_t *cctrl)
+{
+    timestamp_init(&cctrl->ts);
+    cctrl->lock = SEQLOCK_FREE;
+}
 
 static inline int
 cctrl_lock(conc_ctrl_t *cctrl)
@@ -141,32 +160,40 @@ cctrl_lock(conc_ctrl_t *cctrl)
 }
 
 static inline void
-cctrl_unlock_write(conc_ctrl_t *cctrl, uint8_t cid, uint32_t *resp_version)
+cctrl_unlock_custom_version(conc_ctrl_t *cctrl, uint8_t cid, uint32_t version)
 {
     if(ENABLE_LOCK_ASSERTS){
         assert(cctrl->lock == SEQLOCK_LOCKED);
         assert(cctrl->ts.version % 2 == 1);
     }
-    cctrl->ts.tie_breaker_id = cid;
-    COMPILER_NO_REORDER(*resp_version = ++cctrl->ts.version);
-    COMPILER_NO_REORDER(cctrl->lock = SEQLOCK_FREE);
-}
 
-static inline void
-cctrl_unlock(conc_ctrl_t *cctrl, uint8_t cid, uint32_t version)
-{
-    assert(version % 2 == 0);
     cctrl->ts.tie_breaker_id = cid;
     COMPILER_NO_REORDER(cctrl->ts.version = version);
     COMPILER_NO_REORDER(cctrl->lock = SEQLOCK_FREE);
 }
 
 static inline void
-cctrl_unlock_decrement_version(conc_ctrl_t *cctrl)
+cctrl_unlock_inc_version(conc_ctrl_t *cctrl, uint8_t cid, uint32_t *resp_version)
 {
-    if(ENABLE_LOCK_ASSERTS)
+    if(ENABLE_LOCK_ASSERTS){
+        assert(cctrl->lock == SEQLOCK_LOCKED);
         assert(cctrl->ts.version % 2 == 1);
+    }
 
+    cctrl->ts.tie_breaker_id = cid;
+    COMPILER_NO_REORDER(*resp_version = ++cctrl->ts.version);
+    COMPILER_NO_REORDER(cctrl->lock = SEQLOCK_FREE);
+}
+
+static inline void
+cctrl_unlock_dec_version(conc_ctrl_t *cctrl)
+{
+    if(ENABLE_LOCK_ASSERTS){
+        assert(cctrl->lock == SEQLOCK_LOCKED);
+        assert(cctrl->ts.version % 2 == 1);
+    }
+
+    // keep same ts.tie_breaker_id
     COMPILER_NO_REORDER(cctrl->ts.version--);
     COMPILER_NO_REORDER(cctrl->lock = SEQLOCK_FREE);
 }

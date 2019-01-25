@@ -4,19 +4,24 @@
 
 #ifndef SPACETIME_CONFIG_H
 #define SPACETIME_CONFIG_H
-#include "../libhrd/hrd.h"
+#include <stdint.h>
+#include <assert.h>
+#include "sizes.h"
+
+#define HERMES_CEILING(x,y) (((x) + (y) - 1) / (y))
+#define HERMES_MIN(x,y) (x < y ? x : y)
 
 #define MACHINE_NUM 3
 #define REMOTE_MACHINES (MACHINE_NUM - 1)
-#define GROUP_MEMBERSHIP_ARRAY_SIZE CEILING(MACHINE_NUM, 8) //assuming uint8_t
-#define WORKERS_PER_MACHINE 20
+#define GROUP_MEMBERSHIP_ARRAY_SIZE HERMES_CEILING(MACHINE_NUM, 8) //assuming uint8_t
+#define WORKERS_PER_MACHINE 1
 #define KV_SOCKET 0
 #define SOCKET_TO_START_SPAWNING_THREADS 0
 #define USE_ALL_SOCKETS 1
 #define ENABLE_HYPERTHREADING 1
 #define BATCH_POST_RECVS_TO_NIC 1
 #define WRITE_RATIO 200
-#define MAX_BATCH_OPS_SIZE 50 // up to 254
+#define MAX_BATCH_OPS_SIZE 5 // up to 254
 
 
 //LATENCY
@@ -41,7 +46,7 @@ static_assert(!ENABLE_VIRTUAL_NODE_IDS || MACHINE_NUM * VIRTUAL_NODE_IDS_PER_NOD
 #define COALESCE_N_HOTTEST_KEYS 100
 
 //DEBUG
-#define ENABLE_ASSERTIONS 0
+#define ENABLE_ASSERTIONS 1
 #define DISABLE_VALS_FOR_DEBUGGING 0
 #define KEY_NUM 0 //use 0 to disable
 
@@ -51,11 +56,12 @@ static_assert(!ENABLE_VIRTUAL_NODE_IDS || MACHINE_NUM * VIRTUAL_NODE_IDS_PER_NOD
 #define NUM_OF_REP_REQS K_256 // if FEED_FROM_TRACE == 0
 #define USE_A_SINGLE_KEY 0    // if FEED_FROM_TRACE == 0
 #define ST_KEY_ID_255_OR_HIGHER 255
+
+
 /*-------------------------------------------------
 ----------------- REQ COALESCING -------------------
 --------------------------------------------------*/
-
-#define MAX_REQ_COALESCE 5
+#define MAX_REQ_COALESCE 1
 #define INV_MAX_REQ_COALESCE MAX_REQ_COALESCE
 #define ACK_MAX_REQ_COALESCE MAX_REQ_COALESCE
 #define VAL_MAX_REQ_COALESCE MAX_REQ_COALESCE
@@ -63,7 +69,7 @@ static_assert(!ENABLE_VIRTUAL_NODE_IDS || MACHINE_NUM * VIRTUAL_NODE_IDS_PER_NOD
 /*-------------------------------------------------
 -----------------FLOW CONTROL---------------------
 --------------------------------------------------*/
-#define CREDITS_PER_REMOTE_WORKER 30
+#define CREDITS_PER_REMOTE_WORKER 5
 #define INV_CREDITS CREDITS_PER_REMOTE_WORKER
 #define ACK_CREDITS CREDITS_PER_REMOTE_WORKER
 #define VAL_CREDITS CREDITS_PER_REMOTE_WORKER
@@ -73,7 +79,7 @@ static_assert(!ENABLE_VIRTUAL_NODE_IDS || MACHINE_NUM * VIRTUAL_NODE_IDS_PER_NOD
 -----------------PCIe BATCHING---------------------
 --------------------------------------------------*/
 #define MIN_PCIE_BCAST_BATCH 1 //MAX_BATCH_OPS_SIZE
-#define MAX_PCIE_BCAST_BATCH MIN(MIN_PCIE_BCAST_BATCH + 1, INV_CREDITS) //Warning! use min to avoid reseting the first req prior batching to the NIC
+#define MAX_PCIE_BCAST_BATCH HERMES_MIN(MIN_PCIE_BCAST_BATCH + 1, INV_CREDITS) //Warning! use min to avoid reseting the first req prior batching to the NIC
 //WARNING: todo check why we need to have MIN_PCIE_BCAST_BATCH + 1 instead of just MIN_PCIE_BCAST_BATCH
 #define MAX_MSGS_IN_PCIE_BCAST_BATCH (MAX_PCIE_BCAST_BATCH * REMOTE_MACHINES) //must be smaller than the q_depth
 
@@ -134,7 +140,7 @@ static_assert(!ENABLE_VIRTUAL_NODE_IDS || MACHINE_NUM * VIRTUAL_NODE_IDS_PER_NOD
 /*-------------------------------------------------
 ----------------- REQ INLINING --------------------
 --------------------------------------------------*/
-#define DISABLE_INLINING 0
+#define DISABLE_INLINING 1
 #define DISABLE_INV_INLINING ((DISABLE_INLINING || sizeof(spacetime_inv_packet_t) >= 188) ? 1 : 0)
 #define DISABLE_ACK_INLINING ((DISABLE_INLINING || sizeof(spacetime_ack_packet_t) >= 188) ? 1 : 0)
 #define DISABLE_VAL_INLINING ((DISABLE_INLINING || sizeof(spacetime_val_packet_t) >= 188) ? 1 : 0)
@@ -168,7 +174,7 @@ static_assert(!ENABLE_VIRTUAL_NODE_IDS || MACHINE_NUM * VIRTUAL_NODE_IDS_PER_NOD
 #define ENABLE_CRD_PRINTS 0
 
 //Stats prints
-#define PRINT_STATS_EVERY_MSECS 10000 //10
+#define PRINT_STATS_EVERY_MSECS 5000 //10000 //10
 #define PRINT_WORKER_STATS 0
 
 //Stats
@@ -178,14 +184,14 @@ static_assert(!ENABLE_VIRTUAL_NODE_IDS || MACHINE_NUM * VIRTUAL_NODE_IDS_PER_NOD
 #define ENABLE_STAT_COUNTING 0
 
 //FAKE NODE FAILURE
-#define FAKE_FAILURE 0
+#define FAKE_FAILURE 1
 #define NODE_TO_FAIL 2
-#define ROUNDS_BEFORE_FAILURE 5
+#define ROUNDS_BEFORE_FAILURE 2
 
 //FAILURE DETECTION
-#define NODES_WITH_FAILURE_DETECTOR 0
-#define WORKER_EMULATING_FAILURE_DETECTOR 4
-#define NUM_OF_IDLE_ITERS_FOR_SUSPICION K_64 //M_4 //K_32 //M_2 //K_256 //M_1
+#define NODES_WITH_FAILURE_DETECTOR 1
+#define WORKER_EMULATING_FAILURE_DETECTOR 0
+#define NUM_OF_IDLE_ITERS_FOR_SUSPICION M_2 //M_4 //M_2 //K_256 /// WARNNING if this is very small we could be resetting some buffs after failure before their contents are send --> causing some asserts!
 
 // Rarely change
 #define WORKER_NUM (MACHINE_NUM * WORKERS_PER_MACHINE)

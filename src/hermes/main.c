@@ -2,14 +2,18 @@
 #include <stdio.h>
 #include <malloc.h>
 #include <infiniband/verbs.h>
-#include <hrd.h>
 #include <getopt.h>
 #include <pthread.h>
 #include "spacetime.h"
 #include "config.h"
 #include "util.h"
-#include <concur_ctrl.h>
-#include <bit_vector.h>
+#include "concur_ctrl.h"
+#include "bit_vector.h"
+#include "hrd.h"
+
+
+//	//TODO only for testing
+#include "../aether/ud-wrapper.h"
 
 //Global vars
 volatile char worker_needed_ah_ready;
@@ -64,6 +68,12 @@ int main(int argc, char *argv[])
 //	green_printf("UD size: %d ibv_grh + crd size: %d \n", sizeof(ud_req_crd_t), sizeof(struct ibv_grh) + sizeof(spacetime_crd_t));
 //	assert(sizeof(ud_req_crd_t) == sizeof(struct ibv_grh) + sizeof(spacetime_crd_t)); ///CRD --> 48 Bytes instead of 43
 
+//	//TODO only for testing
+	ud_wrapper_unit_test();
+//	bv_unit_test();
+	return 0;
+
+
 	printf("CREDITS %d\n",CREDITS_PER_REMOTE_WORKER);
 	printf("INV_SS_GRANULARITY %d \t\t SEND_INV_Q_DEPTH %d \t\t RECV_INV_Q_DEPTH %d\n",
 		   INV_SS_GRANULARITY, SEND_INV_Q_DEPTH, RECV_INV_Q_DEPTH);
@@ -76,16 +86,18 @@ int main(int argc, char *argv[])
 
 	struct thread_params *param_arr;
 	pthread_t *thread_arr;
+//	char dev_name[50];
 
 	static struct option opts[] = {
 			{ .name = "machine-id",			.has_arg = 1, .val = 'm' },
             { .name = "is-roce",			.has_arg = 1, .val = 'r' },
+			{ .name = "dev-name",			.has_arg = 1, .val = 'd'},
 			{ 0 }
 	};
 
 	/* Parse and check arguments */
 	while(1) {
-		c = getopt_long(argc, argv, "m:r:", opts, NULL);
+		c = getopt_long(argc, argv, "m:r:d:", opts, NULL);
 		if(c == -1) {
 			break;
 		}
@@ -95,6 +107,9 @@ int main(int argc, char *argv[])
 				break;
 			case 'r':
 				is_roce = atoi(optarg);
+				break;
+			case 'd':
+				memcpy(dev_name, optarg, strlen(optarg));
 				break;
 			default:
 				printf("Invalid argument %d\n", c);
@@ -113,9 +128,6 @@ int main(int argc, char *argv[])
 	spacetime_init(machine_id, WORKERS_PER_MACHINE);
 	init_stats();
 
-//	//TODO only for testing
-//	bv_unit_test();
-//	return 0;
 
 //	// Register signal and signal handler
 //	signal(SIGINT, signal_callback_handler);

@@ -3,7 +3,6 @@
 //
 #define _GNU_SOURCE
 
-#include <spacetime.h>
 #include "spacetime.h"
 #include "inline-util.h"
 #include "hrd.h"
@@ -325,7 +324,7 @@ parse_trace(char* path, struct spacetime_trace_command **cmds, int worker_gid)
                 memcpy(&(*cmds)[i].key_hash, &((uint64_t*)&key_hash)[1], 8); // this is for 8B keys
                 (*cmds)[i].key_id = (uint8_t) (key_id < 255 ? key_id : ST_KEY_ID_255_OR_HIGHER);
                 debug_cnt++;
-            } //else DO NOTHING
+            }
 
             word_count++;
             word = strtok_r(NULL, " ", &saveptr);
@@ -430,10 +429,13 @@ void setup_credits(uint8_t credits[][MACHINE_NUM],     struct hrd_ctrl_blk *cb,
 
 
 // set up the OPS buffers
-void setup_ops(spacetime_op_t **ops,
-			   spacetime_inv_t **inv_recv_ops, spacetime_ack_t **ack_recv_ops,
-			   spacetime_val_t **val_recv_ops, spacetime_inv_packet_t** inv_send_packet_ops,
-			   spacetime_ack_packet_t** ack_send_packet_ops, spacetime_val_packet_t **val_send_packet_ops)
+void setup_ops(spacetime_op_t** ops,
+			   spacetime_inv_t** inv_recv_ops,
+			   spacetime_ack_t** ack_recv_ops,
+			   spacetime_val_t** val_recv_ops,
+			   spacetime_inv_packet_t** inv_send_packet_ops,
+			   spacetime_ack_packet_t** ack_send_packet_ops,
+			   spacetime_val_packet_t** val_send_packet_ops)
 {
     int i,j;
     *ops = memalign(4096, MAX_BATCH_OPS_SIZE * (sizeof(spacetime_op_t)));
@@ -585,6 +587,7 @@ void setup_recv_WRs(struct ibv_recv_wr *inv_recv_wr, struct ibv_sge *inv_recv_sg
         inv_recv_wr[i].num_sge = 1;
         inv_recv_wr[i].next = (i == MAX_RECV_INV_WRS - 1) ? NULL : &inv_recv_wr[i + 1];
 	}
+
     for (i = 0; i < MAX_RECV_ACK_WRS; i++) {
 		ack_recv_sgl[i].length = ACK_RECV_REQ_SIZE;
         ack_recv_sgl[i].lkey = cb->dgram_buf_mr->lkey;
@@ -592,6 +595,7 @@ void setup_recv_WRs(struct ibv_recv_wr *inv_recv_wr, struct ibv_sge *inv_recv_sg
         ack_recv_wr[i].num_sge = 1;
         ack_recv_wr[i].next = (i == MAX_RECV_ACK_WRS - 1) ? NULL : &ack_recv_wr[i + 1];
 	}
+
     for (i = 0; i < MAX_RECV_VAL_WRS; i++) {
 		val_recv_sgl[i].length = VAL_RECV_REQ_SIZE;
         val_recv_sgl[i].lkey = cb->dgram_buf_mr->lkey;
@@ -600,6 +604,7 @@ void setup_recv_WRs(struct ibv_recv_wr *inv_recv_wr, struct ibv_sge *inv_recv_sg
         val_recv_wr[i].next = (i == MAX_RECV_VAL_WRS - 1) ? NULL : &val_recv_wr[i + 1];
 	}
 }
+
 void setup_incoming_buffs_and_post_initial_recvs(ud_req_inv_t *incoming_invs, ud_req_ack_t *incoming_acks,
                                                  ud_req_val_t *incoming_vals, int *inv_push_recv_ptr,
                                                  int *ack_push_recv_ptr, int *val_push_recv_ptr,

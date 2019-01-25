@@ -1,4 +1,3 @@
-#include <zconf.h>
 #include "hrd.h"
 
 /* Every thread creates a TCP connection to the registry only once. */
@@ -83,6 +82,8 @@ hrd_ibv_devinfo(void)
  * Fills its device id and device-local port id (1-based) into the supplied
  * control block.
  */
+
+char dev_name[50];
 struct ibv_device*
 hrd_resolve_port_index(struct hrd_ctrl_blk *cb, int port_index)
 {
@@ -101,6 +102,8 @@ hrd_resolve_port_index(struct hrd_ctrl_blk *cb, int port_index)
 	int dev_i;
 
 	for(dev_i = 0; dev_i < num_devices; dev_i++) {
+		if (strcmp(dev_list[dev_i]->name, dev_name) != 0) continue;
+
 		struct ibv_context *ctx = ibv_open_device(dev_list[dev_i]);
 		CPE(!ctx, "HRD: Couldn't open device", 0);
 
@@ -479,7 +482,7 @@ memcached_st* hrd_create_memc()
 	memc = memcached_create(NULL);
 
 	char *registry_ip = hrd_getenv("HRD_REGISTRY_IP");
-	// printf("Appending server with IP: %s \n", registry_ip);
+//	printf("Appending server with IP: %s \n", registry_ip);
 	servers = memcached_server_list_append(servers,
 										   registry_ip, MEMCACHED_DEFAULT_PORT, &rc);
 	// Pushes an array of memcached_server_st into the memcached_st structure.
@@ -506,7 +509,7 @@ void hrd_publish(const char *key, void *value, int len)
 		(time_t) 0, (uint32_t) 0);
 	if (rc != MEMCACHED_SUCCESS) {
 		char *registry_ip = hrd_getenv("HRD_REGISTRY_IP");
-		fprintf(stderr, "\tHRD: Failed to publish key %s. Error %s. "
+		fprintf(stderr, "\tHRD: Failed to publish key %s to memcached. Error %s. "
 			"Reg IP = %s\n", key, memcached_strerror(memc, rc), registry_ip);
 		exit(-1);
 	}

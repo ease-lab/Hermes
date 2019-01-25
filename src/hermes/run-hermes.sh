@@ -76,7 +76,8 @@ sleep 1
 blue "Running hermes threads"
 
 sudo LD_LIBRARY_PATH=/usr/local/lib/ -E \
-	./hermes \
-	--machine-id $machine_id \
-	--is-roce 0 \
+	./hermes                            \
+	--machine-id $machine_id            \
+	--is-roce 0                         \
+	--dev-name "mlx5_0"                 \
 	2>&1

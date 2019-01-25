@@ -83,7 +83,6 @@
 
 #define ST_OP_BUFFER_INDEX_EMPTY 255
 #define LAST_WRITER_ID_EMPTY 255
-#define TIE_BREAKER_ID_EMPTY 255
 
 
 // Fixed-size 8 (or 16) byte keys
@@ -102,7 +101,7 @@ typedef volatile struct
     bit_vector_t ack_bv;
     uint8_t last_writer_id;
     uint8_t op_buffer_index; //TODO change to uint16_t for a buffer >= 256
-    conc_ctrl_t conc_ctrl;
+    conc_ctrl_t cctrl;
     timestamp_t last_local_write_ts;
 }
 spacetime_object_meta;
@@ -214,9 +213,9 @@ ud_req_crd_t;
 
 typedef struct
 {
-    uint8_t num_of_alive_remotes;
-    bit_vector_t g_membership;
-    bit_vector_t w_ack_init;
+    volatile uint8_t num_of_alive_remotes;
+    volatile bit_vector_t g_membership;
+    volatile bit_vector_t w_ack_init;
     seqlock_t lock;
 }
 spacetime_group_membership;
@@ -289,7 +288,7 @@ void reconfigure_wrs(struct ibv_send_wr *inv_send_wr, struct ibv_sge *inv_send_s
                      spacetime_group_membership last_g_membership, uint16_t worker_lid);
 
 
-extern volatile spacetime_group_membership group_membership;
+extern spacetime_group_membership group_membership;
 
 
 #endif //HERMES_SPACETIME_H
