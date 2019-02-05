@@ -13,8 +13,9 @@ HOSTS=( ##### network  cluster #####
         )
 
 FILES=(
-        "hermes"
-#        "run-hermes.sh"
+#        "hermes"
+        "hermes-aether"
+        "run-hermes.sh"
       )
 
 USERNAME="s1671850" # "user"

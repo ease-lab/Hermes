@@ -69,9 +69,9 @@ int main(int argc, char *argv[])
 //	assert(sizeof(ud_req_crd_t) == sizeof(struct ibv_grh) + sizeof(spacetime_crd_t)); ///CRD --> 48 Bytes instead of 43
 
 //	//TODO only for testing
-	ud_wrapper_unit_test();
+//	aether_unit_test();
 //	bv_unit_test();
-	return 0;
+//	return 0;
 
 
 	printf("CREDITS %d\n",CREDITS_PER_REMOTE_WORKER);

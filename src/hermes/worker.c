@@ -6,6 +6,7 @@
 
 ///
 #include "time_rdtsc.h"
+#include "../aether/ud-wrapper.h"
 ///
 
 void *run_worker(void *arg){
@@ -104,7 +105,7 @@ void *run_worker(void *arg){
 		setup_incoming_buffs_and_post_initial_recvs(incoming_invs, incoming_acks, incoming_vals, &inv_push_recv_ptr,
 													&ack_push_recv_ptr, &val_push_recv_ptr, inv_recv_wr,
 													ack_recv_wr, val_recv_wr, crd_recv_wr, cb, worker_lid);
-	setup_qps(worker_gid, cb);
+	share_qp_info_via_memcached(worker_gid, cb);
 	setup_credits(credits, cb, crd_send_wr, &send_crd_sgl, crd_recv_wr, &recv_crd_sgl);
     setup_send_WRs(inv_send_wr, inv_send_sgl, ack_send_wr, ack_send_sgl, val_send_wr,
 				   val_send_sgl, inv_mr, ack_mr, val_mr, worker_lid);
@@ -138,6 +139,8 @@ void *run_worker(void *arg){
 		spacetime_ack_t stalled_ack;
 		uint64_t total_acks_polled = 0;
 //	}
+
+
 	/* -----------------------------------------------------
        ------------------------Main Loop--------------------
 	   ----------------------------------------------------- */
@@ -195,7 +198,7 @@ void *run_worker(void *arg){
 								acks_polled--;
 								///Might also need to increase / decrease inv credits
 							}
-                        }else if(time_elapsed_in_ms(time_received_msg) > INCREASE_TAIL_BY_MS && acks_polled < MAX_BATCH_OPS_SIZE - 1){
+                        } else if(time_elapsed_in_ms(time_received_msg) > INCREASE_TAIL_BY_MS && acks_polled < MAX_BATCH_OPS_SIZE - 1){
 								memcpy(&ack_recv_ops[acks_polled], &stalled_ack, sizeof(spacetime_ack_t));
 //								green_printf("ACK Unstalled after ms: %2.f\n", time_elapsed_in_ms(time_received_msg));
 								has_msg_stalled = 0;

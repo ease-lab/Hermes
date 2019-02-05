@@ -45,7 +45,7 @@ void setup_q_depths(int** recv_q_depths, int** send_q_depths)
 }
 
 
-void setup_qps(int worker_gid, struct hrd_ctrl_blk *cb)
+void share_qp_info_via_memcached(int worker_gid, struct hrd_ctrl_blk *cb)
 {
     int i;
     int worker_lid = worker_gid % WORKERS_PER_MACHINE;
@@ -93,7 +93,7 @@ void create_AHs(struct hrd_ctrl_blk *cb)
                 if(worker_qp[i][qp_i] == NULL)
                     usleep(200000);
             }
-            //printf("main:Client %d found clt %d. Client LID: %d\n", clt_gid, i, clt_qp[i][qp_i]->lid);
+//            printf("main:Client %d found clt %d. Client LID: %d\n", clt_gid, i, clt_qp[i][qp_i]->lid);
             struct ibv_ah_attr ah_attr = {
                     //-----INFINIBAND----------
                     .is_global = 0,
@@ -120,6 +120,82 @@ void create_AHs(struct hrd_ctrl_blk *cb)
         }
     }
 }
+
+uint8_t
+is_state_code(uint8_t code)
+{
+    switch (code) {
+        //Object States
+        case VALID_STATE:
+        case WRITE_STATE:
+        case REPLAY_STATE:
+        case INVALID_STATE:
+        case INVALID_WRITE_STATE:
+            return 1;
+        default:
+            return 0;
+    }
+}
+
+uint8_t
+is_input_code(uint8_t code)
+{
+    switch (code) {
+         //Input opcodes
+        case ST_OP_GET:
+        case ST_OP_PUT:
+        case ST_OP_INV:
+        case ST_OP_ACK:
+        case ST_OP_VAL:
+        case ST_OP_CRD:
+        case ST_OP_MEMBERSHIP_CHANGE:
+        case ST_OP_MEMBERSHIP_COMPLETE:
+            return 1;
+        default:
+            return 0;
+    }
+}
+
+uint8_t
+is_response_code(uint8_t code)
+{
+    switch (code) {
+        case ST_GET_COMPLETE:
+        case ST_PUT_SUCCESS:
+        case ST_PUT_COMPLETE:
+        case ST_REPLAY_SUCCESS:
+        case ST_REPLAY_COMPLETE:
+        case ST_INV_SUCCESS:
+        case ST_ACK_SUCCESS:
+        case ST_VAL_SUCCESS:
+        case ST_LAST_ACK_SUCCESS:
+        case ST_LAST_ACK_NO_BCAST_SUCCESS:
+        case ST_MISS:
+        case ST_GET_STALL:
+        case ST_PUT_STALL:
+        case ST_PUT_COMPLETE_SEND_VALS:
+        case ST_INV_OUT_OF_GROUP:
+            return 1;
+        default:
+            return 0;
+    }
+}
+
+uint8_t
+is_bucket_state_code(uint8_t code)
+{
+    switch (code) {
+        case ST_NEW:
+        case ST_EMPTY:
+        case ST_COMPLETE:
+        case ST_IN_PROGRESS_PUT:
+        case ST_IN_PROGRESS_REPLAY:
+            return 1;
+        default:
+            return 0;
+    }
+}
+
 
 char* code_to_str(uint8_t code)
 {
@@ -232,7 +308,7 @@ void manufacture_trace(struct spacetime_trace_command **cmds, int worker_gid)
 
         //--- KEY ID----------
         uint32 key_id = KEY_NUM != 0 ? (uint32) rand() % KEY_NUM : (uint32) rand() % SPACETIME_NUM_KEYS;
-        if(USE_A_SINGLE_KEY == 1) key_id =  0;
+        if(USE_A_SINGLE_KEY == 1) key_id = 0;
         uint128 key_hash = CityHash128((char *) &(key_id), 4);
 //        memcpy(&(*cmds)[i].key_hash, &key_hash, 16); // this is for 16B keys
         memcpy(&(*cmds)[i].key_hash, &((uint64_t*)&key_hash)[1], 8);
@@ -360,7 +436,7 @@ void trace_init(struct spacetime_trace_command** trace, uint16_t worker_gid)
     if (FEED_FROM_TRACE == 1) {
         char local_client_id[3];
         char machine_num[4];
-        //get / creat path for the trace
+        //get / create path for the trace
         sprintf(local_client_id, "%d", worker_gid % WORKERS_PER_MACHINE);
         sprintf(machine_num, "%d", machine_id);
         char path[2048];
@@ -427,6 +503,41 @@ void setup_credits(uint8_t credits[][MACHINE_NUM],     struct hrd_ctrl_blk *cb,
     }
 }
 
+// set up the OPS buffers
+void setup_kvs_buffs(spacetime_op_t **ops,
+                     spacetime_inv_t **inv_recv_ops,
+                     spacetime_ack_t **ack_recv_ops,
+                     spacetime_val_t **val_recv_ops)
+{
+    *ops = memalign(4096, MAX_BATCH_OPS_SIZE * (sizeof(spacetime_op_t)));
+    memset(*ops, 0, MAX_BATCH_OPS_SIZE * (sizeof(spacetime_op_t)));
+    assert(ops != NULL);
+
+    ///Network ops
+	///TODO should we memalign aswell?
+	*inv_recv_ops = (spacetime_inv_t*) malloc(INV_RECV_OPS_SIZE * sizeof(spacetime_inv_t));
+	*ack_recv_ops = (spacetime_ack_t*) malloc(ACK_RECV_OPS_SIZE * sizeof(spacetime_ack_t));
+    *val_recv_ops = (spacetime_val_t*) malloc(VAL_RECV_OPS_SIZE * sizeof(spacetime_val_t)); /* Batch of incoming broadcasts for the Cache*/
+	assert(*inv_recv_ops!= NULL && *ack_recv_ops!= NULL && *val_recv_ops!= NULL);
+
+    memset(*inv_recv_ops, 0, INV_RECV_OPS_SIZE * sizeof(spacetime_inv_t));
+    memset(*ack_recv_ops, 0, ACK_RECV_OPS_SIZE * sizeof(spacetime_ack_t));
+    memset(*val_recv_ops, 0, VAL_RECV_OPS_SIZE * sizeof(spacetime_val_t));
+
+    for(int i = 0; i < INV_RECV_OPS_SIZE; ++i)
+        (*inv_recv_ops)[i].op_meta.opcode = ST_EMPTY;
+
+    for(int i = 0; i < ACK_RECV_OPS_SIZE; ++i)
+        (*ack_recv_ops)[i].opcode = ST_EMPTY;
+
+    for(int i = 0; i < VAL_RECV_OPS_SIZE; ++i)
+        (*val_recv_ops)[i].opcode = ST_EMPTY;
+
+	for(int i = 0; i < MAX_BATCH_OPS_SIZE; ++i){
+		(*ops)[i].op_meta.opcode = ST_EMPTY;
+		(*ops)[i].op_meta.state = ST_EMPTY;
+	}
+}
 
 // set up the OPS buffers
 void setup_ops(spacetime_op_t** ops,
@@ -627,6 +738,7 @@ void setup_incoming_buffs_and_post_initial_recvs(ud_req_inv_t *incoming_invs, ud
     if(ENABLE_POST_RECV_PRINTS && ENABLE_VAL_PRINTS && worker_lid == 0)
         yellow_printf("vvv Post Initial Receives: \033[1m\033[32mVALs\033[0m %d\n", MAX_RECV_VAL_WRS);
     post_receives(cb, MAX_RECV_VAL_WRS, ST_VAL_BUFF, incoming_vals, val_push_recv_ptr, ack_recv_wr);
+    //TODO initial receives for ACKS are not posted currently
     if(ENABLE_POST_RECV_PRINTS && ENABLE_ACK_PRINTS && worker_lid == 0)
         yellow_printf("vvv Post Initial Receives: \033[33mACKs\033[0m %d\n", MAX_RECV_ACK_WRS);
     post_receives(cb, MAX_RECV_ACK_WRS, ST_ACK_BUFF, incoming_acks, ack_push_recv_ptr, val_recv_wr);

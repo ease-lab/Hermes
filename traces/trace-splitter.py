@@ -9,7 +9,6 @@ def main(argv):
     output_path = "./current-splited-traces"
     zipf_exponent_a = 99 #exponent should be multiplied by 100 i.e 99 --> a=0.99
 
-    total_lines =
     try:
         opts, args = getopt.getopt(argv,":hs:c:o:w:k:C:")
     except getopt.GetoptError:

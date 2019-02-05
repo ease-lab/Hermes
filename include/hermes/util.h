@@ -86,10 +86,23 @@ void create_AHs(struct hrd_ctrl_blk *cb);
 void *run_worker(void *arg);
 void *print_stats(void* no_arg);
 void dump_latency_stats(void);
-void setup_qps(int worker_lid, struct hrd_ctrl_blk *cb);
+void share_qp_info_via_memcached(int worker_lid, struct hrd_ctrl_blk *cb);
 void setup_q_depths(int** recv_q_depths, int** send_q_depths);
+
+//Maybe inline these
+uint8_t is_state_code(uint8_t code);
+uint8_t is_input_code(uint8_t code);
+uint8_t is_response_code(uint8_t code);
+uint8_t is_bucket_state_code(uint8_t code);
+
 char* code_to_str(uint8_t code);
 void init_stats(void);
+
+void setup_kvs_buffs(spacetime_op_t **ops,
+					 spacetime_inv_t **inv_recv_ops,
+					 spacetime_ack_t **ack_recv_ops,
+					 spacetime_val_t **val_recv_ops);
+
 void setup_ops(spacetime_op_t **ops,
 			   spacetime_inv_t **inv_recv_ops, spacetime_ack_t **ack_recv_ops,
 			   spacetime_val_t **val_recv_ops, spacetime_inv_packet_t **inv_send_ops,

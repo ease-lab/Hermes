@@ -110,22 +110,19 @@ poll_buff_and_post_recvs(void *incoming_buff, uint8_t buff_type, int *buf_pull_p
 			qp_credits_to_inc = ACK_UD_QP_ID;
 			recv_q_depth = RECV_INV_Q_DEPTH;
 			req_size = sizeof(spacetime_inv_t);
-			if(ENABLE_ASSERTIONS)
-				max_credits = ACK_CREDITS;
+			if(ENABLE_ASSERTIONS) max_credits = ACK_CREDITS;
 			break;
 		case ST_ACK_BUFF:
 			qp_credits_to_inc = INV_UD_QP_ID;
 			recv_q_depth = RECV_ACK_Q_DEPTH;
 			req_size = sizeof(spacetime_ack_t);
-			if(ENABLE_ASSERTIONS)
-				max_credits = INV_CREDITS;
+			if(ENABLE_ASSERTIONS) max_credits = INV_CREDITS;
 			break;
 		case ST_VAL_BUFF:
 			qp_credits_to_inc = CRD_UD_QP_ID;
 			recv_q_depth = RECV_VAL_Q_DEPTH;
 			req_size = sizeof(spacetime_val_t);
-			if(ENABLE_ASSERTIONS)
-				max_credits = CRD_CREDITS;
+			if(ENABLE_ASSERTIONS) max_credits = CRD_CREDITS;
 			break;
 		default: assert(0);
 	}
@@ -311,7 +308,7 @@ forge_bcast_inv_wrs(spacetime_op_t* op, spacetime_inv_packet_t* inv_send_op,
 
 
 	if(inv_send_op->req_num == 1) {
-		send_inv_sgl[br_i].addr = (uint64_t) (uintptr_t) inv_send_op;
+		send_inv_sgl[br_i].addr = (uint64_t) inv_send_op;
 		int br_i_x_remotes = br_i * num_of_alive_remotes;
 
 		if(DISABLE_INV_INLINING)
@@ -638,7 +635,7 @@ issue_acks(spacetime_inv_t *inv_recv_ops, spacetime_ack_packet_t* ack_send_packe
 				   inv_recv_ops[i].op_meta.opcode == ST_OP_MEMBERSHIP_CHANGE);
 			assert(inv_recv_ops[i].op_meta.val_len == ST_VALUE_SIZE);
 			assert(REMOTE_MACHINES != 1 || inv_recv_ops[i].op_meta.ts.tie_breaker_id == REMOTE_MACHINES - machine_id);
-			assert(REMOTE_MACHINES != 1 || inv_recv_ops[i].value[0] == (uint8_t) 'x' + (REMOTE_MACHINES - machine_id));
+//			assert(REMOTE_MACHINES != 1 || inv_recv_ops[i].value[0] == (uint8_t) 'x' + (REMOTE_MACHINES - machine_id));
 			assert(REMOTE_MACHINES != 1 || inv_recv_ops[i].op_meta.sender == REMOTE_MACHINES - machine_id);
 		}
 
@@ -878,7 +875,7 @@ batch_vals_2_NIC(struct ibv_send_wr *send_val_wr, struct ibv_sge *send_val_sgl,
 			sgl_index = j / num_of_alive_remotes;
 			assert(send_val_wr[j].next == &send_val_wr[j + 1]);
 			assert(send_val_wr[j].num_sge == 1);
-			assert(DISABLE_INV_INLINING || send_val_wr[j].send_flags == IBV_SEND_INLINE ||
+			assert(DISABLE_VAL_INLINING || send_val_wr[j].send_flags == IBV_SEND_INLINE ||
 				   send_val_wr[j].send_flags == (IBV_SEND_INLINE | IBV_SEND_SIGNALED));
 			assert(send_val_wr[j].sg_list == &send_val_sgl[sgl_index]);
 		}
@@ -922,7 +919,8 @@ broadcast_vals(spacetime_ack_t *ack_ops, spacetime_val_packet_t *val_send_packet
 
 		// if not enough credits for a Broadcast
 		if (!check_val_credits(credits, cb, credit_wc, credit_recv_wr,
-							   last_g_membership, worker_lid)){
+							   last_g_membership, worker_lid))
+		{
 			has_outstanding_vals = 1;
 			break;
 		}
@@ -1238,9 +1236,9 @@ follower_removal(int suspected_node_id)
 static inline uint8_t
 group_membership_has_changed(spacetime_group_membership* last_group_membership, uint16_t worker_lid)
 {
-	int i;
 	uint32_t debug_lock_free_membership_read_cntr = 0;
 	spacetime_group_membership lock_free_read_group_membership;
+
 	do { //Lock free read of group membership
 		if (ENABLE_ASSERTIONS) {
 			debug_lock_free_membership_read_cntr++;
@@ -1252,7 +1250,7 @@ group_membership_has_changed(spacetime_group_membership* last_group_membership, 
 		lock_free_read_group_membership = *((spacetime_group_membership*) &group_membership);
 	} while (!(seqlock_version_is_same_and_valid(&group_membership.lock,
 												 &lock_free_read_group_membership.lock)));
-	for(i = 0; i < GROUP_MEMBERSHIP_ARRAY_SIZE; i++)
+	for(int i = 0; i < GROUP_MEMBERSHIP_ARRAY_SIZE; i++)
 	    if(!bv_are_equal(lock_free_read_group_membership.g_membership,
 	    		last_group_membership->g_membership))
 		{
@@ -1265,9 +1263,7 @@ group_membership_has_changed(spacetime_group_membership* last_group_membership, 
 static inline uint8_t
 node_is_in_membership(spacetime_group_membership last_group_membership, int node_id)
 {
-	if(bv_bit_get(last_group_membership.g_membership, node_id) == 1)
-		return 1;
-	return 0;
+	return (uint8_t) (bv_bit_get(last_group_membership.g_membership, (uint8_t) node_id) == 1 ? 1 : 0);
 }
 
 /* ---------------------------------------------------------------------------

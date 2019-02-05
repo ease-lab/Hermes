@@ -109,7 +109,7 @@ spacetime_object_meta;
 
 typedef struct
 {
-    spacetime_key_t key;	/* This must be the 1st field and 16B aligned */
+    spacetime_key_t key;	/* This must be the 1st field and 8B or 16B aligned */
     uint8_t opcode; //both recv / resp
     union {
         uint8_t state; //used by spacetime_op_t
@@ -118,7 +118,7 @@ typedef struct
     uint8_t val_len; // unused for spacetime_ack_t and spacetime_val_t (align for using a single memcpy)
     timestamp_t ts;
 }
-spacetime_op_meta_t;
+spacetime_op_meta_t, spacetime_ack_t, spacetime_val_t;
 
 typedef struct
 {
@@ -136,8 +136,6 @@ typedef struct
     uint8_t value[ST_VALUE_SIZE];
 }
 spacetime_inv_t;
-
-typedef spacetime_op_meta_t spacetime_ack_t, spacetime_val_t;
 
 typedef struct
 {

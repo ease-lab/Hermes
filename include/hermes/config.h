@@ -20,7 +20,7 @@
 #define USE_ALL_SOCKETS 1
 #define ENABLE_HYPERTHREADING 1
 #define BATCH_POST_RECVS_TO_NIC 1
-#define WRITE_RATIO 200
+#define WRITE_RATIO 900
 #define MAX_BATCH_OPS_SIZE 5 // up to 254
 
 
@@ -54,7 +54,7 @@ static_assert(!ENABLE_VIRTUAL_NODE_IDS || MACHINE_NUM * VIRTUAL_NODE_IDS_PER_NOD
 #define FEED_FROM_TRACE 0
 #define ZIPF_EXPONENT_OF_TRACE 90 // if FEED_FROM_TRACE == 1 | this is divided by 100 (e.g. use 99 for  a = 0.99)
 #define NUM_OF_REP_REQS K_256 // if FEED_FROM_TRACE == 0
-#define USE_A_SINGLE_KEY 0    // if FEED_FROM_TRACE == 0
+#define USE_A_SINGLE_KEY 0    // if FEED_FROM_TRACE == 0 //TODO: (dbg) change this to zero
 #define ST_KEY_ID_255_OR_HIGHER 255
 
 
@@ -140,7 +140,7 @@ static_assert(!ENABLE_VIRTUAL_NODE_IDS || MACHINE_NUM * VIRTUAL_NODE_IDS_PER_NOD
 /*-------------------------------------------------
 ----------------- REQ INLINING --------------------
 --------------------------------------------------*/
-#define DISABLE_INLINING 1
+#define DISABLE_INLINING 0
 #define DISABLE_INV_INLINING ((DISABLE_INLINING || sizeof(spacetime_inv_packet_t) >= 188) ? 1 : 0)
 #define DISABLE_ACK_INLINING ((DISABLE_INLINING || sizeof(spacetime_ack_packet_t) >= 188) ? 1 : 0)
 #define DISABLE_VAL_INLINING ((DISABLE_INLINING || sizeof(spacetime_val_packet_t) >= 188) ? 1 : 0)
@@ -148,9 +148,11 @@ static_assert(!ENABLE_VIRTUAL_NODE_IDS || MACHINE_NUM * VIRTUAL_NODE_IDS_PER_NOD
 /*-------------------------------------------------
 ----------------- SEND/RECV OPS SIZE --------------
 --------------------------------------------------*/
-#define INV_SEND_OPS_SIZE (DISABLE_INLINING == 1 ? 2 * MAX_SEND_INV_WRS : MAX_SEND_INV_WRS)
-#define ACK_SEND_OPS_SIZE (DISABLE_INLINING == 1 ? 2 * MAX_SEND_ACK_WRS : MAX_SEND_ACK_WRS)
-#define VAL_SEND_OPS_SIZE (DISABLE_INLINING == 1 ? 2 * MAX_SEND_VAL_WRS : MAX_SEND_VAL_WRS)
+//TODO
+///WARNING: changes DISABLE_INLINING with DISABLE_{INV,ACK,VAL}_INLINING
+#define INV_SEND_OPS_SIZE (DISABLE_INV_INLINING == 1 ? 2 * MAX_SEND_INV_WRS : MAX_SEND_INV_WRS)
+#define ACK_SEND_OPS_SIZE (DISABLE_ACK_INLINING == 1 ? 2 * MAX_SEND_ACK_WRS : MAX_SEND_ACK_WRS)
+#define VAL_SEND_OPS_SIZE (DISABLE_VAL_INLINING == 1 ? 2 * MAX_SEND_VAL_WRS : MAX_SEND_VAL_WRS)
 
 #define INV_RECV_OPS_SIZE (MAX_RECV_INV_WRS * INV_MAX_REQ_COALESCE)
 #define ACK_RECV_OPS_SIZE (MAX_RECV_ACK_WRS * ACK_MAX_REQ_COALESCE)
@@ -175,7 +177,7 @@ static_assert(!ENABLE_VIRTUAL_NODE_IDS || MACHINE_NUM * VIRTUAL_NODE_IDS_PER_NOD
 
 //Stats prints
 #define PRINT_STATS_EVERY_MSECS 5000 //10000 //10
-#define PRINT_WORKER_STATS 0
+#define PRINT_WORKER_STATS 1
 
 //Stats
 #define DUMP_STATS_2_FILE 0 //This is not working at the moment
@@ -184,12 +186,12 @@ static_assert(!ENABLE_VIRTUAL_NODE_IDS || MACHINE_NUM * VIRTUAL_NODE_IDS_PER_NOD
 #define ENABLE_STAT_COUNTING 0
 
 //FAKE NODE FAILURE
-#define FAKE_FAILURE 1
+#define FAKE_FAILURE 0
 #define NODE_TO_FAIL 2
 #define ROUNDS_BEFORE_FAILURE 2
 
 //FAILURE DETECTION
-#define NODES_WITH_FAILURE_DETECTOR 1
+#define NODES_WITH_FAILURE_DETECTOR 0
 #define WORKER_EMULATING_FAILURE_DETECTOR 0
 #define NUM_OF_IDLE_ITERS_FOR_SUSPICION M_2 //M_4 //M_2 //K_256 /// WARNNING if this is very small we could be resetting some buffs after failure before their contents are send --> causing some asserts!
 
