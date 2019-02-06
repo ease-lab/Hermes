@@ -521,7 +521,7 @@ aether_poll_crds_and_post_recvs(ud_channel_t *ud_c, struct hrd_ctrl_blk *cb)
                        ud_c->channel_providing_crds->credits_per_rem_channels[crd_ptr->sender_id]);
 
 			if(AETHER_ENABLE_CREDIT_PRINTS && ud_c->enable_prints)
-				printf("$$$ Credits: %s \033[1m\033[32mincremented\033[0m to %d (for machine %d)\n",
+				printf("$$$ Credits: %s \033[1m\033[32mincremented\033[0m to %d (for endpoint %d)\n",
 					   ud_c->channel_providing_crds->qp_name,
 					   ud_c->channel_providing_crds->credits_per_rem_channels[crd_ptr->sender_id],
 					   crd_ptr->sender_id);
@@ -799,20 +799,20 @@ aether_batch_pkts_2_NIC(ud_channel_t *ud_c, struct hrd_ctrl_blk *cb,
 {
 	int ret;
 	struct ibv_send_wr *bad_send_wr;
-	uint16_t remote_channels = (uint16_t) (ud_c->num_channels - 1);
 
 	if(ud_c->enable_stats)
 		ud_c->stats.send_total_pkts += pkts_in_batch;
 
+	uint16_t remote_channels = (uint16_t) (ud_c->num_channels - 1);
 	uint16_t wr_idx = (uint16_t) (pkts_in_batch * (ud_c->is_bcast_channel ?  remote_channels : 1));
 	ud_c->send_wr[wr_idx - 1].next = NULL;
 
 	if(AETHER_ENABLE_ASSERTIONS){
 
-		assert(pkts_in_batch <= ud_c->max_send_wrs);
-		assert(pkts_in_batch <= ud_c->send_pkt_buff_len);
-		assert(ud_c->max_coalescing > 1 || msgs_in_batch ==  pkts_in_batch);
-		assert(ud_c->max_coalescing > 1 || ud_c->stats.send_total_msgs ==  ud_c->stats.send_total_pkts);
+//		assert(pkts_in_batch <= ud_c->max_send_wrs);
+//		assert(pkts_in_batch <= ud_c->send_pkt_buff_len);
+//		assert(ud_c->type == CRD || ud_c->max_coalescing > 1 || msgs_in_batch ==  pkts_in_batch);
+//		assert(ud_c->type == CRD || ud_c->max_coalescing > 1 || ud_c->stats.send_total_msgs ==  ud_c->stats.send_total_pkts);
 
 		assert(ud_c->send_wr[wr_idx - 1].next == NULL);
 		for(int i = 0; i < wr_idx; ++i){
@@ -976,10 +976,6 @@ aether_issue_credits(ud_channel_t *ud_c, struct hrd_ctrl_blk *cb, uint8_t *input
 			assert(0);
 
 		aether_dec_crds(ud_c, curr_msg_dst);
-
-		if (AETHER_ENABLE_CREDIT_PRINTS && ud_c->enable_prints)
-			printf("$$$ Credits: %s \033[31mdecremented\033[0m to %d (for machine %d)\n",
-				   ud_c->qp_name, ud_c->credits_per_rem_channels[curr_msg_dst], curr_msg_dst);
 
 		ud_c->no_crds_to_send_per_endpoint[curr_msg_dst]++;
 

@@ -110,7 +110,14 @@ val_skip_or_get_sender_id(uint8_t *req)
 	return ack_req->sender;
 }
 
-void val_modify_elem_after_send(uint8_t* req) {}
+void val_modify_elem_after_send(uint8_t* req) {
+	spacetime_ack_t* ack_req = (spacetime_ack_t *) req;
+
+	if(ENABLE_ASSERTIONS)
+		assert(ack_req->opcode == ST_LAST_ACK_SUCCESS);
+
+	ack_req->opcode = ST_EMPTY;
+}
 
 void
 val_copy_and_modify_elem(uint8_t* msg_to_send, uint8_t* triggering_req)
@@ -280,9 +287,6 @@ run_worker(void *arg)
 	////
 
 	assertions(&inv_ud_c, &ack_ud_c);
-	printf("INV_RECV_OP size: %d\n", INV_RECV_OPS_SIZE);
-	printf("ACK_RECV_OP size: %d\n", ACK_RECV_OPS_SIZE);
-	printf("ACK rcv wrs size: %d\n", ack_ud_c.max_recv_wrs);
 
 	/* -----------------------------------------------------
        ------------------------Main Loop--------------------
@@ -292,14 +296,21 @@ run_worker(void *arg)
 	    if(unlikely(w_stats[worker_lid].total_loops % M_16 == 0)){
 	        //Check something periodically
 	        uint8_t remote_node = (uint8_t) (machine_id == 0 ? 1 : 0);
-	        printf("Inv credits: %d, ack credits: %d\n",
-	        		inv_ud_c.credits_per_rem_channels[remote_node],
-	        		ack_ud_c.credits_per_rem_channels[remote_node]);
-			green_printf ("Send: invs %d, acks %d\n", inv_ud_c.stats.send_total_msgs,
-						  ack_ud_c.stats.send_total_msgs);
-			green_printf ("Recv: invs %d, acks %d\n", inv_ud_c.stats.recv_total_msgs, ack_ud_c.stats.recv_total_msgs /  REMOTE_MACHINES);
-	        for(int i = 0; i < MAX_BATCH_OPS_SIZE; ++i)
-				printf("ops[%d]: state-> %s\n", i, code_to_str(ops[i].op_meta.state));
+//	        printf("Inv credits: %d, ack credits: %d\n",
+//	        		inv_ud_c.credits_per_rem_channels[remote_node],
+//	        		ack_ud_c.credits_per_rem_channels[remote_node]);
+//			green_printf ("Total Send: invs %d, acks %d, vals %d, crds %d\n",
+//						  inv_ud_c.stats.send_total_msgs,
+//						  ack_ud_c.stats.send_total_msgs,
+//						  val_ud_c.stats.send_total_msgs,
+//						  crd_ud_c.stats.send_total_msgs);
+//			green_printf ("Total Recv: invs %d, acks %d, vals %d, crds %d\n",
+//						  inv_ud_c.stats.recv_total_msgs,
+//						  ack_ud_c.stats.recv_total_msgs,
+//						  val_ud_c.stats.recv_total_msgs,
+//						  crd_ud_c.stats.recv_total_msgs);
+//	        for(int i = 0; i < MAX_BATCH_OPS_SIZE; ++i)
+//				printf("ops[%d]: state-> %s\n", i, code_to_str(ops[i].op_meta.state));
 	    }
 
 		node_suspected = refill_ops_n_suspect_failed_nodes(&trace_iter, worker_lid, trace, ops,

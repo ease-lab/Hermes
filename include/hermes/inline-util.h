@@ -1428,7 +1428,7 @@ refill_ops_n_suspect_failed_nodes(uint32_t *trace_iter, uint16_t worker_lid,
 			if(unlikely(refilled_per_ops_debug_cnt[i] > NUM_OF_IDLE_ITERS_FOR_SUSPICION)){
 				if(machine_id < NODES_WITH_FAILURE_DETECTOR && worker_lid == WORKER_EMULATING_FAILURE_DETECTOR){
 					node_suspected = find_suspected_node(&ops[i], worker_lid, last_group_membership);
-					cyan_printf("Worker: %d SUSPECTS node: %d\n", worker_lid, node_suspected);
+					cyan_printf("Worker: %d SUSPECTS node: %d (req %d)\n", worker_lid, node_suspected, i);
 					ops[i].op_meta.state = ST_OP_MEMBERSHIP_CHANGE;
 					ops[i].value[0] = (uint8_t) node_suspected;
                     //reset counter for failure suspicion

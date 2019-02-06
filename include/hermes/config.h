@@ -20,8 +20,8 @@
 #define USE_ALL_SOCKETS 1
 #define ENABLE_HYPERTHREADING 1
 #define BATCH_POST_RECVS_TO_NIC 1
-#define WRITE_RATIO 900
-#define MAX_BATCH_OPS_SIZE 5 // up to 254
+#define WRITE_RATIO 500
+#define MAX_BATCH_OPS_SIZE 50 // up to 254
 
 
 //LATENCY
@@ -53,15 +53,15 @@ static_assert(!ENABLE_VIRTUAL_NODE_IDS || MACHINE_NUM * VIRTUAL_NODE_IDS_PER_NOD
 //REQUESTS
 #define FEED_FROM_TRACE 0
 #define ZIPF_EXPONENT_OF_TRACE 90 // if FEED_FROM_TRACE == 1 | this is divided by 100 (e.g. use 99 for  a = 0.99)
-#define NUM_OF_REP_REQS K_256 // if FEED_FROM_TRACE == 0
-#define USE_A_SINGLE_KEY 0    // if FEED_FROM_TRACE == 0 //TODO: (dbg) change this to zero
+#define NUM_OF_REP_REQS K_256     // if FEED_FROM_TRACE == 0
+#define USE_A_SINGLE_KEY 0        // if FEED_FROM_TRACE == 0
 #define ST_KEY_ID_255_OR_HIGHER 255
 
 
 /*-------------------------------------------------
 ----------------- REQ COALESCING -------------------
 --------------------------------------------------*/
-#define MAX_REQ_COALESCE 1
+#define MAX_REQ_COALESCE 3
 #define INV_MAX_REQ_COALESCE MAX_REQ_COALESCE
 #define ACK_MAX_REQ_COALESCE MAX_REQ_COALESCE
 #define VAL_MAX_REQ_COALESCE MAX_REQ_COALESCE
