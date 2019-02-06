@@ -31,8 +31,8 @@ set(SOURCE_FILES_hermes
         include/hermes/concur_ctrl.h
         include/hermes/bit_vector.h
         include/hades/hades.h
-        src/aether/ud-wrapper.c
-        src/aether/ud-wrapper.h)
+        src/aether/aether.c
+        include/aether/aether_inlines.h include/aether/aether.h)
 
 
 add_executable(hermes ${SOURCE_FILES_hermes})

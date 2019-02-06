@@ -14,13 +14,13 @@
 #define MACHINE_NUM 3
 #define REMOTE_MACHINES (MACHINE_NUM - 1)
 #define GROUP_MEMBERSHIP_ARRAY_SIZE HERMES_CEILING(MACHINE_NUM, 8) //assuming uint8_t
-#define WORKERS_PER_MACHINE 1
+#define WORKERS_PER_MACHINE 36
 #define KV_SOCKET 0
 #define SOCKET_TO_START_SPAWNING_THREADS 0
 #define USE_ALL_SOCKETS 1
 #define ENABLE_HYPERTHREADING 1
 #define BATCH_POST_RECVS_TO_NIC 1
-#define WRITE_RATIO 500
+#define WRITE_RATIO 10
 #define MAX_BATCH_OPS_SIZE 50 // up to 254
 
 
@@ -46,7 +46,7 @@ static_assert(!ENABLE_VIRTUAL_NODE_IDS || MACHINE_NUM * VIRTUAL_NODE_IDS_PER_NOD
 #define COALESCE_N_HOTTEST_KEYS 100
 
 //DEBUG
-#define ENABLE_ASSERTIONS 1
+#define ENABLE_ASSERTIONS 0
 #define DISABLE_VALS_FOR_DEBUGGING 0
 #define KEY_NUM 0 //use 0 to disable
 
@@ -61,7 +61,7 @@ static_assert(!ENABLE_VIRTUAL_NODE_IDS || MACHINE_NUM * VIRTUAL_NODE_IDS_PER_NOD
 /*-------------------------------------------------
 ----------------- REQ COALESCING -------------------
 --------------------------------------------------*/
-#define MAX_REQ_COALESCE 3
+#define MAX_REQ_COALESCE 5
 #define INV_MAX_REQ_COALESCE MAX_REQ_COALESCE
 #define ACK_MAX_REQ_COALESCE MAX_REQ_COALESCE
 #define VAL_MAX_REQ_COALESCE MAX_REQ_COALESCE

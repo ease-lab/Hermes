@@ -1,13 +1,12 @@
 //
-// Created by akatsarakis on 22/01/19.
+// Created by akatsarakis on 06/02/19.
 //
 
-#ifndef AETHER_UD_WRAPPER_H
-#define AETHER_UD_WRAPPER_H
-
+#ifndef AETHER_API_H
+#define AETHER_API_H
 #include <hrd.h>
 
-#define AETHER_ENABLE_ASSERTIONS 1
+#define AETHER_ENABLE_ASSERTIONS 0
 #define AETHER_MAX_SUPPORTED_INLINING 187
 #define AETHER_ENABLE_BATCH_POST_RECVS_TO_NIC 1
 
@@ -28,14 +27,6 @@
 	x = x + 1; \
 	if(x == N) x = 0; \
 } while(0)
-
-
-
-
-
-
-
-
 
 
 /* ah pointer and qpn are accessed together in the critical path
@@ -155,9 +146,13 @@ typedef struct _ud_channel_t
 }
 ud_channel_t;
 
+// Define some function pointers used when issuing pkts
+typedef void (*modify_input_elem_after_send_t) (uint8_t*);
+typedef int  (*skip_input_elem_or_get_sender_id_t) (uint8_t*); //Should return -1 to skip otherwise returns the sender id
+typedef void (*copy_and_modify_input_elem_t) (uint8_t* msg_to_send, uint8_t* triggering_req);
 
 
-
+/// Init and Util functions
 void print_ud_c_overview(ud_channel_t* ud_c);
 void aether_ud_channel_init(struct hrd_ctrl_blk *cb, ud_channel_t *ud_c,
                             uint8_t qp_id, char* qp_name, enum channel_type type,
@@ -179,116 +174,31 @@ void aether_ud_channel_crd_init(struct hrd_ctrl_blk *cb, ud_channel_t *ud_c,
                                 //Toggles
                                 uint8_t enable_stats, uint8_t enable_prints);
 
-uint16_t aether_poll_buff_and_post_recvs(ud_channel_t* ud_channel, uint16_t max_pkts_to_poll,
-                                         uint8_t* recv_ops, struct hrd_ctrl_blk *cb);
-
 void aether_setup_incoming_buff_and_post_initial_recvs(ud_channel_t* ud_c, struct hrd_ctrl_blk *cb);
 
-
-typedef void (*modify_input_elem_after_send_t) (uint8_t*);
-typedef int  (*skip_input_elem_or_get_sender_id_t) (uint8_t*); //Should return -1 to skip otherwise returns the sender id
-typedef void (*copy_and_modify_input_elem_t) (uint8_t* msg_to_send, uint8_t* triggering_req);
-
-void aether_issue_credits(ud_channel_t *ud_c, struct hrd_ctrl_blk *cb, uint8_t *input_array_of_elems,
-                          uint16_t input_array_len, uint16_t size_of_input_elems,
-                          skip_input_elem_or_get_sender_id_t, modify_input_elem_after_send_t);
-
-uint8_t aether_issue_pkts(ud_channel_t *ud_c, struct hrd_ctrl_blk *cb,
-                          uint8_t *input_array_of_elems, uint16_t input_array_len,
-                          uint16_t size_of_input_elems, uint16_t* input_array_rolling_idx,
-                          // Func pointers
-                          skip_input_elem_or_get_sender_id_t, modify_input_elem_after_send_t, copy_and_modify_input_elem_t);
-
-static inline void
-aether_assert_binary(uint8_t var)
-{
-    assert(var == 0 || var == 1);
-}
-
-static inline void
-aether_assertions(ud_channel_t* ud_channel)
-{
-    aether_assert_binary(ud_channel->is_bcast_channel);
-    aether_assert_binary(ud_channel->expl_crd_ctrl);
-    aether_assert_binary(ud_channel->is_inlining_enabled);
-    assert(ud_channel->channel_providing_crds != NULL);
-
-    assert(ud_channel->max_msg_size > 0);
-    assert(ud_channel->max_coalescing > 0);
-    assert(ud_channel->num_channels > 1);
-    assert(ud_channel->send_q_depth > 0 || ud_channel->recv_q_depth > 0);
-}
-
-
+/// Main functions
 static inline uint16_t
-aether_ud_recv_max_pkt_size(ud_channel_t *ud_c)
-{
-    //TODO add assertion that this must be smaller than max_MTU
-    assert(ud_c->max_msg_size > 0 && ud_c->max_coalescing > 0);
-    return sizeof(aether_ud_recv_pkt_t) + ud_c->max_msg_size * ud_c->max_coalescing;
-}
+aether_poll_buff_and_post_recvs(ud_channel_t* ud_channel, uint16_t max_pkts_to_poll,
+                                uint8_t* recv_buff_space, struct hrd_ctrl_blk *cb);
 
-static inline uint16_t
-aether_ud_send_max_pkt_size(ud_channel_t *ud_c)
-{
-    //TODO add assertion that this must be smaller than max_MTU
-    assert(ud_c->max_msg_size > 0 && ud_c->max_coalescing > 0);
-    return sizeof(aether_ud_send_pkt_t) + ud_c->max_msg_size * ud_c->max_coalescing;
-}
-
-static inline uint8_t*
-aether_get_n_msg_ptr_from_send_pkt(ud_channel_t *ud_c, aether_ud_send_pkt_t *pkt, uint8_t n)
-{
-    assert(ud_c->max_coalescing > n && pkt->req_num >= n);
-    return &pkt->reqs[n * ud_c->max_msg_size];
-}
-
-static inline uint8_t*
-aether_get_n_msg_ptr_from_recv_pkt(ud_channel_t *ud_c, aether_ud_recv_pkt_t* recv_pkt, uint8_t n)
-{
-    return aether_get_n_msg_ptr_from_send_pkt(ud_c, &recv_pkt->pkt, n);
-}
-
-static inline aether_ud_send_pkt_t*
-aether_get_nth_pkt_ptr_from_send_buff(ud_channel_t *ud_c, uint16_t n)
-{
-    return (aether_ud_send_pkt_t *) &((uint8_t*)ud_c->send_pkt_buff)[n * aether_ud_send_max_pkt_size(ud_c)];
-}
-
-static inline aether_ud_recv_pkt_t*
-aether_get_nth_pkt_ptr_from_recv_buff(ud_channel_t *ud_c, uint16_t n)
-{
-    return (aether_ud_recv_pkt_t *) &ud_c->recv_pkt_buff[n * aether_ud_recv_max_pkt_size(ud_c)];
-}
-
-static inline aether_ud_send_pkt_t*
-aether_curr_send_pkt_ptr(ud_channel_t *ud_c)
-{
-    return aether_get_nth_pkt_ptr_from_send_buff(ud_c, (uint16_t) ud_c->send_push_ptr);
-}
+static inline uint8_t
+aether_issue_pkts(ud_channel_t *ud_c, struct hrd_ctrl_blk *cb,
+                  uint8_t *input_array_of_elems, uint16_t input_array_len,
+                  uint16_t size_of_input_elems, uint16_t* input_array_rolling_idx,
+                  skip_input_elem_or_get_sender_id_t skip_or_get_sender_id_func_ptr,
+                  modify_input_elem_after_send_t modify_elem_after_send,
+                  copy_and_modify_input_elem_t copy_and_modify_elem);
 
 static inline void
-aether_inc_send_push_ptr(ud_channel_t *ud_c)
-{
-    if(ud_c->is_bcast_channel)
-        AETHER_MOD_ADD(ud_c->send_push_ptr, ud_c->send_pkt_buff_len); //TODO change this to deal with failures see comment below
-//      AETHER_MOD_ADD(*inv_push_ptr, INV_SEND_OPS_SIZE / REMOTE_MACHINES *
-//                               last_g_membership.num_of_alive_remotes); //got to the next "packet" + dealing with failutes
-    else
-        AETHER_MOD_ADD(ud_c->send_push_ptr, ud_c->send_pkt_buff_len);
-    aether_curr_send_pkt_ptr(ud_c)->req_num = 0; //Reset data left from previous unicasts / bcasts
-}
+aether_issue_credits(ud_channel_t *ud_c, struct hrd_ctrl_blk *cb, uint8_t *input_array_of_elems,
+					 uint16_t input_array_len, uint16_t size_of_input_elems,
+					 skip_input_elem_or_get_sender_id_t skip_or_get_sender_id_func_ptr,
+					 modify_input_elem_after_send_t modify_elem_after_send);
 
-static inline void
-aether_inc_recv_push_ptr(ud_channel_t *ud_c)
-{
-    AETHER_MOD_ADD(ud_c->recv_push_ptr, ud_c->recv_q_depth);
-}
+/// WARNING!!
+/// 	Accessible functions not defined above and starting with underscore
+///		(i.e. "_aether_*") are internal and should not be called directly by the application
 
-static inline void
-aether_inc_recv_pull_ptr(ud_channel_t *ud_c)
-{
-    AETHER_MOD_ADD(ud_c->recv_pull_ptr, ud_c->recv_pkt_buff_len);
-}
+#include "aether_inlines.h"
 
-#endif //AETHER_UD_WRAPPER_H
+#endif //AETHER_API_H

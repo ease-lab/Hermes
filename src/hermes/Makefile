@@ -11,7 +11,7 @@ all: ${APPS} clean-o
 hermes: ../libhrd/hrd_conn.o ../libhrd/hrd_util.o ../mica/mica.o ../mica/city.o main.o worker.o util.o stats.o spacetime.o
 	${LD} -o $@ $^ ${LDFLAGS}
 
-hermes-aether: ../libhrd/hrd_conn.o ../libhrd/hrd_util.o ../mica/mica.o ../mica/city.o main.o aether_worker.o util.o stats.o spacetime.o ../aether/ud-wrapper.o
+hermes-aether: ../libhrd/hrd_conn.o ../libhrd/hrd_util.o ../mica/mica.o ../mica/city.o main.o aether_worker.o util.o stats.o spacetime.o ../aether/aether.o
 	${LD} -o $@ $^ ${LDFLAGS}
 	
 PHONY: clean

@@ -6,7 +6,7 @@
 
 ///
 #include "time_rdtsc.h"
-#include "../aether/ud-wrapper.h"
+#include "../../include/aether/aether.h"
 ///
 
 int
@@ -161,7 +161,6 @@ assertions(ud_channel_t *inv_ud_c, ud_channel_t *ack_ud_c)
 	assert(inv_ud_c->send_q_depth == SEND_INV_Q_DEPTH);
 	assert(inv_ud_c->recv_q_depth == RECV_INV_Q_DEPTH);
 	assert(inv_ud_c->send_pkt_buff_len == INV_SEND_OPS_SIZE);
-	assert(inv_ud_c->recv_pkt_buff_len == INV_RECV_OPS_SIZE);
 	assert(inv_ud_c->max_coalescing == INV_MAX_REQ_COALESCE);
 	assert(inv_ud_c->ss_granularity == INV_SS_GRANULARITY);
 	assert(inv_ud_c->max_pcie_bcast_batch == MAX_PCIE_BCAST_BATCH);
@@ -171,10 +170,21 @@ assertions(ud_channel_t *inv_ud_c, ud_channel_t *ack_ud_c)
 	assert(ack_ud_c->send_q_depth == SEND_ACK_Q_DEPTH);
 	assert(ack_ud_c->recv_q_depth == RECV_ACK_Q_DEPTH);
 	assert(ack_ud_c->send_pkt_buff_len == ACK_SEND_OPS_SIZE);
-	assert(ack_ud_c->recv_pkt_buff_len == ACK_RECV_OPS_SIZE);
 	assert(ack_ud_c->max_coalescing == ACK_MAX_REQ_COALESCE);
 	assert(ack_ud_c->ss_granularity == ACK_SS_GRANULARITY);
 
+}
+
+void
+print_total_send_recv_msgs(ud_channel_t *inv_ud_c, ud_channel_t *ack_ud_c,
+						   ud_channel_t *val_ud_c, ud_channel_t *crd_ud_c)
+{
+	green_printf ("Total Send: invs %d, acks %d, vals %d, crds %d\n",
+				  inv_ud_c->stats.send_total_msgs, ack_ud_c->stats.send_total_msgs,
+				  val_ud_c->stats.send_total_msgs, crd_ud_c->stats.send_total_msgs);
+	green_printf ("Total Recv: invs %d, acks %d, vals %d, crds %d\n",
+				  inv_ud_c->stats.recv_total_msgs, ack_ud_c->stats.recv_total_msgs,
+				  val_ud_c->stats.recv_total_msgs, crd_ud_c->stats.recv_total_msgs);
 }
 
 void*
@@ -184,27 +194,35 @@ run_worker(void *arg)
 	uint16_t worker_lid = (uint16_t) params.id;	/* Local ID of this worker thread*/
 	uint16_t worker_gid = (uint16_t) (machine_id * WORKERS_PER_MACHINE + params.id);	/* Global ID of this worker thread*/
 
+	uint32_t inv_rcv_req_size = sizeof(aether_ud_recv_pkt_t) + sizeof(spacetime_inv_t) * INV_MAX_REQ_COALESCE;
+	uint32_t ack_rcv_req_size = sizeof(aether_ud_recv_pkt_t) + sizeof(spacetime_ack_t) * ACK_MAX_REQ_COALESCE;
+	uint32_t val_rcv_req_size = sizeof(aether_ud_recv_pkt_t) + sizeof(spacetime_val_t) * VAL_MAX_REQ_COALESCE;
+	uint32_t dgram_buff_size  = ((inv_rcv_req_size * RECV_INV_Q_DEPTH) + (ack_rcv_req_size * RECV_ACK_Q_DEPTH) +
+								 (val_rcv_req_size * RECV_VAL_Q_DEPTH) + 64); // 64B for CREDITS which are header-only (inlined)
+
 	int *recv_q_depths, *send_q_depths;
 	setup_q_depths(&recv_q_depths, &send_q_depths);
+
 	struct hrd_ctrl_blk *cb = hrd_ctrl_blk_init(worker_gid,	/* local_hid */
 												0, -1, /* port_index, numa_node_id */
 												0, 0,	/* #conn qps, uc */
 												NULL, 0, -1,	/* prealloc conn buf, buf size, key */
-												TOTAL_WORKER_UD_QPs, DGRAM_BUFF_SIZE,	/* num_dgram_qps, dgram_buf_size */
+												TOTAL_WORKER_UD_QPs, dgram_buff_size,	/* num_dgram_qps, dgram_buf_size */
 												BASE_SHM_KEY + worker_lid, /* key */
 												recv_q_depths, send_q_depths); /* Depth of the dgram RECV, SEND Q*/
 
 	/* -----------------------------------------------------
 	--------------DECLARATIONS------------------------------
 	---------------------------------------------------------*/
+
 	///Buffs where reqs arrive
 	ud_req_inv_t *incoming_invs = (ud_req_inv_t *) cb->dgram_buf;
-	ud_req_ack_t *incoming_acks = (ud_req_ack_t *) &cb->dgram_buf[INV_RECV_REQ_SIZE * RECV_INV_Q_DEPTH];
-	ud_req_val_t *incoming_vals = (ud_req_val_t *) &cb->dgram_buf[INV_RECV_REQ_SIZE * RECV_INV_Q_DEPTH +
-																  ACK_RECV_REQ_SIZE * RECV_ACK_Q_DEPTH];
-	uint8_t      *incoming_crds = (uint8_t*) 	   &cb->dgram_buf[INV_RECV_REQ_SIZE * RECV_INV_Q_DEPTH +
-            		                                              ACK_RECV_REQ_SIZE * RECV_ACK_Q_DEPTH +
-                      			                                  VAL_RECV_REQ_SIZE * RECV_VAL_Q_DEPTH];
+	ud_req_ack_t *incoming_acks = (ud_req_ack_t *) &cb->dgram_buf[inv_rcv_req_size * RECV_INV_Q_DEPTH];
+	ud_req_val_t *incoming_vals = (ud_req_val_t *) &cb->dgram_buf[inv_rcv_req_size * RECV_INV_Q_DEPTH +
+																  ack_rcv_req_size * RECV_ACK_Q_DEPTH];
+	uint8_t      *incoming_crds = (uint8_t*) 	   &cb->dgram_buf[inv_rcv_req_size * RECV_INV_Q_DEPTH +
+            		                                              ack_rcv_req_size * RECV_ACK_Q_DEPTH +
+                      			                                  val_rcv_req_size * RECV_VAL_Q_DEPTH];
 
 	//Intermediate buffs where reqs are copied from incoming_* buffs in order to get passed to the KVS
 	spacetime_op_t  *ops;
@@ -223,7 +241,6 @@ run_worker(void *arg)
 
 
 ////// <AETHER Init>
-
     qp_info_t inv_remote_qps[MACHINE_NUM], ack_remote_qps[MACHINE_NUM],
 			  val_remote_qps[MACHINE_NUM], crd_remote_qps[MACHINE_NUM];
 
@@ -260,13 +277,7 @@ run_worker(void *arg)
 	aether_setup_incoming_buff_and_post_initial_recvs(&val_ud_c, cb);
 	aether_setup_incoming_buff_and_post_initial_recvs(&crd_ud_c, cb);
 
-	assert(inv_ud_c.send_q_depth == SEND_INV_Q_DEPTH);
-	assert(inv_ud_c.recv_pkt_buff_len == INV_RECV_OPS_SIZE);
-	assert(ack_ud_c.recv_pkt_buff_len == ACK_RECV_OPS_SIZE);
 	sleep(1); /// Give some leeway to post receives, before start bcasting! (see above warning)
-
-	print_ud_c_overview(&inv_ud_c);
-	print_ud_c_overview(&ack_ud_c);
 ////// </AETHER init>
 
 
@@ -295,20 +306,11 @@ run_worker(void *arg)
 
 	    if(unlikely(w_stats[worker_lid].total_loops % M_16 == 0)){
 	        //Check something periodically
-	        uint8_t remote_node = (uint8_t) (machine_id == 0 ? 1 : 0);
+//			print_total_send_recv_msgs(&inv_ud_c, &ack_ud_c, &val_ud_c, &crd_ud_c);
+//	        uint8_t remote_node = (uint8_t) (machine_id == 0 ? 1 : 0);
 //	        printf("Inv credits: %d, ack credits: %d\n",
 //	        		inv_ud_c.credits_per_rem_channels[remote_node],
 //	        		ack_ud_c.credits_per_rem_channels[remote_node]);
-//			green_printf ("Total Send: invs %d, acks %d, vals %d, crds %d\n",
-//						  inv_ud_c.stats.send_total_msgs,
-//						  ack_ud_c.stats.send_total_msgs,
-//						  val_ud_c.stats.send_total_msgs,
-//						  crd_ud_c.stats.send_total_msgs);
-//			green_printf ("Total Recv: invs %d, acks %d, vals %d, crds %d\n",
-//						  inv_ud_c.stats.recv_total_msgs,
-//						  ack_ud_c.stats.recv_total_msgs,
-//						  val_ud_c.stats.recv_total_msgs,
-//						  crd_ud_c.stats.recv_total_msgs);
 //	        for(int i = 0; i < MAX_BATCH_OPS_SIZE; ++i)
 //				printf("ops[%d]: state-> %s\n", i, code_to_str(ops[i].op_meta.state));
 	    }
