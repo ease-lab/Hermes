@@ -110,7 +110,7 @@ _aether_inc_recv_pull_ptr(ud_channel_t *ud_c)
 ----------------------------------- RECVs ------------------------------------
 ---------------------------------------------------------------------------*/
 static inline void
-_aether_post_crd_recvs(struct hrd_ctrl_blk *cb, ud_channel_t *ud_c, uint16_t num_recvs)
+_aether_post_crd_recvs(ud_channel_t *ud_c, uint16_t num_recvs)
 {
     if(AETHER_ENABLE_ASSERTIONS)
 		assert(ud_c->type == CRD);
@@ -119,12 +119,12 @@ _aether_post_crd_recvs(struct hrd_ctrl_blk *cb, ud_channel_t *ud_c, uint16_t num
 	for (uint16_t i = 0; i < num_recvs; ++i)
 		ud_c->recv_wr[i].next = (i == num_recvs - 1) ? NULL : &ud_c->recv_wr[i + 1];
 
-	int ret = ibv_post_recv(cb->dgram_qp[ud_c->qp_id], ud_c->recv_wr, &bad_recv_wr);
+	int ret = ibv_post_recv(ud_c->qp, ud_c->recv_wr, &bad_recv_wr);
 	CPE(ret, "ibv_post_recv error: posting recvs for credits", ret);
 }
 
 static inline void
-_aether_post_recvs(struct hrd_ctrl_blk *cb, ud_channel_t *ud_c, uint16_t num_of_receives)
+_aether_post_recvs(ud_channel_t *ud_c, uint16_t num_of_receives)
 {
 	void* next_buff_addr;
 
@@ -140,7 +140,8 @@ _aether_post_recvs(struct hrd_ctrl_blk *cb, ud_channel_t *ud_c, uint16_t num_of_
 		if(AETHER_ENABLE_BATCH_POST_RECVS_TO_NIC)
 			ud_c->recv_wr[i].sg_list->addr = (uintptr_t) next_buff_addr;
 		else
-			hrd_post_dgram_recv(cb->dgram_qp[ud_c->qp_id], next_buff_addr, req_size, cb->dgram_buf_mr->lkey);
+		    assert(0);
+//			hrd_post_dgram_recv(ud_c->qp, next_buff_addr, req_size, cb->dgram_buf_mr->lkey);
 
 		_aether_inc_recv_push_ptr(ud_c);
 	}
@@ -151,14 +152,15 @@ _aether_post_recvs(struct hrd_ctrl_blk *cb, ud_channel_t *ud_c, uint16_t num_of_
 			for (int i = 0; i < num_of_receives; i++) {
 				assert(ud_c->recv_wr[i].num_sge == 1);
 				assert(ud_c->recv_wr[i].sg_list->length == req_size);
-				assert(ud_c->recv_wr[i].sg_list->lkey == cb->dgram_buf_mr->lkey);
+				//TODO add
+//				assert(ud_c->recv_wr[i].sg_list->lkey == cb->dgram_buf_mr->lkey);
 				assert(i == num_of_receives - 1 || ud_c->recv_wr[i].next == &ud_c->recv_wr[i + 1]);
 			}
 			assert(ud_c->recv_wr[num_of_receives - 1].next == NULL);
 		}
 
 		struct ibv_recv_wr *bad_recv_wr;
-		int ret = ibv_post_recv(cb->dgram_qp[ud_c->qp_id], ud_c->recv_wr, &bad_recv_wr);
+		int ret = ibv_post_recv(ud_c->qp, ud_c->recv_wr, &bad_recv_wr);
 		CPE(ret, "ibv_post_recv error: while posting recvs", ret);
 
 		//recover next ptr of last wr to NULL
@@ -168,7 +170,7 @@ _aether_post_recvs(struct hrd_ctrl_blk *cb, ud_channel_t *ud_c, uint16_t num_of_
 }
 
 static inline void
-_aether_poll_crds_and_post_recvs(ud_channel_t *ud_c, struct hrd_ctrl_blk *cb)
+_aether_poll_crds_and_post_recvs(ud_channel_t *ud_c)
 {
 	if(AETHER_ENABLE_ASSERTIONS)
 		assert(ud_c->type == CRD);
@@ -210,7 +212,7 @@ _aether_poll_crds_and_post_recvs(ud_channel_t *ud_c, struct hrd_ctrl_blk *cb)
 		if (AETHER_ENABLE_POST_RECV_PRINTS && ud_c->enable_prints)
 			yellow_printf("vvv Post Receives: %s %d\n", ud_c->qp_name, crd_pkts_found);
 
-		_aether_post_crd_recvs(cb, ud_c, (uint16_t) crd_pkts_found);
+		_aether_post_crd_recvs(ud_c, (uint16_t) crd_pkts_found);
 
 	} else if(unlikely(crd_pkts_found < 0)) {
 		printf("ERROR In the credit CQ\n");
@@ -220,7 +222,7 @@ _aether_poll_crds_and_post_recvs(ud_channel_t *ud_c, struct hrd_ctrl_blk *cb)
 
 static inline uint16_t
 aether_poll_buff_and_post_recvs(ud_channel_t* ud_channel, uint16_t max_pkts_to_poll,
-								uint8_t* recv_ops, struct hrd_ctrl_blk *cb)
+								uint8_t* recv_ops)
 {
 	int index = 0;
     uint8_t sender = 0;
@@ -270,7 +272,7 @@ aether_poll_buff_and_post_recvs(ud_channel_t* ud_channel, uint16_t max_pkts_to_p
 
 	if(pkts_polled > 0){
 		//Refill recvs
-		_aether_post_recvs(cb, ud_channel, pkts_polled);
+		_aether_post_recvs(ud_channel, pkts_polled);
 
 
 		if(AETHER_ENABLE_STAT_COUNTING){
@@ -317,13 +319,13 @@ _aether_has_sufficient_crds_no_polling(ud_channel_t *ud_c, uint8_t endpoint_id)
 }
 
 static inline uint8_t
-_aether_has_sufficient_crds(ud_channel_t *ud_c, struct hrd_ctrl_blk *cb, uint8_t endpoint_id)
+_aether_has_sufficient_crds(ud_channel_t *ud_c, uint8_t endpoint_id)
 {
     if(_aether_has_sufficient_crds_no_polling(ud_c, endpoint_id))
         return 1;
 
     if(ud_c->expl_crd_ctrl) {
-		_aether_poll_crds_and_post_recvs(ud_c->channel_providing_crds, cb);
+		_aether_poll_crds_and_post_recvs(ud_c->channel_providing_crds);
 
         if(_aether_has_sufficient_crds_no_polling(ud_c, endpoint_id))
             return 1;
@@ -365,7 +367,7 @@ _aether_dec_crds(ud_channel_t *ud_c, uint8_t endpoint_id)
 ----------------------------------- SENDs ------------------------------------
 ---------------------------------------------------------------------------*/
 static inline void
-_aether_forge_crd_wr(ud_channel_t *ud_c, struct hrd_ctrl_blk *cb, uint16_t dst_qp_id,
+_aether_forge_crd_wr(ud_channel_t *ud_c, uint16_t dst_qp_id,
 					 uint16_t crd_pkts_to_send, uint16_t crd_to_send)
 {
 
@@ -390,7 +392,7 @@ _aether_forge_crd_wr(ud_channel_t *ud_c, struct hrd_ctrl_blk *cb, uint16_t dst_q
 		//if not the first SS --> poll the previous SS completion
 		if(ud_c->total_pkts_send > 0){
 			struct ibv_wc signal_send_wc;
-			hrd_poll_cq(cb->dgram_send_cq[ud_c->qp_id], 1, &signal_send_wc);
+			hrd_poll_cq(ud_c->send_cq, 1, &signal_send_wc);
 
 			if(ud_c->enable_stats)
 				ud_c->stats.ss_completions++;
@@ -410,7 +412,7 @@ _aether_forge_crd_wr(ud_channel_t *ud_c, struct hrd_ctrl_blk *cb, uint16_t dst_q
 static inline void
 _aether_forge_wr(ud_channel_t *ud_c, uint8_t dst_qp_id, uint8_t *req_to_copy,
 				 uint16_t pkts_in_batch, uint16_t *msgs_in_batch,
-				 struct hrd_ctrl_blk *cb, copy_and_modify_input_elem_t copy_and_modify_elem)
+				 copy_and_modify_input_elem_t copy_and_modify_elem)
 // dst_qp_id is ignored if its a bcast channel
 {
 	struct ibv_wc signal_send_wc;
@@ -454,7 +456,7 @@ _aether_forge_wr(ud_channel_t *ud_c, uint8_t dst_qp_id, uint8_t *req_to_copy,
 
 			//if not the first SS --> poll the previous SS completion
 			if(ud_c->total_pkts_send > 0){
-				hrd_poll_cq(cb->dgram_send_cq[ud_c->qp_id], 1, &signal_send_wc);
+				hrd_poll_cq(ud_c->send_cq, 1, &signal_send_wc);
 
 				if(ud_c->enable_stats)
 					ud_c->stats.ss_completions++;
@@ -475,8 +477,7 @@ _aether_forge_wr(ud_channel_t *ud_c, uint8_t dst_qp_id, uint8_t *req_to_copy,
 }
 
 static inline void
-_aether_batch_pkts_2_NIC(ud_channel_t *ud_c, struct hrd_ctrl_blk *cb,
-						 uint16_t pkts_in_batch, uint16_t msgs_in_batch)
+_aether_batch_pkts_2_NIC(ud_channel_t *ud_c, uint16_t pkts_in_batch, uint16_t msgs_in_batch)
 {
 	int ret;
 	struct ibv_send_wr *bad_send_wr;
@@ -525,12 +526,12 @@ _aether_batch_pkts_2_NIC(ud_channel_t *ud_c, struct hrd_ctrl_blk *cb,
 					pkts_in_batch, ud_c->qp_name, msgs_in_batch,
 					ud_c->stats.send_total_pkts, ud_c->stats.send_total_msgs);
 
-	ret = ibv_post_send(cb->dgram_qp[ud_c->qp_id], ud_c->send_wr, &bad_send_wr);
+	ret = ibv_post_send(ud_c->qp, ud_c->send_wr, &bad_send_wr);
 	CPE(ret, "ibv_post_send error while sending msgs to the NIC", ret);
 }
 
 static inline void
-_aether_check_if_batch_n_inc_pkt_ptr(ud_channel_t *ud_channel, struct hrd_ctrl_blk *cb,
+_aether_check_if_batch_n_inc_pkt_ptr(ud_channel_t *ud_channel,
 									 uint16_t *pkts_in_batch_ptr, uint16_t *msgs_in_batch_ptr)
 {
 
@@ -541,7 +542,7 @@ _aether_check_if_batch_n_inc_pkt_ptr(ud_channel_t *ud_channel, struct hrd_ctrl_b
 							 								ud_channel->max_send_wrs;
 
 	if (send_pkts == max_pkt_batch) {
-		_aether_batch_pkts_2_NIC(ud_channel, cb, send_pkts, total_msgs_in_batch);
+		_aether_batch_pkts_2_NIC(ud_channel, send_pkts, total_msgs_in_batch);
 		*pkts_in_batch_ptr = 0;
 		*msgs_in_batch_ptr = 0;
 	}
@@ -550,7 +551,7 @@ _aether_check_if_batch_n_inc_pkt_ptr(ud_channel_t *ud_channel, struct hrd_ctrl_b
 }
 
 static inline uint8_t
-aether_issue_pkts(ud_channel_t *ud_c, struct hrd_ctrl_blk *cb,
+aether_issue_pkts(ud_channel_t *ud_c,
 				  uint8_t *input_array_of_elems, uint16_t input_array_len,
 				  uint16_t size_of_input_elems, uint16_t* input_array_rolling_idx,
 				  skip_input_elem_or_get_sender_id_t skip_or_get_sender_id_func_ptr,
@@ -579,7 +580,7 @@ aether_issue_pkts(ud_channel_t *ud_c, struct hrd_ctrl_blk *cb,
 		curr_msg_dst = (uint8_t) skip_or_sender_id;
 
 		// Break if we do not have sufficient credits
-		if (!_aether_has_sufficient_crds(ud_c, cb, curr_msg_dst)) {
+		if (!_aether_has_sufficient_crds(ud_c, curr_msg_dst)) {
 			has_outstanding_msgs = 1;
 
 			if(input_array_rolling_idx != NULL)
@@ -592,19 +593,19 @@ aether_issue_pkts(ud_channel_t *ud_c, struct hrd_ctrl_blk *cb,
 		if(!ud_c->is_bcast_channel)
 			// Send unicasts because if we might cannot coalesce pkts, due to different endpoints
 			if(_aether_curr_send_pkt_ptr(ud_c)->req_num > 0 && curr_msg_dst != last_msg_dst)
-				_aether_check_if_batch_n_inc_pkt_ptr(ud_c, cb, &pkts_in_batch, &msgs_in_batch);
+				_aether_check_if_batch_n_inc_pkt_ptr(ud_c, &pkts_in_batch, &msgs_in_batch);
 
 		last_msg_dst = curr_msg_dst;
 
 		// Create the messages
 		_aether_forge_wr(ud_c, curr_msg_dst, curr_elem, pkts_in_batch,
-						 &msgs_in_batch, cb, copy_and_modify_elem);
+						 &msgs_in_batch, copy_and_modify_elem);
 
 		modify_elem_after_send(curr_elem); // E.g. Change the state of the element which triggered a send
 
 		// Check if we should send a batch since we might have reached the max batch size
 		if(_aether_curr_send_pkt_ptr(ud_c)->req_num == ud_c->max_coalescing)
-			_aether_check_if_batch_n_inc_pkt_ptr(ud_c, cb, &pkts_in_batch, &msgs_in_batch);
+			_aether_check_if_batch_n_inc_pkt_ptr(ud_c, &pkts_in_batch, &msgs_in_batch);
 	}
 
 	// Even if the last pkt is not full do the appropriate actions and incl to NIC batch
@@ -614,7 +615,7 @@ aether_issue_pkts(ud_channel_t *ud_c, struct hrd_ctrl_blk *cb,
 
 	// Force a batch to send the last set of requests (even < max batch size)
 	if (pkts_in_batch > 0)
-		_aether_batch_pkts_2_NIC(ud_c, cb, pkts_in_batch, msgs_in_batch);
+		_aether_batch_pkts_2_NIC(ud_c, pkts_in_batch, msgs_in_batch);
 
 	// Move to next packet and reset data left from previous bcasts/unicasts
 	if(curr_pkt_ptr->req_num > 0 && curr_pkt_ptr->req_num < ud_c->max_coalescing)
@@ -625,7 +626,7 @@ aether_issue_pkts(ud_channel_t *ud_c, struct hrd_ctrl_blk *cb,
 }
 
 static inline void
-aether_issue_credits(ud_channel_t *ud_c, struct hrd_ctrl_blk *cb, uint8_t *input_array_of_elems,
+aether_issue_credits(ud_channel_t *ud_c, uint8_t *input_array_of_elems,
 					 uint16_t input_array_len, uint16_t size_of_input_elems,
 					 skip_input_elem_or_get_sender_id_t skip_or_get_sender_id_func_ptr,
 					 modify_input_elem_after_send_t modify_elem_after_send)
@@ -646,7 +647,7 @@ aether_issue_credits(ud_channel_t *ud_c, struct hrd_ctrl_blk *cb, uint8_t *input
 		uint8_t curr_msg_dst = (uint8_t) skip_or_sender_id;
 
 		// Check if we have sufficient credits --> (we should always have enough credits for CRDs)
-		if (!_aether_has_sufficient_crds(ud_c, cb, curr_msg_dst))
+		if (!_aether_has_sufficient_crds(ud_c, curr_msg_dst))
 			assert(0);
 		if(ud_c->no_crds_to_send_per_endpoint[curr_msg_dst] == 0 && ud_c->credits_per_rem_channels[curr_msg_dst] == 0)
 			assert(0);
@@ -663,12 +664,12 @@ aether_issue_credits(ud_channel_t *ud_c, struct hrd_ctrl_blk *cb, uint8_t *input
 		if(i == machine_id) continue;
 
 		if(ud_c->no_crds_to_send_per_endpoint[i] > 0) {
-			_aether_forge_crd_wr(ud_c, cb, i, send_crd_packets, ud_c->no_crds_to_send_per_endpoint[i]);
+			_aether_forge_crd_wr(ud_c, i, send_crd_packets, ud_c->no_crds_to_send_per_endpoint[i]);
 			send_crd_packets++;
 			total_credits_to_send += ud_c->no_crds_to_send_per_endpoint[i];
 
 			if (send_crd_packets == ud_c->max_send_wrs) {
-				_aether_batch_pkts_2_NIC(ud_c, cb, send_crd_packets, total_credits_to_send);
+				_aether_batch_pkts_2_NIC(ud_c, send_crd_packets, total_credits_to_send);
 				send_crd_packets = 0;
 				total_credits_to_send = 0;
 			}
@@ -676,7 +677,7 @@ aether_issue_credits(ud_channel_t *ud_c, struct hrd_ctrl_blk *cb, uint8_t *input
 	}
 
 	if (send_crd_packets > 0)
-		_aether_batch_pkts_2_NIC(ud_c, cb, send_crd_packets, total_credits_to_send);
+		_aether_batch_pkts_2_NIC(ud_c, send_crd_packets, total_credits_to_send);
 }
 
 #endif //HERMES_AETHER_INTERNAL_INLINES_H

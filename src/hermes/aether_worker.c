@@ -272,10 +272,10 @@ run_worker(void *arg)
 							   crd_remote_qps, incoming_crds, &val_ud_c, CRD_CREDITS, MACHINE_NUM, 1, 1);
 
 	///WARNING: we need to post initial receives early to avoid races between them and the sends of other nodes
-	aether_setup_incoming_buff_and_post_initial_recvs(&inv_ud_c, cb);
-	aether_setup_incoming_buff_and_post_initial_recvs(&ack_ud_c, cb);
-	aether_setup_incoming_buff_and_post_initial_recvs(&val_ud_c, cb);
-	aether_setup_incoming_buff_and_post_initial_recvs(&crd_ud_c, cb);
+	_aether_setup_incoming_buff_and_post_initial_recvs(&inv_ud_c);
+	_aether_setup_incoming_buff_and_post_initial_recvs(&ack_ud_c);
+	_aether_setup_incoming_buff_and_post_initial_recvs(&val_ud_c);
+	_aether_setup_incoming_buff_and_post_initial_recvs(&crd_ud_c);
 
 	sleep(1); /// Give some leeway to post receives, before start bcasting! (see above warning)
 ////// </AETHER init>
@@ -323,12 +323,12 @@ run_worker(void *arg)
 
 		if (WRITE_RATIO > 0) {
 			///~~~~~~~~~~~~~~~~~~~~~~INVS~~~~~~~~~~~~~~~~~~~~~~~~~~~
-			aether_issue_pkts(&inv_ud_c, cb, (uint8_t *) ops,
+			aether_issue_pkts(&inv_ud_c, (uint8_t *) ops,
 							  MAX_BATCH_OPS_SIZE, sizeof(spacetime_op_t), &rolling_inv_index,
 							  inv_skip_or_get_sender_id, inv_modify_elem_after_send, inv_copy_and_modify_elem);
 
 			///Poll for INVs
-			invs_polled = aether_poll_buff_and_post_recvs(&inv_ud_c, INV_RECV_OPS_SIZE, (uint8_t *) inv_recv_ops, cb);
+			invs_polled = aether_poll_buff_and_post_recvs(&inv_ud_c, INV_RECV_OPS_SIZE, (uint8_t *) inv_recv_ops);
 
 
 			if(invs_polled > 0) {
@@ -336,7 +336,7 @@ run_worker(void *arg)
 								  &node_suspected, num_of_iters_serving_op);
 
 				///~~~~~~~~~~~~~~~~~~~~~~ACKS~~~~~~~~~~~~~~~~~~~~~~~~~~~
-				aether_issue_pkts(&ack_ud_c, cb, (uint8_t *) inv_recv_ops,
+				aether_issue_pkts(&ack_ud_c, (uint8_t *) inv_recv_ops,
 								  invs_polled, sizeof(spacetime_inv_t), NULL,
 								  ack_skip_or_get_sender_id, ack_modify_elem_after_send, ack_copy_and_modify_elem);
 				invs_polled = 0;
@@ -346,7 +346,7 @@ run_worker(void *arg)
 
 			if(has_outstanding_vals == 0 && has_outstanding_vals_from_memb_change == 0) {
 				///Poll for Acks
-				acks_polled = aether_poll_buff_and_post_recvs(&ack_ud_c, ACK_RECV_OPS_SIZE, (uint8_t *) ack_recv_ops, cb);
+				acks_polled = aether_poll_buff_and_post_recvs(&ack_ud_c, ACK_RECV_OPS_SIZE, (uint8_t *) ack_recv_ops);
 
 				if (acks_polled > 0) {
 					batch_acks_to_KVS(acks_polled, &ack_recv_ops, ops, last_group_membership, worker_lid);
@@ -356,19 +356,19 @@ run_worker(void *arg)
 
 			if(!DISABLE_VALS_FOR_DEBUGGING) {
 				///~~~~~~~~~~~~~~~~~~~~~~ VALs ~~~~~~~~~~~~~~~~~~~~~~~~~~~
-				has_outstanding_vals = aether_issue_pkts(&val_ud_c, cb, (uint8_t *) ack_recv_ops,
+				has_outstanding_vals = aether_issue_pkts(&val_ud_c, (uint8_t *) ack_recv_ops,
 														 ack_ud_c.recv_pkt_buff_len, sizeof(spacetime_ack_t),
 														 NULL, val_skip_or_get_sender_id,
 														 val_modify_elem_after_send, val_copy_and_modify_elem);
 
 				///Poll for Vals
-				vals_polled = aether_poll_buff_and_post_recvs(&val_ud_c, VAL_RECV_OPS_SIZE, (uint8_t *) val_recv_ops, cb);
+				vals_polled = aether_poll_buff_and_post_recvs(&val_ud_c, VAL_RECV_OPS_SIZE, (uint8_t *) val_recv_ops);
 
 				if (vals_polled > 0) {
 					batch_vals_to_KVS(vals_polled, &val_recv_ops, ops, worker_lid);
 
 					///~~~~~~~~~~~~~~~~~~~~~~CREDITS~~~~~~~~~~~~~~~~~~~~~~~~~~~
-					aether_issue_credits(&crd_ud_c, cb, (uint8_t *) val_recv_ops, VAL_RECV_OPS_SIZE,
+					aether_issue_credits(&crd_ud_c, (uint8_t *) val_recv_ops, VAL_RECV_OPS_SIZE,
 										 sizeof(spacetime_val_t), crd_skip_or_get_sender_id, crd_modify_elem_after_send);
 					vals_polled = 0;
 				}

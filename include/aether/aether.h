@@ -78,6 +78,8 @@ enum channel_type {REQ, RESP, CRD};
 
 typedef struct _ud_channel_t
 {
+	struct ibv_qp * qp;
+
     enum channel_type type;
     uint8_t max_coalescing;
     uint8_t is_bcast_channel;
@@ -124,6 +126,7 @@ typedef struct _ud_channel_t
     struct ibv_sge*     send_sgl;
     struct ibv_sge*     recv_sgl; // Used only to batch post recvs to the NIC
 
+	struct ibv_cq* send_cq;
     struct ibv_cq* recv_cq;
     struct ibv_wc* recv_wc;        // (size of max_recv_wrs) Used on polling recv req cq (only for immediates)
 
@@ -174,15 +177,15 @@ void aether_ud_channel_crd_init(struct hrd_ctrl_blk *cb, ud_channel_t *ud_c,
                                 //Toggles
                                 uint8_t enable_stats, uint8_t enable_prints);
 
-void aether_setup_incoming_buff_and_post_initial_recvs(ud_channel_t* ud_c, struct hrd_ctrl_blk *cb);
+void _aether_setup_incoming_buff_and_post_initial_recvs(ud_channel_t *ud_c);
 
 /// Main functions
 static inline uint16_t
 aether_poll_buff_and_post_recvs(ud_channel_t* ud_channel, uint16_t max_pkts_to_poll,
-                                uint8_t* recv_buff_space, struct hrd_ctrl_blk *cb);
+                                uint8_t* recv_buff_space);
 
 static inline uint8_t
-aether_issue_pkts(ud_channel_t *ud_c, struct hrd_ctrl_blk *cb,
+aether_issue_pkts(ud_channel_t *ud_c,
                   uint8_t *input_array_of_elems, uint16_t input_array_len,
                   uint16_t size_of_input_elems, uint16_t* input_array_rolling_idx,
                   skip_input_elem_or_get_sender_id_t skip_or_get_sender_id_func_ptr,
@@ -190,7 +193,7 @@ aether_issue_pkts(ud_channel_t *ud_c, struct hrd_ctrl_blk *cb,
                   copy_and_modify_input_elem_t copy_and_modify_elem);
 
 static inline void
-aether_issue_credits(ud_channel_t *ud_c, struct hrd_ctrl_blk *cb, uint8_t *input_array_of_elems,
+aether_issue_credits(ud_channel_t *ud_c, uint8_t *input_array_of_elems,
 					 uint16_t input_array_len, uint16_t size_of_input_elems,
 					 skip_input_elem_or_get_sender_id_t skip_or_get_sender_id_func_ptr,
 					 modify_input_elem_after_send_t modify_elem_after_send);
