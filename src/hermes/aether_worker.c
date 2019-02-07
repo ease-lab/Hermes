@@ -154,7 +154,8 @@ crd_modify_elem_after_send(uint8_t* req)
 
 
 void
-assertions(ud_channel_t *inv_ud_c, ud_channel_t *ack_ud_c)
+channel_assertions(ud_channel_t *inv_ud_c, ud_channel_t *ack_ud_c,
+				   ud_channel_t *val_ud_c, ud_channel_t *crd_ud_c)
 {
 	assert(inv_ud_c->max_send_wrs == MAX_SEND_INV_WRS);
 	assert(inv_ud_c->max_recv_wrs == MAX_RECV_INV_WRS);
@@ -173,6 +174,20 @@ assertions(ud_channel_t *inv_ud_c, ud_channel_t *ack_ud_c)
 	assert(ack_ud_c->max_coalescing == ACK_MAX_REQ_COALESCE);
 	assert(ack_ud_c->ss_granularity == ACK_SS_GRANULARITY);
 
+	assert(val_ud_c->max_send_wrs == MAX_SEND_VAL_WRS);
+	assert(val_ud_c->max_recv_wrs == MAX_RECV_VAL_WRS);
+	assert(val_ud_c->send_q_depth == SEND_VAL_Q_DEPTH);
+	assert(val_ud_c->recv_q_depth == RECV_VAL_Q_DEPTH);
+	assert(val_ud_c->send_pkt_buff_len == VAL_SEND_OPS_SIZE);
+	assert(val_ud_c->max_coalescing == VAL_MAX_REQ_COALESCE);
+	assert(val_ud_c->ss_granularity == VAL_SS_GRANULARITY);
+	assert(val_ud_c->max_pcie_bcast_batch == MAX_PCIE_BCAST_BATCH);
+
+	assert(crd_ud_c->max_send_wrs == MAX_SEND_CRD_WRS);
+	assert(crd_ud_c->max_recv_wrs == MAX_RECV_CRD_WRS);
+	assert(crd_ud_c->send_q_depth == SEND_CRD_Q_DEPTH);
+	assert(crd_ud_c->recv_q_depth == RECV_CRD_Q_DEPTH);
+	assert(crd_ud_c->ss_granularity == CRD_SS_GRANULARITY);
 }
 
 void
@@ -187,12 +202,13 @@ print_total_send_recv_msgs(ud_channel_t *inv_ud_c, ud_channel_t *ack_ud_c,
 				  val_ud_c->stats.recv_total_msgs, crd_ud_c->stats.recv_total_msgs);
 }
 
+dbit_vector_t *barrier;
 void*
 run_worker(void *arg)
 {
 	struct thread_params params = *(struct thread_params *) arg;
-	uint16_t worker_lid = (uint16_t) params.id;	/* Local ID of this worker thread*/
-	uint16_t worker_gid = (uint16_t) (machine_id * WORKERS_PER_MACHINE + params.id);	/* Global ID of this worker thread*/
+	uint16_t worker_lid = (uint16_t) params.id;	// Local ID of this worker thread
+	uint16_t worker_gid = (uint16_t) (machine_id * WORKERS_PER_MACHINE + params.id);	// Global ID of this worker thread
 
 
 
@@ -209,23 +225,25 @@ run_worker(void *arg)
 	for(int i = 0; i < TOTAL_WORKER_UD_QPs; ++i)
 		ud_channel_ptrs[i] = &ud_channels[i];
 
-	aether_ud_channel_init(inv_ud_c, "\033[31mINV\033[0m", REQ, INV_MAX_REQ_COALESCE,
-						   sizeof(spacetime_inv_t), DISABLE_INV_INLINING == 0 ? 1 : 0,
-						   1, 0, ack_ud_c, INV_CREDITS, MACHINE_NUM, 1, 1);
-	aether_ud_channel_init(ack_ud_c, "\033[33mACK\033[0m", RESP, ACK_MAX_REQ_COALESCE,
-						   sizeof(spacetime_ack_t), DISABLE_ACK_INLINING == 0 ? 1 : 0,
-						   0, 0, inv_ud_c, ACK_CREDITS, MACHINE_NUM, 1, 1);
-	aether_ud_channel_init(val_ud_c, "\033[1m\033[32mVAL\033[0m", REQ, VAL_MAX_REQ_COALESCE,
-						   sizeof(spacetime_val_t), DISABLE_VAL_INLINING == 0 ? 1 : 0,
-						   1, 1, crd_ud_c, VAL_CREDITS, MACHINE_NUM, 1, 1);
-	aether_ud_channel_crd_init(crd_ud_c, "\033[1m\033[36mCRD\033[0m",
-							   val_ud_c, CRD_CREDITS, MACHINE_NUM, 1, 1);
+	if(worker_lid == 0)
+		dbv_init(&barrier, WORKERS_PER_MACHINE);
 
-	aether_allocate_and_init_all_qps(ud_channel_ptrs, TOTAL_WORKER_UD_QPs, worker_gid, worker_lid);
+	char inv_qp_name[200], ack_qp_name[200], val_qp_name[200];
+	sprintf(inv_qp_name, "%s%d", "\033[31mINV\033[0m", worker_lid);
+	sprintf(ack_qp_name, "%s%d", "\033[33mACK\033[0m", worker_lid);
+	sprintf(val_qp_name, "%s%d", "\033[1m\033[32mVAL\033[0m", worker_lid);
 
-	assertions(inv_ud_c, ack_ud_c);
+	aether_ud_channel_init(inv_ud_c, inv_qp_name, REQ, INV_MAX_REQ_COALESCE, sizeof(spacetime_inv_t),
+						   DISABLE_INV_INLINING == 0 ? 1 : 0, 1, 0, ack_ud_c, INV_CREDITS, MACHINE_NUM, 1, 1);
+	aether_ud_channel_init(ack_ud_c, ack_qp_name, RESP, ACK_MAX_REQ_COALESCE, sizeof(spacetime_ack_t),
+						   DISABLE_ACK_INLINING == 0 ? 1 : 0, 0, 0, inv_ud_c, ACK_CREDITS, MACHINE_NUM, 1, 1);
+	aether_ud_channel_init(val_ud_c, val_qp_name, REQ, VAL_MAX_REQ_COALESCE, sizeof(spacetime_val_t),
+						   DISABLE_VAL_INLINING == 0 ? 1 : 0, 1, 1, crd_ud_c, VAL_CREDITS, MACHINE_NUM, 1, 1);
 
-	sleep(1); /// Give some leeway to post receives, before start bcasting! (see above warning)
+	aether_setup_channel_qps_and_recvs(ud_channel_ptrs, TOTAL_WORKER_UD_QPs, barrier, worker_lid);
+
+	channel_assertions(inv_ud_c, ack_ud_c, val_ud_c, crd_ud_c);
+
 
 
 	/* -------------------------------------------------------
@@ -260,6 +278,9 @@ run_worker(void *arg)
 	uint32_t num_of_iters_serving_op[MAX_BATCH_OPS_SIZE] = {0};
 	uint8_t has_outstanding_vals = 0, has_outstanding_vals_from_memb_change = 0;
 
+	/// Spawn stats thread
+	if (worker_lid == 0)
+		if (spawn_stats_thread() != 0) red_printf("Stats thread was not successfully spawned \n");
 
 	/* -----------------------------------------------------
        ------------------------Main Loop--------------------
@@ -271,8 +292,8 @@ run_worker(void *arg)
 //			print_total_send_recv_msgs(&inv_ud_c, &ack_ud_c, &val_ud_c, &crd_ud_c);
 //	        uint8_t remote_node = (uint8_t) (machine_id == 0 ? 1 : 0);
 //	        printf("Inv credits: %d, ack credits: %d\n",
-//	        		inv_ud_c.credits_per_rem_channels[remote_node],
-//	        		ack_ud_c.credits_per_rem_channels[remote_node]);
+//	        		inv_ud_c.credits_per_channels[remote_node],
+//	        		ack_ud_c.credits_per_channels[remote_node]);
 //	        for(int i = 0; i < MAX_BATCH_OPS_SIZE; ++i)
 //				printf("ops[%d]: state-> %s\n", i, code_to_str(ops[i].op_meta.state));
 	    }

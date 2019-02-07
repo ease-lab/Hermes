@@ -5,6 +5,7 @@
 #ifndef AETHER_API_H
 #define AETHER_API_H
 #include <hrd.h>
+#include "bit_vector.h"
 
 /// WARNING!!
 /// 	Accessible functions not defined below (in aether_api.h but exist only in aether.h) and starting with underscore
@@ -89,7 +90,7 @@ typedef struct _ud_channel_t
     uint8_t is_bcast_channel;
     uint8_t expl_crd_ctrl;
     uint8_t is_inlining_enabled;
-    struct _ud_channel_t* channel_providing_crds; // this is NULL if explicit crd_ctrl is 1
+    struct _ud_channel_t* channel_providing_crds;
 
     char* qp_name;
     uint16_t qp_id; //id of qp in cb
@@ -97,7 +98,7 @@ typedef struct _ud_channel_t
 
     uint16_t num_channels; // e.g. remote nodes
     uint16_t num_crds_per_channel;
-    uint8_t* credits_per_rem_channels; // array size of num_channels denoting available space on remote sides
+    uint8_t* credits_per_channels; // array size of num_channels denoting available space on remote sides
     /// Credits refer to msgs irrespective if coalesed or not --> a remote buffer must be able to handle max_number_of_msgs * max_coalescing
 
 
@@ -160,7 +161,7 @@ typedef void (*copy_and_modify_input_elem_t) (uint8_t* msg_to_send, uint8_t* tri
 
 
 /// Init and Util functions
-void print_ud_c_overview(ud_channel_t* ud_c);
+void aether_print_ud_c_overview(ud_channel_t *ud_c);
 
 void aether_ud_channel_init(ud_channel_t *ud_c, char *qp_name, enum channel_type type,
 							uint8_t max_coalescing, uint16_t max_req_size,
@@ -171,15 +172,9 @@ void aether_ud_channel_init(ud_channel_t *ud_c, char *qp_name, enum channel_type
 							// Toggles
 							uint8_t stats_on, uint8_t prints_on);
 
-void aether_ud_channel_crd_init(ud_channel_t *ud_c, char *qp_name,
-							    // Credits
-								ud_channel_t *linked_channel, uint8_t crds_per_channel, uint16_t num_channels,
-								// Toggles
-								uint8_t enable_stats, uint8_t enable_prints);
 
-void aether_allocate_and_init_all_qps(ud_channel_t** ud_c_array, uint16_t ud_c_num,
-									  uint16_t worker_gid, uint16_t worker_lid);
-
+void aether_setup_channel_qps_and_recvs(ud_channel_t **ud_c_array, uint16_t ud_c_num,
+										dbit_vector_t* shared_rdy_var, uint16_t worker_lid);
 
 /// Main functions
 static inline uint16_t

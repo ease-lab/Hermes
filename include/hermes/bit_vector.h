@@ -218,19 +218,21 @@ static inline void
 dbv_init(dbit_vector_t** bv, uint8_t size)
 {
     uint16_t bv_size_in_bytes = bv_bits_to_bytes(size);
-    *bv = malloc(bv_size_in_bytes * sizeof(uint8_t));
+    *bv = malloc(sizeof(dbit_vector_t));
+    (*bv)->bit_array = malloc(bv_size_in_bytes * sizeof(uint8_t));
     (*bv)->bv_size = size;
-    bv_init_internal((*bv)->bit_array, (*bv)->bv_size);
+    bv_init_internal((*bv)->bit_array, size);
 }
 
 static inline void
 dbv_destroy(dbit_vector_t* bv)
 {
+    free(bv->bit_array);
     free(bv);
 }
 
 static inline uint8_t
-dbv_bit_get(dbit_vector_t bv, uint8_t bit)
+dbv_bit_get(dbit_vector_t bv, int bit)
 {
     return bv_bit_get_internal(bv.bit_array, bv.bv_size, bit);
 }
@@ -274,7 +276,14 @@ dbv_copy(dbit_vector_t *bv_dst, dbit_vector_t bv_src)
     bv_copy_internal(bv_dst->bit_array, bv_dst->bv_size, bv_src.bit_array, bv_src.bv_size);
 }
 
-
+static inline uint8_t
+dbv_is_all_set(dbit_vector_t bv)
+{
+    dbit_vector_t* bv_tmp;
+    dbv_init(&bv_tmp, bv.bv_size);
+    dbv_set_all(bv_tmp);
+    return dbv_are_equal(bv, *bv_tmp);
+}
 
 
 /// Bitvector bitwise ops
@@ -384,7 +393,7 @@ bv_init(bit_vector_t* bv)
 }
 
 static inline uint8_t
-bv_bit_get(bit_vector_t bv, uint8_t bit)
+bv_bit_get(bit_vector_t bv, int bit)
 {
     return bv_bit_get_internal(bv.bit_array, BV_BIT_VECTOR_SIZE, bit);
 }

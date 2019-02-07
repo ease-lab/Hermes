@@ -95,6 +95,7 @@ uint8_t is_input_code(uint8_t code);
 uint8_t is_response_code(uint8_t code);
 uint8_t is_bucket_state_code(uint8_t code);
 
+int spawn_stats_thread(void);
 char* code_to_str(uint8_t code);
 void init_stats(void);
 

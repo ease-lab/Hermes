@@ -27,19 +27,31 @@ void _aether_setup_recv_wr_and_sgl(ud_channel_t *ud_c, struct hrd_ctrl_blk *cb);
 void _aether_setup_crd_wr_and_sgl(ud_channel_t *ud_c, struct hrd_ctrl_blk *cb);
 void _aether_setup_incoming_buff_and_post_initial_recvs(ud_channel_t *ud_c);
 void _aether_ud_channel_init_recv(ud_channel_t *ud_c, struct hrd_ctrl_blk *cb, uint8_t qp_id,
-							 volatile uint8_t *incoming_reqs_ptr, qp_info_t *remote_qps);
+							 volatile uint8_t *incoming_reqs_ptr);
 
+
+void _aether_ud_channel_crd_init(ud_channel_t *ud_c, char *qp_name, ud_channel_t *linked_channel,
+								 uint8_t crds_per_channel, uint16_t num_channels,
+								 uint8_t enable_stats, uint8_t enable_prints);
+
+void _aether_print_on_off_toggle(uint16_t bin_flag, char *str);
+//void _aether_share_qp_info_via_memcached(int worker_gid, struct hrd_ctrl_blk *cb);
+
+
+
+void _aether_share_qp_info_via_memcached(ud_channel_t **ud_c_array, uint16_t ud_c_num,
+										 dbit_vector_t* shared_rdy_var, int worker_lid, struct hrd_ctrl_blk *cb);
 
 
 void
 aether_ud_channel_init(ud_channel_t *ud_c, char *qp_name, enum channel_type type,
 					   uint8_t max_coalescing, uint16_t max_req_size, uint8_t enable_inlining,
-		// broadcast
+					   // Broadcast
 					   uint8_t is_bcast,
-		// credits
+					   // Credits
 					   uint8_t expl_crd_ctrl, ud_channel_t *linked_channel,
 					   uint8_t crds_per_channel, uint16_t num_channels,
-		//Toggles
+					   // Toggles
 					   uint8_t stats_on, uint8_t prints_on)
 {
 	assert(type != CRD); // if CRD type then used the *_crd_init instead
@@ -78,9 +90,9 @@ aether_ud_channel_init(ud_channel_t *ud_c, char *qp_name, enum channel_type type
         ud_c->is_inlining_enabled = 0;
     }
 
-    ud_c->credits_per_rem_channels = malloc(sizeof(uint8_t) * (num_channels));
+    ud_c->credits_per_channels = malloc(sizeof(uint8_t) * (num_channels));
 	for(int i = 0; i < num_channels; ++i)
-		ud_c->credits_per_rem_channels[i] = (uint8_t) (type == REQ ? crds_per_channel : 0);
+		ud_c->credits_per_channels[i] = (uint8_t) (type == REQ ? crds_per_channel : 0);
 
 
 	ud_c->max_pcie_bcast_batch = (uint16_t) AETHER_MIN(AETHER_MIN_PCIE_BCAST_BATCH + 1, crds_per_channel);
@@ -121,12 +133,22 @@ aether_ud_channel_init(ud_channel_t *ud_c, char *qp_name, enum channel_type type
 	ud_c->stats.send_total_pkts = 0;
 	ud_c->stats.send_total_pcie_batches= 0;
 
+	// Initialize the crd channel as well
+	if(ud_c->expl_crd_ctrl){
+		char crd_qp_name[1000];
+		sprintf(crd_qp_name, "\033[1m\033[36mCRD\033[0m-%s", qp_name);
+//		sprintf(crd_qp_name, "CRD-%s", qp_name);
+		_aether_ud_channel_crd_init(linked_channel, crd_qp_name, ud_c, crds_per_channel,
+									num_channels, stats_on, prints_on);
+	}
+
+	ud_c->remote_qps = malloc(sizeof(qp_info_t) * ud_c->num_channels);
+
 	//The following are set by the *_init_recv function after the creation of control block and QPs
 	ud_c->qp = NULL;
 	ud_c->qp_id = 0;
 	ud_c->send_cq = NULL; //set by init_recv
 	ud_c->recv_cq = NULL; //set by init_recv
-	ud_c->remote_qps = NULL;
 	ud_c->recv_pkt_buff = NULL;
 	ud_c->send_mem_region = NULL; //set by init_recv
 //	_aether_setup_send_wr_and_sgl(ud_c);
@@ -135,89 +157,10 @@ aether_ud_channel_init(ud_channel_t *ud_c, char *qp_name, enum channel_type type
     assert(ud_c->max_pcie_bcast_batch <= crds_per_channel);
 }
 
-void
-aether_ud_channel_crd_init(ud_channel_t *ud_c, char *qp_name, ud_channel_t *linked_channel,
-						   uint8_t crds_per_channel, uint16_t num_channels,
-						   uint8_t enable_stats, uint8_t enable_prints)
-{
-	_aether_assert_binary(enable_stats);
-	_aether_assert_binary(enable_prints);
-
-
-    ud_c->type = CRD;
-	ud_c->qp_name = qp_name;
-	ud_c->num_channels = num_channels; //num_channels include our own channel
-	ud_c->expl_crd_ctrl = 1;
-    ud_c->is_bcast_channel = 0;
-	ud_c->max_pcie_bcast_batch = 0;
-	ud_c->num_crds_per_channel = crds_per_channel;
-    ud_c->channel_providing_crds = linked_channel;
-
-	ud_c->enable_stats = enable_stats;
-    ud_c->enable_prints = enable_prints;
-
-
-    ud_c->no_crds_to_send_per_endpoint = malloc(sizeof(uint16_t) * num_channels);
-
-	static_assert(sizeof(aether_crd_t) <= 4, ""); // Credits are always send as immediate <=4B
-	ud_c->max_msg_size = 0; //non immediate size
-	ud_c->max_coalescing = 1;
-
-
-	uint16_t remote_channels = (uint16_t) (num_channels - 1);
-	ud_c->is_inlining_enabled = 1;
-
-    ud_c->credits_per_rem_channels = malloc(sizeof(uint8_t) * (num_channels));
-	for(int i = 0; i < num_channels; ++i)
-		ud_c->credits_per_rem_channels[i] = 0;
-
-
-	ud_c->max_recv_wrs = crds_per_channel * remote_channels;
-    ud_c->max_send_wrs = crds_per_channel * remote_channels; //TODO correct this
-
-   	ud_c->ss_granularity = ud_c->max_send_wrs;
-
-	ud_c->recv_q_depth = ud_c->max_recv_wrs;
-   	ud_c->send_q_depth = (uint16_t) (2 * ud_c->ss_granularity);
-
-	ud_c->recv_wc = malloc(sizeof(struct ibv_wc) * ud_c->max_recv_wrs);
-
-
-	ud_c->recv_pkt_buff_len = ud_c->max_recv_wrs * ud_c->max_coalescing;
-	ud_c->send_pkt_buff_len = ud_c->max_send_wrs ;
-
-    ud_c->send_pkt_buff = NULL; //malloc(_aether_ud_send_max_pkt_size(ud_c) * ud_c->send_pkt_buff_len);
-
-	ud_c->send_mem_region = NULL;
-
-
-    ud_c->send_push_ptr = 0;
-    ud_c->recv_push_ptr = 0;
-    ud_c->recv_pull_ptr = -1;
-
-	ud_c->total_pkts_send = 0;
-
-	ud_c->stats.ss_completions = 0;
-    ud_c->stats.recv_total_pkts = 0;
-	ud_c->stats.recv_total_msgs = 0;
-	ud_c->stats.send_total_msgs = 0;
-	ud_c->stats.send_total_pkts = 0;
-	ud_c->stats.send_total_pcie_batches= 0;
-
-	//The following are set by the *_init_recv function after the creation of control block and QPs
-	ud_c->qp = NULL;
-	ud_c->qp_id = 0;
-	ud_c->send_cq = NULL;
-	ud_c->recv_cq = NULL;
-	ud_c->remote_qps = NULL;
-	ud_c->recv_pkt_buff = NULL;
-//	_aether_setup_crd_wr_and_sgl(ud_c, cb);
-}
-
 
 void
-aether_allocate_and_init_all_qps(ud_channel_t** ud_c_array, uint16_t ud_c_num,
-								 uint16_t worker_gid, uint16_t worker_lid)
+aether_setup_channel_qps_and_recvs(ud_channel_t **ud_c_array, uint16_t ud_c_num,
+								   dbit_vector_t* shared_rdy_var, uint16_t worker_lid)
 {
 
 	uint32_t dgram_buff_size = 0;
@@ -232,7 +175,7 @@ aether_allocate_and_init_all_qps(ud_channel_t** ud_c_array, uint16_t ud_c_num,
 						   _aether_ud_recv_max_pkt_size(ud_c_array[i]) * ud_c_array[i]->recv_q_depth;
 	}
 
-	struct hrd_ctrl_blk *cb = hrd_ctrl_blk_init(worker_gid,	/* local_hid */
+	struct hrd_ctrl_blk *cb = hrd_ctrl_blk_init(worker_lid,	/* local_hid */
 												0, -1, /* port_index, numa_node_id */
 												0, 0,	/* #conn qps, uc */
 												NULL, 0, -1,	/* prealloc conn buf, buf size, key */
@@ -240,39 +183,21 @@ aether_allocate_and_init_all_qps(ud_channel_t** ud_c_array, uint16_t ud_c_num,
 												BASE_SHM_KEY + worker_lid, /* key */
 												recv_q_depths, send_q_depths); /* Depth of the dgram RECV, SEND Q*/
 
-	share_qp_info_via_memcached(worker_gid, cb);
+	_aether_share_qp_info_via_memcached(ud_c_array, ud_c_num, shared_rdy_var, worker_lid, cb);
 
 	volatile uint8_t *incoming_reqs_ptr = cb->dgram_buf;
 	for(uint8_t i = 0; i < ud_c_num; ++i){
-	    // Forge remote qps
-	    qp_info_t* remote_qps = malloc(sizeof(qp_info_t) * ud_c_array[i]->num_channels);
-	    for(int j = 0; j < ud_c_array[i]->num_channels; ++j){
-			uint16_t idx = (uint16_t) (j * WORKERS_PER_MACHINE + worker_lid);
-			remote_qps[j].ah = remote_worker_qps[idx][i].ah;
-			remote_qps[j].qpn = (uint32_t) remote_worker_qps[idx][i].qpn;
-	    }
-
-
 		// Init recv and setup wrs and sgls of ud_channel
-		_aether_ud_channel_init_recv(ud_c_array[i], cb, (uint8_t) i, incoming_reqs_ptr, remote_qps);
+		_aether_ud_channel_init_recv(ud_c_array[i], cb, (uint8_t) i, incoming_reqs_ptr);
 		incoming_reqs_ptr += ud_c_array[i]->type == CRD ? 64 :
 							 _aether_ud_recv_max_pkt_size(ud_c_array[i]) * ud_c_array[i]->recv_q_depth;
 	}
-}
 
-
-
-static inline void
-_aether_print_on_off_toggle(uint16_t bin_flag, char *str)
-{
-	if(bin_flag > 1)
-		printf("\t\t%s : %s (%d)\n", str, "\033[1m\033[32mOn\033[0m", bin_flag);
-	else
-		printf("\t\t%s : %s\n", str, bin_flag? "\033[1m\033[32mOn\033[0m" : "\033[31mOff\033[0m");
+	sleep(1); /// Give some leeway to post receives, before start bcasting! (see above warning)
 }
 
 void
-print_ud_c_overview(ud_channel_t* ud_c)
+aether_print_ud_c_overview(ud_channel_t *ud_c)
 {
 	printf("%s Channel %s(%d) --> %s\n",
 		   ud_c->is_bcast_channel ? "Bcast" : "Unicast",
@@ -310,21 +235,110 @@ print_ud_c_overview(ud_channel_t* ud_c)
 }
 
 
-
-
 /* ---------------------------------------------------------------------------
 ----------------------------------- SETUPs ------------------------------------
 ---------------------------------------------------------------------------*/
 void
-_aether_ud_channel_init_recv(ud_channel_t *ud_c, struct hrd_ctrl_blk *cb, uint8_t qp_id,
-							 volatile uint8_t *incoming_reqs_ptr, qp_info_t *remote_qps)
+_aether_print_on_off_toggle(uint16_t bin_flag, char *str)
 {
-	assert(remote_qps != NULL);
+	if(bin_flag > 1)
+		printf("\t\t%s : %s (%d)\n", str, "\033[1m\033[32mOn\033[0m", bin_flag);
+	else
+		printf("\t\t%s : %s\n", str, bin_flag? "\033[1m\033[32mOn\033[0m" : "\033[31mOff\033[0m");
+}
+
+void
+_aether_ud_channel_crd_init(ud_channel_t *ud_c, char *qp_name, ud_channel_t *linked_channel,
+							uint8_t crds_per_channel, uint16_t num_channels,
+							uint8_t enable_stats, uint8_t enable_prints)
+{
+	_aether_assert_binary(enable_stats);
+	_aether_assert_binary(enable_prints);
+
+
+    ud_c->type = CRD;
+	ud_c->qp_name = malloc(sizeof(char) * (strlen(qp_name) + 1)); //TODO make sure to destroy this when destroing a crd_ud_c
+	strcpy(ud_c->qp_name, qp_name);
+
+	ud_c->num_channels = num_channels; //num_channels include our own channel
+	ud_c->expl_crd_ctrl = 1;
+    ud_c->is_bcast_channel = 0;
+	ud_c->max_pcie_bcast_batch = 0;
+	ud_c->num_crds_per_channel = crds_per_channel;
+    ud_c->channel_providing_crds = linked_channel;
+
+	ud_c->enable_stats = enable_stats;
+    ud_c->enable_prints = enable_prints;
+
+
+    ud_c->no_crds_to_send_per_endpoint = malloc(sizeof(uint16_t) * num_channels);
+
+	static_assert(sizeof(aether_crd_t) <= 4, ""); // Credits are always send as immediate <=4B
+	ud_c->max_msg_size = 0; //non immediate size
+	ud_c->max_coalescing = 1;
+
+
+	uint16_t remote_channels = (uint16_t) (num_channels - 1);
+	ud_c->is_inlining_enabled = 1;
+
+    ud_c->credits_per_channels = malloc(sizeof(uint8_t) * (num_channels));
+	for(int i = 0; i < num_channels; ++i)
+		ud_c->credits_per_channels[i] = 0;
+
+
+	ud_c->max_recv_wrs = crds_per_channel * remote_channels;
+    ud_c->max_send_wrs = crds_per_channel * remote_channels; //TODO correct this
+
+   	ud_c->ss_granularity = ud_c->max_send_wrs;
+
+	ud_c->recv_q_depth = ud_c->max_recv_wrs;
+   	ud_c->send_q_depth = (uint16_t) (2 * ud_c->ss_granularity);
+
+	ud_c->recv_wc = malloc(sizeof(struct ibv_wc) * ud_c->max_recv_wrs);
+
+
+	ud_c->recv_pkt_buff_len = ud_c->max_recv_wrs * ud_c->max_coalescing;
+	ud_c->send_pkt_buff_len = ud_c->max_send_wrs ;
+
+    ud_c->send_pkt_buff = NULL; //malloc(_aether_ud_send_max_pkt_size(ud_c) * ud_c->send_pkt_buff_len);
+
+	ud_c->send_mem_region = NULL;
+
+
+    ud_c->send_push_ptr = 0;
+    ud_c->recv_push_ptr = 0;
+    ud_c->recv_pull_ptr = -1;
+
+	ud_c->total_pkts_send = 0;
+
+	ud_c->stats.ss_completions = 0;
+    ud_c->stats.recv_total_pkts = 0;
+	ud_c->stats.recv_total_msgs = 0;
+	ud_c->stats.send_total_msgs = 0;
+	ud_c->stats.send_total_pkts = 0;
+	ud_c->stats.send_total_pcie_batches= 0;
+
+	ud_c->remote_qps = malloc(sizeof(qp_info_t) * ud_c->num_channels);
+	//The following are set by the *_init_recv function after the creation of control block and QPs
+	ud_c->qp = NULL;
+	ud_c->qp_id = 0;
+	ud_c->send_cq = NULL;
+	ud_c->recv_cq = NULL;
+	ud_c->recv_pkt_buff = NULL;
+//	_aether_setup_crd_wr_and_sgl(ud_c, cb);
+}
+
+
+void
+_aether_ud_channel_init_recv(ud_channel_t *ud_c, struct hrd_ctrl_blk *cb, uint8_t qp_id,
+							 volatile uint8_t *incoming_reqs_ptr)
+{
+//	assert(remote_qps != NULL);
 
 	ud_c->qp_id = qp_id;
 	ud_c->qp = cb->dgram_qp[qp_id];
 
-	ud_c->remote_qps = remote_qps;
+//	ud_c->remote_qps = remote_qps;
 
 	ud_c->recv_pkt_buff = incoming_reqs_ptr;
 
@@ -482,4 +496,97 @@ _aether_setup_incoming_buff_and_post_initial_recvs(ud_channel_t *ud_c)
 		_aether_post_recvs(ud_c, ud_c->max_recv_wrs);
 	else
 		_aether_post_crd_recvs(ud_c, ud_c->max_recv_wrs);
+}
+
+
+
+/* ---------------------------------------------------------------------------
+   -------------------------------- QP Sharing -------------------------------
+   --------------------------------------------------------------------------- */
+unsigned long
+_aether_simple_hash(unsigned char *str)
+{
+	int c;
+	unsigned long hash = 5381;
+
+	while (c = *str++)
+		hash = ((hash << 5) + hash) + c; // hash * 33 + c
+	return hash;
+}
+
+void
+_aether_get_remote_qps(struct hrd_ctrl_blk *cb, ud_channel_t **ud_c_array, uint16_t ud_c_num)
+{
+    int ib_port_index = 0;
+    int local_port_i = ib_port_index;
+    char qp_global_name[HRD_QP_NAME_SIZE];
+
+    uint16_t max_remote_channels = 0;
+	for(int i = 0; i < ud_c_num; ++i)
+		if(ud_c_array[i]->num_channels > max_remote_channels)
+			max_remote_channels = ud_c_array[i]->num_channels;
+
+	struct hrd_qp_attr **worker_qp = malloc(sizeof(struct hrd_qp_attr*) * max_remote_channels);
+
+    for(int i = 0; i < ud_c_num; ++i){
+    	for(int j = 0; j < ud_c_array[i]->num_channels; ++j){
+			if (j == machine_id) continue; // skip the local machine
+			sprintf(qp_global_name, "%lu-%d", _aether_simple_hash((unsigned char *) ud_c_array[i]->qp_name), j);
+			// Get the UD queue pair for the ith machine
+			worker_qp[j] = NULL;
+//			printf("Looking for %s\n", qp_global_name);
+			while(worker_qp[j] == NULL) {
+				worker_qp[j] = hrd_get_published_qp(qp_global_name);
+
+				if(worker_qp[j] == NULL) usleep(200000);
+			}
+
+			struct ibv_ah_attr ah_attr = {
+					//-----INFINIBAND----------
+					.is_global = 0,
+					.dlid = (uint16_t) worker_qp[j]->lid,
+					.sl = (uint8_t) worker_qp[j]->sl,
+					.src_path_bits = 0,
+					/* port_num (> 1): device-local port for responses to this worker */
+					.port_num = (uint8_t) (local_port_i + 1),
+			};
+
+			if (is_roce == 1) {
+				//-----RoCE----------
+				ah_attr.is_global = 1;
+				ah_attr.dlid = 0;
+				ah_attr.grh.dgid.global.interface_id =  worker_qp[j]->gid_global_interface_id;
+				ah_attr.grh.dgid.global.subnet_prefix = worker_qp[j]->gid_global_subnet_prefix;
+				ah_attr.grh.sgid_index = 0;
+				ah_attr.grh.hop_limit = 1;
+			}
+
+			ud_c_array[i]->remote_qps[j].qpn = (uint32_t) worker_qp[j]->qpn;
+			ud_c_array[i]->remote_qps[j].ah = ibv_create_ah(cb->pd, &ah_attr);
+			assert(ud_c_array[i]->remote_qps[j].ah != NULL);
+    	}
+    }
+}
+
+
+void
+_aether_share_qp_info_via_memcached(ud_channel_t **ud_c_array, uint16_t ud_c_num,
+									dbit_vector_t* shared_rdy_var,
+									int worker_lid, struct hrd_ctrl_blk *cb)
+{
+    for(int i = 0; i < ud_c_num; i++){
+        char qp_global_name[HRD_QP_NAME_SIZE];
+        sprintf(qp_global_name, "%lu-%d", _aether_simple_hash((unsigned char *) ud_c_array[i]->qp_name), machine_id);
+        hrd_publish_dgram_qp(cb, i, qp_global_name, WORKER_SL);
+//		printf("Publishing: %s \n",  qp_global_name);
+    }
+
+	_aether_get_remote_qps(cb, ud_c_array, ud_c_num);
+	assert(dbv_bit_get(*shared_rdy_var, worker_lid) == 0);
+	dbv_bit_set(shared_rdy_var, (uint8_t) worker_lid);
+
+	//WARNING (global) shared_rdy_var which is used as a barrier must be len of num_workers + 1
+	while (!dbv_is_all_set(*shared_rdy_var)) usleep(20000);
+
+    assert(dbv_is_all_set(*shared_rdy_var));
 }
