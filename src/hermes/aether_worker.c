@@ -194,36 +194,43 @@ run_worker(void *arg)
 	uint16_t worker_lid = (uint16_t) params.id;	/* Local ID of this worker thread*/
 	uint16_t worker_gid = (uint16_t) (machine_id * WORKERS_PER_MACHINE + params.id);	/* Global ID of this worker thread*/
 
-	uint32_t inv_rcv_req_size = sizeof(aether_ud_recv_pkt_t) + sizeof(spacetime_inv_t) * INV_MAX_REQ_COALESCE;
-	uint32_t ack_rcv_req_size = sizeof(aether_ud_recv_pkt_t) + sizeof(spacetime_ack_t) * ACK_MAX_REQ_COALESCE;
-	uint32_t val_rcv_req_size = sizeof(aether_ud_recv_pkt_t) + sizeof(spacetime_val_t) * VAL_MAX_REQ_COALESCE;
-	uint32_t dgram_buff_size  = ((inv_rcv_req_size * RECV_INV_Q_DEPTH) + (ack_rcv_req_size * RECV_ACK_Q_DEPTH) +
-								 (val_rcv_req_size * RECV_VAL_Q_DEPTH) + 64); // 64B for CREDITS which are header-only (inlined)
 
-	int *recv_q_depths, *send_q_depths;
-	setup_q_depths(&recv_q_depths, &send_q_depths);
 
-	struct hrd_ctrl_blk *cb = hrd_ctrl_blk_init(worker_gid,	/* local_hid */
-												0, -1, /* port_index, numa_node_id */
-												0, 0,	/* #conn qps, uc */
-												NULL, 0, -1,	/* prealloc conn buf, buf size, key */
-												TOTAL_WORKER_UD_QPs, dgram_buff_size,	/* num_dgram_qps, dgram_buf_size */
-												BASE_SHM_KEY + worker_lid, /* key */
-												recv_q_depths, send_q_depths); /* Depth of the dgram RECV, SEND Q*/
-
-	/* -----------------------------------------------------
-	--------------DECLARATIONS------------------------------
+	/* --------------------------------------------------------
+	------------------- RDMA AETHER DECLARATIONS---------------
 	---------------------------------------------------------*/
+	ud_channel_t ud_channels[TOTAL_WORKER_UD_QPs];
+	ud_channel_t* ud_channel_ptrs[TOTAL_WORKER_UD_QPs];
+	ud_channel_t* inv_ud_c = &ud_channels[INV_UD_QP_ID];
+	ud_channel_t* ack_ud_c = &ud_channels[ACK_UD_QP_ID];
+	ud_channel_t* val_ud_c = &ud_channels[VAL_UD_QP_ID];
+	ud_channel_t* crd_ud_c = &ud_channels[CRD_UD_QP_ID];
 
-	///Buffs where reqs arrive
-	ud_req_inv_t *incoming_invs = (ud_req_inv_t *) cb->dgram_buf;
-	ud_req_ack_t *incoming_acks = (ud_req_ack_t *) &cb->dgram_buf[inv_rcv_req_size * RECV_INV_Q_DEPTH];
-	ud_req_val_t *incoming_vals = (ud_req_val_t *) &cb->dgram_buf[inv_rcv_req_size * RECV_INV_Q_DEPTH +
-																  ack_rcv_req_size * RECV_ACK_Q_DEPTH];
-	uint8_t      *incoming_crds = (uint8_t*) 	   &cb->dgram_buf[inv_rcv_req_size * RECV_INV_Q_DEPTH +
-            		                                              ack_rcv_req_size * RECV_ACK_Q_DEPTH +
-                      			                                  val_rcv_req_size * RECV_VAL_Q_DEPTH];
+	for(int i = 0; i < TOTAL_WORKER_UD_QPs; ++i)
+		ud_channel_ptrs[i] = &ud_channels[i];
 
+	aether_ud_channel_init(inv_ud_c, "\033[31mINV\033[0m", REQ, INV_MAX_REQ_COALESCE,
+						   sizeof(spacetime_inv_t), DISABLE_INV_INLINING == 0 ? 1 : 0,
+						   1, 0, ack_ud_c, INV_CREDITS, MACHINE_NUM, 1, 1);
+	aether_ud_channel_init(ack_ud_c, "\033[33mACK\033[0m", RESP, ACK_MAX_REQ_COALESCE,
+						   sizeof(spacetime_ack_t), DISABLE_ACK_INLINING == 0 ? 1 : 0,
+						   0, 0, inv_ud_c, ACK_CREDITS, MACHINE_NUM, 1, 1);
+	aether_ud_channel_init(val_ud_c, "\033[1m\033[32mVAL\033[0m", REQ, VAL_MAX_REQ_COALESCE,
+						   sizeof(spacetime_val_t), DISABLE_VAL_INLINING == 0 ? 1 : 0,
+						   1, 1, crd_ud_c, VAL_CREDITS, MACHINE_NUM, 1, 1);
+	aether_ud_channel_crd_init(crd_ud_c, "\033[1m\033[36mCRD\033[0m",
+							   val_ud_c, CRD_CREDITS, MACHINE_NUM, 1, 1);
+
+	aether_allocate_and_init_all_qps(ud_channel_ptrs, TOTAL_WORKER_UD_QPs, worker_gid, worker_lid);
+
+	assertions(inv_ud_c, ack_ud_c);
+
+	sleep(1); /// Give some leeway to post receives, before start bcasting! (see above warning)
+
+
+	/* -------------------------------------------------------
+	------------------- OTHER DECLARATIONS--------------------
+	---------------------------------------------------------*/
 	//Intermediate buffs where reqs are copied from incoming_* buffs in order to get passed to the KVS
 	spacetime_op_t  *ops;
 	spacetime_inv_t *inv_recv_ops;
@@ -237,57 +244,6 @@ run_worker(void *arg)
 	struct spacetime_trace_command *trace;
 	trace_init(&trace, worker_gid);
 
-	share_qp_info_via_memcached(worker_gid, cb);
-
-
-////// <AETHER Init>
-    qp_info_t inv_remote_qps[MACHINE_NUM], ack_remote_qps[MACHINE_NUM],
-			  val_remote_qps[MACHINE_NUM], crd_remote_qps[MACHINE_NUM];
-
-    for(uint16_t i = 0; i < MACHINE_NUM; ++i){
-    	uint16_t idx = (uint16_t) (i * WORKERS_PER_MACHINE + worker_lid);
-		inv_remote_qps[i].ah = remote_worker_qps[idx][INV_UD_QP_ID].ah;
-		ack_remote_qps[i].ah = remote_worker_qps[idx][ACK_UD_QP_ID].ah;
-		val_remote_qps[i].ah = remote_worker_qps[idx][VAL_UD_QP_ID].ah;
-		crd_remote_qps[i].ah = remote_worker_qps[idx][CRD_UD_QP_ID].ah;
-		inv_remote_qps[i].qpn = (uint32_t) remote_worker_qps[idx][INV_UD_QP_ID].qpn;
-		ack_remote_qps[i].qpn = (uint32_t) remote_worker_qps[idx][ACK_UD_QP_ID].qpn;
-		val_remote_qps[i].qpn = (uint32_t) remote_worker_qps[idx][VAL_UD_QP_ID].qpn;
-		crd_remote_qps[i].qpn = (uint32_t) remote_worker_qps[idx][CRD_UD_QP_ID].qpn;
-    }
-
-	ud_channel_t ack_ud_c, inv_ud_c, val_ud_c, crd_ud_c;
-
-	aether_ud_channel_init(cb, &inv_ud_c, INV_UD_QP_ID, "\033[31mINV\033[0m", REQ, INV_MAX_REQ_COALESCE,
-						   sizeof(spacetime_inv_t), (uint8_t *) incoming_invs, DISABLE_INV_INLINING == 0 ? 1 : 0,
-						   1, inv_remote_qps, 0, &ack_ud_c, INV_CREDITS, MACHINE_NUM, 1, 1);
-	aether_ud_channel_init(cb, &ack_ud_c, ACK_UD_QP_ID, "\033[33mACK\033[0m", RESP, ACK_MAX_REQ_COALESCE,
-						   sizeof(spacetime_ack_t), (uint8_t *) incoming_acks, DISABLE_ACK_INLINING == 0 ? 1 : 0,
-						   0, ack_remote_qps, 0, &inv_ud_c, ACK_CREDITS, MACHINE_NUM, 1, 1);
-
-	aether_ud_channel_init(cb, &val_ud_c, VAL_UD_QP_ID, "\033[1m\033[32mVAL\033[0m", REQ, VAL_MAX_REQ_COALESCE,
-						   sizeof(spacetime_val_t), (uint8_t *) incoming_vals, DISABLE_VAL_INLINING == 0 ? 1 : 0,
-						   1, val_remote_qps, 1, &crd_ud_c, VAL_CREDITS, MACHINE_NUM, 1, 1);
-	aether_ud_channel_crd_init(cb, &crd_ud_c, CRD_UD_QP_ID, "\033[1m\033[36mCRD\033[0m",
-							   crd_remote_qps, incoming_crds, &val_ud_c, CRD_CREDITS, MACHINE_NUM, 1, 1);
-
-	///WARNING: we need to post initial receives early to avoid races between them and the sends of other nodes
-	_aether_setup_incoming_buff_and_post_initial_recvs(&inv_ud_c);
-	_aether_setup_incoming_buff_and_post_initial_recvs(&ack_ud_c);
-	_aether_setup_incoming_buff_and_post_initial_recvs(&val_ud_c);
-	_aether_setup_incoming_buff_and_post_initial_recvs(&crd_ud_c);
-
-	sleep(1); /// Give some leeway to post receives, before start bcasting! (see above warning)
-////// </AETHER init>
-
-
-	int node_suspected = -1;
-	uint32_t trace_iter = 0;
-	uint16_t rolling_inv_index = 0;
-	uint16_t invs_polled = 0, acks_polled = 0, vals_polled = 0;
-	uint32_t num_of_iters_serving_op[MAX_BATCH_OPS_SIZE] = {0};
-	uint8_t has_outstanding_vals = 0, has_outstanding_vals_from_memb_change = 0;
-
 	////
 	spacetime_op_t* n_hottest_keys_in_ops_get[COALESCE_N_HOTTEST_KEYS];
 	spacetime_op_t* n_hottest_keys_in_ops_put[COALESCE_N_HOTTEST_KEYS];
@@ -297,7 +253,13 @@ run_worker(void *arg)
 	}
 	////
 
-	assertions(&inv_ud_c, &ack_ud_c);
+	int node_suspected = -1;
+	uint32_t trace_iter = 0;
+	uint16_t rolling_inv_index = 0;
+	uint16_t invs_polled = 0, acks_polled = 0, vals_polled = 0;
+	uint32_t num_of_iters_serving_op[MAX_BATCH_OPS_SIZE] = {0};
+	uint8_t has_outstanding_vals = 0, has_outstanding_vals_from_memb_change = 0;
+
 
 	/* -----------------------------------------------------
        ------------------------Main Loop--------------------
@@ -323,12 +285,12 @@ run_worker(void *arg)
 
 		if (WRITE_RATIO > 0) {
 			///~~~~~~~~~~~~~~~~~~~~~~INVS~~~~~~~~~~~~~~~~~~~~~~~~~~~
-			aether_issue_pkts(&inv_ud_c, (uint8_t *) ops,
+			aether_issue_pkts(inv_ud_c, (uint8_t *) ops,
 							  MAX_BATCH_OPS_SIZE, sizeof(spacetime_op_t), &rolling_inv_index,
 							  inv_skip_or_get_sender_id, inv_modify_elem_after_send, inv_copy_and_modify_elem);
 
 			///Poll for INVs
-			invs_polled = aether_poll_buff_and_post_recvs(&inv_ud_c, INV_RECV_OPS_SIZE, (uint8_t *) inv_recv_ops);
+			invs_polled = aether_poll_buff_and_post_recvs(inv_ud_c, INV_RECV_OPS_SIZE, (uint8_t *) inv_recv_ops);
 
 
 			if(invs_polled > 0) {
@@ -336,17 +298,17 @@ run_worker(void *arg)
 								  &node_suspected, num_of_iters_serving_op);
 
 				///~~~~~~~~~~~~~~~~~~~~~~ACKS~~~~~~~~~~~~~~~~~~~~~~~~~~~
-				aether_issue_pkts(&ack_ud_c, (uint8_t *) inv_recv_ops,
+				aether_issue_pkts(ack_ud_c, (uint8_t *) inv_recv_ops,
 								  invs_polled, sizeof(spacetime_inv_t), NULL,
 								  ack_skip_or_get_sender_id, ack_modify_elem_after_send, ack_copy_and_modify_elem);
 				invs_polled = 0;
 				if(ENABLE_ASSERTIONS)
-					assert(inv_ud_c.stats.recv_total_msgs == ack_ud_c.stats.send_total_msgs);
+					assert(inv_ud_c->stats.recv_total_msgs == ack_ud_c->stats.send_total_msgs);
 			}
 
 			if(has_outstanding_vals == 0 && has_outstanding_vals_from_memb_change == 0) {
 				///Poll for Acks
-				acks_polled = aether_poll_buff_and_post_recvs(&ack_ud_c, ACK_RECV_OPS_SIZE, (uint8_t *) ack_recv_ops);
+				acks_polled = aether_poll_buff_and_post_recvs(ack_ud_c, ACK_RECV_OPS_SIZE, (uint8_t *) ack_recv_ops);
 
 				if (acks_polled > 0) {
 					batch_acks_to_KVS(acks_polled, &ack_recv_ops, ops, last_group_membership, worker_lid);
@@ -356,19 +318,19 @@ run_worker(void *arg)
 
 			if(!DISABLE_VALS_FOR_DEBUGGING) {
 				///~~~~~~~~~~~~~~~~~~~~~~ VALs ~~~~~~~~~~~~~~~~~~~~~~~~~~~
-				has_outstanding_vals = aether_issue_pkts(&val_ud_c, (uint8_t *) ack_recv_ops,
-														 ack_ud_c.recv_pkt_buff_len, sizeof(spacetime_ack_t),
+				has_outstanding_vals = aether_issue_pkts(val_ud_c, (uint8_t *) ack_recv_ops,
+														 ack_ud_c->recv_pkt_buff_len, sizeof(spacetime_ack_t),
 														 NULL, val_skip_or_get_sender_id,
 														 val_modify_elem_after_send, val_copy_and_modify_elem);
 
 				///Poll for Vals
-				vals_polled = aether_poll_buff_and_post_recvs(&val_ud_c, VAL_RECV_OPS_SIZE, (uint8_t *) val_recv_ops);
+				vals_polled = aether_poll_buff_and_post_recvs(val_ud_c, VAL_RECV_OPS_SIZE, (uint8_t *) val_recv_ops);
 
 				if (vals_polled > 0) {
 					batch_vals_to_KVS(vals_polled, &val_recv_ops, ops, worker_lid);
 
 					///~~~~~~~~~~~~~~~~~~~~~~CREDITS~~~~~~~~~~~~~~~~~~~~~~~~~~~
-					aether_issue_credits(&crd_ud_c, (uint8_t *) val_recv_ops, VAL_RECV_OPS_SIZE,
+					aether_issue_credits(crd_ud_c, (uint8_t *) val_recv_ops, VAL_RECV_OPS_SIZE,
 										 sizeof(spacetime_val_t), crd_skip_or_get_sender_id, crd_modify_elem_after_send);
 					vals_polled = 0;
 				}
