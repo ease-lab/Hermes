@@ -96,7 +96,8 @@ typedef struct _ud_channel_t
     uint16_t qp_id; //id of qp in cb
     uint16_t max_msg_size;
 
-    uint16_t num_channels; // e.g. remote nodes
+	uint8_t channel_id; //id of the curr channel (e.g. local node id)
+    uint16_t num_channels; // e.g. remote nodes + local node
     uint16_t num_crds_per_channel;
     uint8_t* credits_per_channels; // array size of num_channels denoting available space on remote sides
     /// Credits refer to msgs irrespective if coalesed or not --> a remote buffer must be able to handle max_number_of_msgs * max_coalescing
@@ -168,7 +169,7 @@ void aether_ud_channel_init(ud_channel_t *ud_c, char *qp_name, enum channel_type
 							uint8_t enable_inlining, uint8_t is_bcast,
 						    // Credits
 							uint8_t expl_crd_ctrl, ud_channel_t *linked_channel,
-							uint8_t crds_per_channel, uint16_t num_channels,
+							uint8_t crds_per_channel, uint16_t num_channels, uint8_t channel_id,
 							// Toggles
 							uint8_t stats_on, uint8_t prints_on);
 

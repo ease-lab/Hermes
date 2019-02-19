@@ -321,7 +321,7 @@ _aether_has_sufficient_crds_no_polling(ud_channel_t *ud_c, uint8_t endpoint_id)
         return (uint8_t) (ud_c->credits_per_channels[endpoint_id] > 0);
     else
         for (int i = 0; i < ud_c->num_channels; ++i) {
-            if (i == machine_id) continue;
+            if (i == ud_c->channel_id) continue;
             //TODO if i == local_node_id  || !node_in_membership(i) --> continue
 //            if (!node_is_in_membership(last_g_membership, j)) continue; //skip machine which is removed from group
             if (ud_c->credits_per_channels[i] <= 0)
@@ -355,7 +355,7 @@ _aether_dec_crds(ud_channel_t *ud_c, uint8_t endpoint_id)
         ud_c->credits_per_channels[endpoint_id]--;
     else
         for(int i = 0; i < ud_c->num_channels; ++i){
-            if(i == machine_id) continue;
+            if(i == ud_c->channel_id) continue;
 			//TODO if i == local_node_id  || !node_in_membership(i) --> continue
 //            if (!node_is_in_membership(last_g_membership, j)) continue; //skip machine which is removed from group
             ud_c->credits_per_channels[i]--;
@@ -363,7 +363,7 @@ _aether_dec_crds(ud_channel_t *ud_c, uint8_t endpoint_id)
 
     if (AETHER_ENABLE_CREDIT_PRINTS && ud_c->enable_prints){
         if(ud_c->is_bcast_channel)
-            endpoint_id = (uint8_t) (machine_id == 0 ? 1 : 0);
+            endpoint_id = (uint8_t) (ud_c->channel_id == 0 ? 1 : 0);
 
         printf("$$$ Credits: %s \033[31mdecremented\033[0m to %d",
                ud_c->qp_name, ud_c->credits_per_channels[endpoint_id]);
@@ -432,13 +432,15 @@ _aether_forge_wr(ud_channel_t *ud_c, uint8_t dst_qp_id, uint8_t *req_to_copy,
 	aether_ud_send_pkt_t* curr_pkt_ptr = _aether_curr_send_pkt_ptr(ud_c);
 	uint8_t* next_req_ptr = _aether_get_n_msg_ptr_from_send_pkt(ud_c, curr_pkt_ptr, curr_pkt_ptr->req_num);
 	curr_pkt_ptr->req_num++;
-	curr_pkt_ptr->sender_id = (uint8_t) machine_id;
+	curr_pkt_ptr->sender_id = ud_c->channel_id;
 
 	//<Copy & modify elem!> --> callback func that copies and manipulated data from req_to_copy buff
 	copy_and_modify_elem(next_req_ptr, req_to_copy);
 
-	if(AETHER_ENABLE_ASSERTIONS)
+	if(AETHER_ENABLE_ASSERTIONS){
+		assert(dst_qp_id != machine_id);
 		assert(curr_pkt_ptr->req_num <= ud_c->max_coalescing);
+	}
 
 	ud_c->send_sgl[pkts_in_batch].length = sizeof(aether_ud_send_pkt_t) +
 										   ud_c->max_msg_size * curr_pkt_ptr->req_num;
@@ -523,7 +525,7 @@ _aether_batch_pkts_2_NIC(ud_channel_t *ud_c, uint16_t pkts_in_batch, uint16_t ms
 				assert(ud_c->send_wr[i].sg_list->length == 0);
 				assert(ud_c->send_wr[i].opcode == IBV_WR_SEND_WITH_IMM);
 				assert(((aether_crd_t*) &(ud_c->send_wr[i].imm_data))->crd_num > 0);
-				assert(((aether_crd_t*) &(ud_c->send_wr[i].imm_data))->sender_id == machine_id);
+				assert(((aether_crd_t*) &(ud_c->send_wr[i].imm_data))->sender_id == ud_c->channel_id);
 			}
 
 			assert(ud_c->send_wr[i].wr.ud.remote_qkey == HRD_DEFAULT_QKEY);
@@ -654,7 +656,7 @@ aether_issue_credits(ud_channel_t *ud_c, uint8_t *input_array_of_elems,
 		uint8_t* curr_elem = &input_array_of_elems[i * size_of_input_elems];
 		int skip_or_sender_id = skip_or_get_sender_id_func_ptr(curr_elem);
 		if(AETHER_ENABLE_ASSERTIONS) assert(skip_or_sender_id < 255);
-		if(skip_or_sender_id < 0) continue; //TODO may make this break
+		if(skip_or_sender_id < 0) continue;
 
 		uint8_t curr_msg_dst = (uint8_t) skip_or_sender_id;
 
@@ -673,7 +675,7 @@ aether_issue_credits(ud_channel_t *ud_c, uint8_t *input_array_of_elems,
 
 	uint16_t send_crd_packets = 0, total_credits_to_send = 0;
 	for(uint16_t i = 0; i < ud_c->num_channels; ++i){
-		if(i == machine_id) continue;
+		if(i == ud_c->channel_id) continue;
 
 		if(ud_c->no_crds_to_send_per_endpoint[i] > 0) {
 			_aether_forge_crd_wr(ud_c, i, send_crd_packets, ud_c->no_crds_to_send_per_endpoint[i]);

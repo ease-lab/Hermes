@@ -11,7 +11,7 @@
 #define HERMES_CEILING(x,y) (((x) + (y) - 1) / (y))
 #define HERMES_MIN(x,y) (x < y ? x : y)
 
-#define MACHINE_NUM 3
+#define MACHINE_NUM 5
 #define REMOTE_MACHINES (MACHINE_NUM - 1)
 #define GROUP_MEMBERSHIP_ARRAY_SIZE HERMES_CEILING(MACHINE_NUM, 8) //assuming uint8_t
 #define WORKERS_PER_MACHINE 36
@@ -46,9 +46,13 @@ static_assert(!ENABLE_VIRTUAL_NODE_IDS || MACHINE_NUM * VIRTUAL_NODE_IDS_PER_NOD
 #define COALESCE_N_HOTTEST_KEYS 100
 
 //DEBUG
-#define ENABLE_ASSERTIONS 1
+#define ENABLE_ASSERTIONS 0
 #define DISABLE_VALS_FOR_DEBUGGING 0
 #define KEY_NUM 0 //use 0 to disable
+
+//CR DEBUG
+#define ENABLE_ONLY_HEAD_REQS 0
+#define ENABLE_ALL_NODES_GETS_EXCEPT_HEAD 0
 
 //REQUESTS
 #define FEED_FROM_TRACE 0
@@ -69,7 +73,7 @@ static_assert(!ENABLE_VIRTUAL_NODE_IDS || MACHINE_NUM * VIRTUAL_NODE_IDS_PER_NOD
 /*-------------------------------------------------
 -----------------FLOW CONTROL---------------------
 --------------------------------------------------*/
-#define CREDITS_PER_REMOTE_WORKER 5
+#define CREDITS_PER_REMOTE_WORKER (MACHINE_NUM * 3)
 #define INV_CREDITS CREDITS_PER_REMOTE_WORKER
 #define ACK_CREDITS CREDITS_PER_REMOTE_WORKER
 #define VAL_CREDITS CREDITS_PER_REMOTE_WORKER

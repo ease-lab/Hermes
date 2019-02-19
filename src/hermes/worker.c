@@ -130,7 +130,7 @@ void *run_worker(void *arg){
 
 //	if(INCREASE_TAIL_LATENCY) {
 		//Latency enhancement
-		init_rdtsc();
+		init_rdtsc(0, RDTSC_TYPICAL_TICKS_PER_NS);
 		struct timespec time_received_msg;
 		get_rdtsc_timespec(&time_received_msg);
 //		long long time_received_msg = hrd_get_cycles();

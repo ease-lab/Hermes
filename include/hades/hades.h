@@ -25,8 +25,8 @@
 
 // Epochs
 
-#define SEND_VIEW_EVERY_US 100
-#define CHECK_VIEW_CHANGE_EVERY_MS 10
+#define HADES_SEND_VIEW_EVERY_US 100
+#define HADES_CHECK_VIEW_CHANGE_EVERY_MS 10
 
 typedef struct
 {
@@ -34,18 +34,18 @@ typedef struct
     uint16_t epoch_id;
     bit_vector_t curr_view;
 }
-hades_membership
-__attribute__((packed));
+__attribute__((packed))
+hades_membership_t;
 
 typedef struct
 {
     uint8_t node_id;
-    uint16_t epoch_id;
     uint8_t nodes_in_membership;
+    uint16_t epoch_id;
     bit_vector_t curr_g_membership;
 }
-hades_ctx
-__attribute__((packed));
+__attribute__((packed))
+hades_ctx_t;
 
 
 // Guarantees Nodes in the same EPOCH id must have the same group view

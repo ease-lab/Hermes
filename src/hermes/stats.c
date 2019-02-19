@@ -79,7 +79,7 @@ void *print_stats(void* no_arg){
                 yellow_printf("\t wasted_loops: %.2f%, reqs per loop: %.2f, total reqs %d, reqs missed: %d\n",
                               all_stats.percentage_of_wasted_loops[i],
                               all_stats.completed_reqs_per_loop[i], curr_w_stats[i].completed_ops_per_worker,
-                              curr_w_stats[i].reqs_missed_in_cache);
+                              curr_w_stats[i].reqs_missed_in_kvs);
             }
             green_printf("SYSTEM MIOPS: %.2f \n", total_throughput);
             printf("---------------------------------------\n");

@@ -202,7 +202,6 @@ print_total_send_recv_msgs(ud_channel_t *inv_ud_c, ud_channel_t *ack_ud_c,
 				  val_ud_c->stats.recv_total_msgs, crd_ud_c->stats.recv_total_msgs);
 }
 
-dbit_vector_t *barrier;
 void*
 run_worker(void *arg)
 {
@@ -225,22 +224,22 @@ run_worker(void *arg)
 	for(int i = 0; i < TOTAL_WORKER_UD_QPs; ++i)
 		ud_channel_ptrs[i] = &ud_channels[i];
 
-	if(worker_lid == 0)
-		dbv_init(&barrier, WORKERS_PER_MACHINE);
-
 	char inv_qp_name[200], ack_qp_name[200], val_qp_name[200];
 	sprintf(inv_qp_name, "%s%d", "\033[31mINV\033[0m", worker_lid);
 	sprintf(ack_qp_name, "%s%d", "\033[33mACK\033[0m", worker_lid);
 	sprintf(val_qp_name, "%s%d", "\033[1m\033[32mVAL\033[0m", worker_lid);
 
 	aether_ud_channel_init(inv_ud_c, inv_qp_name, REQ, INV_MAX_REQ_COALESCE, sizeof(spacetime_inv_t),
-						   DISABLE_INV_INLINING == 0 ? 1 : 0, 1, 0, ack_ud_c, INV_CREDITS, MACHINE_NUM, 1, 1);
+						   DISABLE_INV_INLINING == 0 ? 1 : 0, 1, 0, ack_ud_c, INV_CREDITS, MACHINE_NUM,
+						   (uint8_t) machine_id, 1, 1);
 	aether_ud_channel_init(ack_ud_c, ack_qp_name, RESP, ACK_MAX_REQ_COALESCE, sizeof(spacetime_ack_t),
-						   DISABLE_ACK_INLINING == 0 ? 1 : 0, 0, 0, inv_ud_c, ACK_CREDITS, MACHINE_NUM, 1, 1);
+						   DISABLE_ACK_INLINING == 0 ? 1 : 0, 0, 0, inv_ud_c, ACK_CREDITS, MACHINE_NUM,
+						   (uint8_t) machine_id, 1, 1);
 	aether_ud_channel_init(val_ud_c, val_qp_name, REQ, VAL_MAX_REQ_COALESCE, sizeof(spacetime_val_t),
-						   DISABLE_VAL_INLINING == 0 ? 1 : 0, 1, 1, crd_ud_c, VAL_CREDITS, MACHINE_NUM, 1, 1);
+						   DISABLE_VAL_INLINING == 0 ? 1 : 0, 1, 1, crd_ud_c, VAL_CREDITS, MACHINE_NUM,
+						   (uint8_t) machine_id, 1, 1);
 
-	aether_setup_channel_qps_and_recvs(ud_channel_ptrs, TOTAL_WORKER_UD_QPs, barrier, worker_lid);
+	aether_setup_channel_qps_and_recvs(ud_channel_ptrs, TOTAL_WORKER_UD_QPs, g_share_qs_barrier, worker_lid);
 
 	channel_assertions(inv_ud_c, ack_ud_c, val_ud_c, crd_ud_c);
 

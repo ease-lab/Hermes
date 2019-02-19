@@ -55,7 +55,7 @@
 #define ST_GET_STALL 131
 #define ST_PUT_STALL 132
 #define ST_PUT_COMPLETE_SEND_VALS 133
-
+#define ST_SEND_CRD 134
 
 //ops bucket states
 #define ST_EMPTY 140
@@ -112,10 +112,14 @@ typedef struct
     spacetime_key_t key;	/* This must be the 1st field and 8B or 16B aligned */
     uint8_t opcode; //both recv / resp
     union {
-        uint8_t state; //used by spacetime_op_t
-        uint8_t sender; //used by spacetime_inv/ack/val_t
+        uint8_t state;  //HERMES:  used by spacetime_op_t
+        uint8_t sender; //HERMES:  used by spacetime_inv/ack/val_t
+		uint8_t initiator;  //CR:  used by spacetime_inv/ack
     };
-    uint8_t val_len; // unused for spacetime_ack_t and spacetime_val_t (align for using a single memcpy)
+	union {
+		uint8_t val_len; // HERMES: unused for spacetime_ack_t and spacetime_val_t (align for using a single memcpy)
+		uint8_t buff_idx; //    CR: used   for spacetime_ack_t buffer index of write initiated this req
+	};
     timestamp_t ts;
 }
 spacetime_op_meta_t, spacetime_ack_t, spacetime_val_t;
@@ -123,19 +127,17 @@ spacetime_op_meta_t, spacetime_ack_t, spacetime_val_t;
 typedef struct
 {
     ///May add    uint8_t session_id;
-    spacetime_op_meta_t op_meta; // uses the state part of the op_meta union (not sender)
-    uint16_t no_req_coalescing; //used only for skew optimizations
+    spacetime_op_meta_t op_meta; // op_t/inv_t: uses the state/sender part of the op_meta union (not sender/state)
+	union {
+		uint16_t no_coales; //HERMES: used only for skew optimizations
+		struct {
+			uint8_t buff_idx;   //    CR: for spacetime_inv_t buffer index of write initiated this req
+			uint8_t initiator;  //    CR: for spacetime_inv_t buffer index of write initiated this req
+		};
+	};
     uint8_t value[ST_VALUE_SIZE];
 }
-spacetime_op_t;
-
-typedef struct
-{
-    spacetime_op_meta_t op_meta; // uses the sender part of the op_meta union (not state)
-    uint16_t no_coales; //used only for skew optimizations
-    uint8_t value[ST_VALUE_SIZE];
-}
-spacetime_inv_t;
+spacetime_op_t, spacetime_inv_t;
 
 typedef struct
 {
@@ -285,6 +287,23 @@ void reconfigure_wrs(struct ibv_send_wr *inv_send_wr, struct ibv_sge *inv_send_s
                      struct ibv_send_wr *val_send_wr, struct ibv_sge *val_send_sgl,
                      spacetime_group_membership last_g_membership, uint16_t worker_lid);
 
+
+///////////////////////////////////////
+//////////////////// CR
+///////////////////////////////////////
+enum cr_type_t
+{
+	    Local_ops,       // All nodes
+		Remote_writes,   // Head
+		Remote_reads,    // Tail
+		Invs, 			 // All except Head
+		Acks             // All except Tail
+};
+
+
+void
+cr_batch_ops_to_KVS(enum cr_type_t cr_type, uint8_t *op_array, int op_num,
+					uint16_t sizeof_op_elem, spacetime_op_t *read_write_op);
 
 extern spacetime_group_membership group_membership;
 

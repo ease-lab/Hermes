@@ -1365,11 +1365,11 @@ refill_ops_n_suspect_failed_nodes(uint32_t *trace_iter, uint16_t worker_lid,
 					stop_latency_measurment(ops[i].op_meta.opcode, &start);
 
                 if(ops[i].op_meta.state != ST_MISS)
-					w_stats[worker_lid].completed_ops_per_worker += ops[i].no_req_coalescing;
+					w_stats[worker_lid].completed_ops_per_worker += ENABLE_COALESCE_OF_HOT_REQS ? ops[i].no_coales : 1;
                 else
-					w_stats[worker_lid].reqs_missed_in_cache++;
+					w_stats[worker_lid].reqs_missed_in_kvs++;
 
-				ops[i].no_req_coalescing = 1;
+				ops[i].no_coales = 1;
 				ops[i].op_meta.state = ST_EMPTY;
 				ops[i].op_meta.opcode = ST_EMPTY;
 				refilled_per_ops_debug_cnt[i] = 0;
@@ -1396,7 +1396,7 @@ refill_ops_n_suspect_failed_nodes(uint32_t *trace_iter, uint16_t worker_lid,
 					   n_hottest_keys_in_ops[key_id] != NULL && // exists in the ops array
 					   n_hottest_keys_in_ops[key_id]->op_meta.opcode == trace[*trace_iter].opcode) // has the same code with the last inserted
 					{
-						n_hottest_keys_in_ops[key_id]->no_req_coalescing++;
+						n_hottest_keys_in_ops[key_id]->no_coales++;
 						*trace_iter = trace[*trace_iter + 1].opcode != NOP ? *trace_iter + 1 : 0;
 					}else
 						break;
@@ -1407,7 +1407,8 @@ refill_ops_n_suspect_failed_nodes(uint32_t *trace_iter, uint16_t worker_lid,
 			}
 
 			ops[i].op_meta.state = ST_NEW;
-			ops[i].op_meta.opcode = trace[*trace_iter].opcode;
+			ops[i].op_meta.opcode = (uint8_t) (ENABLE_ALL_NODES_GETS_EXCEPT_HEAD && machine_id != 0 ?
+											   ST_OP_GET : trace[*trace_iter].opcode);
 			memcpy(&ops[i].op_meta.key, &trace[*trace_iter].key_hash, sizeof(spacetime_key_t));
 
 			if (ops[i].op_meta.opcode == ST_OP_PUT)

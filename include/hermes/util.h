@@ -14,7 +14,7 @@
 
 struct worker_stats { // 2 cache lines
     long long completed_ops_per_worker;
-    long long reqs_missed_in_cache;
+    long long reqs_missed_in_kvs;
 
 	long long issued_invs_per_worker;
     long long issued_acks_per_worker;
@@ -133,5 +133,6 @@ void setup_incoming_buffs_and_post_initial_recvs(ud_req_inv_t *incoming_invs, ud
 												 uint16_t worker_lid);
 
 extern int qps_published;
+extern dbit_vector_t *g_share_qs_barrier;
 extern volatile struct worker_stats w_stats[WORKERS_PER_MACHINE];
 #endif //HERMES_UTIL_H

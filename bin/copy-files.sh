@@ -3,9 +3,9 @@ HOSTS=( ##### network  cluster #####
          "houston"
          "sanantonio"
          "austin"
-#         "indianapolis"
+         "indianapolis"
 #         "atlanta"
-#         "philly"
+         "philly"
          ##### compute cluster #####
 #         "chicago"
 #         "detroit"
@@ -14,8 +14,9 @@ HOSTS=( ##### network  cluster #####
 
 FILES=(
 #        "hermes"
-        "hermes-aether"
-#        "run-hermes.sh"
+#        "hermes-aether"
+        "cr"
+        "run-hermes.sh"
       )
 
 USERNAME="s1671850" # "user"

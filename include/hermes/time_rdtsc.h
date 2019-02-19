@@ -4,9 +4,10 @@
 #include <stdint.h> /* for uint64_t */
 #include <time.h>  /* for struct timespec */
 #include <stdio.h>
+#include <assert.h>
 
 #define ENABLE_STATIC_TICKS_PER_NS 1
-#define TICKS_PER_NS 2.2
+#define RDTSC_TYPICAL_TICKS_PER_NS 2.2
 
 double g_ticks_per_ns;
 
@@ -50,14 +51,16 @@ calibrate_ticks()
     printf("RDTSC calibration is done (ticks_per_ns: %.2f)\n", g_ticks_per_ns);
 }
 
-// Call once before using RDTSC, has side effect of binding process to CPU1
+// Call once (it is not thread safe) before using RDTSC, has side effect of binding process to CPU1
 static inline void
-init_rdtsc()
+init_rdtsc(uint8_t auto_calibration, double ticks_per_ns)
 {
-    if(ENABLE_STATIC_TICKS_PER_NS)
-        g_ticks_per_ns = TICKS_PER_NS;
-    else
+    if(auto_calibration > 0)
         calibrate_ticks();
+    else{
+        assert(ticks_per_ns > 0);
+        g_ticks_per_ns = ticks_per_ns;
+    }
 }
 
 static inline void
@@ -67,7 +70,7 @@ get_timespec(struct timespec *ts, uint64_t nsecs)
     ts->tv_nsec = nsecs % NANO_SECONDS_IN_SEC;
 }
 
-/* ts will be filled with time converted from TSC reading */
+// ts will be filled with time converted from TSC reading
 static inline void
 get_rdtsc_timespec(struct timespec *ts)
 {

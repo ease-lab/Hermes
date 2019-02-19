@@ -12,9 +12,6 @@
 #include "hrd.h"
 
 
-////	//TODO only for testing
-//#include "../aether/ud-wrapper.h"
-
 //Global vars
 volatile char worker_needed_ah_ready;
 struct latency_counters latency_count;
@@ -22,6 +19,7 @@ volatile struct worker_stats w_stats[WORKERS_PER_MACHINE];
 volatile uint8_t node_suspicions[WORKERS_PER_MACHINE][MACHINE_NUM];
 volatile struct remote_qp remote_worker_qps[WORKER_NUM][TOTAL_WORKER_UD_QPs];
 
+dbit_vector_t *g_share_qs_barrier;
 
 int main(int argc, char *argv[])
 {
@@ -73,6 +71,10 @@ int main(int argc, char *argv[])
 //	bv_unit_test();
 //	return 0;
 
+	if(WORKERS_PER_MACHINE > 1)
+		dbv_init(&g_share_qs_barrier, WORKERS_PER_MACHINE);
+	else
+		g_share_qs_barrier = NULL;
 
 	printf("CREDITS %d\n",CREDITS_PER_REMOTE_WORKER);
 	printf("INV_SS_GRANULARITY %d \t\t SEND_INV_Q_DEPTH %d \t\t RECV_INV_Q_DEPTH %d\n",

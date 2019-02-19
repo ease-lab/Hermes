@@ -31,16 +31,16 @@ void _aether_ud_channel_init_recv(ud_channel_t *ud_c, struct hrd_ctrl_blk *cb, u
 
 
 void _aether_ud_channel_crd_init(ud_channel_t *ud_c, char *qp_name, ud_channel_t *linked_channel,
-								 uint8_t crds_per_channel, uint16_t num_channels,
+								 uint8_t crds_per_channel, uint16_t num_channels, uint8_t channel_id,
 								 uint8_t enable_stats, uint8_t enable_prints);
 
 void _aether_print_on_off_toggle(uint16_t bin_flag, char *str);
-//void _aether_share_qp_info_via_memcached(int worker_gid, struct hrd_ctrl_blk *cb);
 
 
 
 void _aether_share_qp_info_via_memcached(ud_channel_t **ud_c_array, uint16_t ud_c_num,
-										 dbit_vector_t* shared_rdy_var, int worker_lid, struct hrd_ctrl_blk *cb);
+										 dbit_vector_t* shared_rdy_var, int worker_lid,
+										 struct hrd_ctrl_blk *cb);
 
 
 void
@@ -51,20 +51,25 @@ aether_ud_channel_init(ud_channel_t *ud_c, char *qp_name, enum channel_type type
 					   // Credits
 					   uint8_t expl_crd_ctrl, ud_channel_t *linked_channel,
 					   uint8_t crds_per_channel, uint16_t num_channels,
+					   uint8_t channel_id,
 					   // Toggles
 					   uint8_t stats_on, uint8_t prints_on)
 {
 	assert(type != CRD); // if CRD type then used the *_crd_init instead
+	assert(max_coalescing > 0); // To disable coalescing use max_coalescing == 1
 	assert(linked_channel != NULL);
+	assert(channel_id < num_channels);
+
 	_aether_assert_binary(stats_on);
-	_aether_assert_binary(prints_on);
-	_aether_assert_binary(enable_inlining);
-	_aether_assert_binary(expl_crd_ctrl);
 	_aether_assert_binary(is_bcast);
+	_aether_assert_binary(prints_on);
+	_aether_assert_binary(expl_crd_ctrl);
+	_aether_assert_binary(enable_inlining);
 
 
 	ud_c->type = type;
 	ud_c->qp_name = qp_name;
+	ud_c->channel_id = channel_id;
 	ud_c->num_channels = num_channels; //num_channels include our own channel
 	ud_c->expl_crd_ctrl = expl_crd_ctrl;
 	ud_c->is_bcast_channel = is_bcast;
@@ -137,9 +142,8 @@ aether_ud_channel_init(ud_channel_t *ud_c, char *qp_name, enum channel_type type
 	if(ud_c->expl_crd_ctrl){
 		char crd_qp_name[1000];
 		sprintf(crd_qp_name, "\033[1m\033[36mCRD\033[0m-%s", qp_name);
-//		sprintf(crd_qp_name, "CRD-%s", qp_name);
 		_aether_ud_channel_crd_init(linked_channel, crd_qp_name, ud_c, crds_per_channel,
-									num_channels, stats_on, prints_on);
+									num_channels, channel_id, stats_on, prints_on);
 	}
 
 	ud_c->remote_qps = malloc(sizeof(qp_info_t) * ud_c->num_channels);
@@ -199,8 +203,8 @@ aether_setup_channel_qps_and_recvs(ud_channel_t **ud_c_array, uint16_t ud_c_num,
 void
 aether_print_ud_c_overview(ud_channel_t *ud_c)
 {
-	printf("%s Channel %s(%d) --> %s\n",
-		   ud_c->is_bcast_channel ? "Bcast" : "Unicast",
+	printf("%s Channel[%d] %s(%d) --> %s\n",
+		   ud_c->is_bcast_channel ? "Bcast" : "Unicast", ud_c->channel_id,
 	       ud_c->qp_name, ud_c->qp_id, ud_c->type == REQ ? "REQ" : "RESP");
 
 	_aether_print_on_off_toggle(ud_c->is_inlining_enabled, "Inlining");
@@ -249,9 +253,11 @@ _aether_print_on_off_toggle(uint16_t bin_flag, char *str)
 
 void
 _aether_ud_channel_crd_init(ud_channel_t *ud_c, char *qp_name, ud_channel_t *linked_channel,
-							uint8_t crds_per_channel, uint16_t num_channels,
+							uint8_t crds_per_channel, uint16_t num_channels, uint8_t channel_id,
 							uint8_t enable_stats, uint8_t enable_prints)
 {
+	assert(channel_id < num_channels);
+
 	_aether_assert_binary(enable_stats);
 	_aether_assert_binary(enable_prints);
 
@@ -260,6 +266,7 @@ _aether_ud_channel_crd_init(ud_channel_t *ud_c, char *qp_name, ud_channel_t *lin
 	ud_c->qp_name = malloc(sizeof(char) * (strlen(qp_name) + 1)); //TODO make sure to destroy this when destroing a crd_ud_c
 	strcpy(ud_c->qp_name, qp_name);
 
+	ud_c->channel_id = channel_id;
 	ud_c->num_channels = num_channels; //num_channels include our own channel
 	ud_c->expl_crd_ctrl = 1;
     ud_c->is_bcast_channel = 0;
@@ -367,7 +374,7 @@ _aether_setup_crd_wr_and_sgl(ud_channel_t *ud_c, struct hrd_ctrl_blk *cb)
 	// Credit Send WRs / sgl
     aether_crd_t crd_tmp;
     crd_tmp.crd_num = 0;
-	crd_tmp.sender_id = (uint8_t) machine_id;
+	crd_tmp.sender_id = (uint8_t) ud_c->channel_id;
 
 	ud_c->send_sgl = malloc(sizeof(struct ibv_sge));
 	ud_c->send_sgl->length = 0;
@@ -417,7 +424,7 @@ _aether_setup_send_wr_and_sgl(ud_channel_t *ud_c)
             int i_mod_bcast = i % remote_channels;
 
             uint16_t rm_qp_id;
-			if (i_mod_bcast < machine_id) rm_qp_id = (uint16_t) i_mod_bcast;
+			if (i_mod_bcast < ud_c->channel_id) rm_qp_id = (uint16_t) i_mod_bcast;
 			else rm_qp_id = (uint16_t) ((i_mod_bcast + 1) % ud_c->num_channels);
 
 			ud_c->send_wr[i].wr.ud.remote_qkey = HRD_DEFAULT_QKEY;
@@ -530,7 +537,7 @@ _aether_get_remote_qps(struct hrd_ctrl_blk *cb, ud_channel_t **ud_c_array, uint1
 
     for(int i = 0; i < ud_c_num; ++i){
     	for(int j = 0; j < ud_c_array[i]->num_channels; ++j){
-			if (j == machine_id) continue; // skip the local machine
+			if (j == ud_c_array[i]->channel_id) continue; // skip the local channel id
 			sprintf(qp_global_name, "%lu-%d", _aether_simple_hash((unsigned char *) ud_c_array[i]->qp_name), j);
 			// Get the UD queue pair for the ith machine
 			worker_qp[j] = NULL;
@@ -576,16 +583,22 @@ _aether_share_qp_info_via_memcached(ud_channel_t **ud_c_array, uint16_t ud_c_num
 {
     for(int i = 0; i < ud_c_num; i++){
         char qp_global_name[HRD_QP_NAME_SIZE];
-        sprintf(qp_global_name, "%lu-%d", _aether_simple_hash((unsigned char *) ud_c_array[i]->qp_name), machine_id);
+        sprintf(qp_global_name, "%lu-%d",
+        		_aether_simple_hash((unsigned char *) ud_c_array[i]->qp_name),
+        		ud_c_array[i]->channel_id);
         hrd_publish_dgram_qp(cb, i, qp_global_name, WORKER_SL);
 //		printf("Publishing: %s \n",  qp_global_name);
     }
 
 	_aether_get_remote_qps(cb, ud_c_array, ud_c_num);
+    if(shared_rdy_var == NULL) {
+    	assert(worker_lid == 0);
+    	return;
+    }
 	assert(dbv_bit_get(*shared_rdy_var, worker_lid) == 0);
 	dbv_bit_set(shared_rdy_var, (uint8_t) worker_lid);
 
-	//WARNING (global) shared_rdy_var which is used as a barrier must be len of num_workers + 1
+	//WARNING (global) shared_rdy_var which is used as a g_share_qs_barrier must be len of num_workers + 1
 	while (!dbv_is_all_set(*shared_rdy_var)) usleep(20000);
 
     assert(dbv_is_all_set(*shared_rdy_var));
