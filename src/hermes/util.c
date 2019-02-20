@@ -188,6 +188,7 @@ is_bucket_state_code(uint8_t code)
         case ST_NEW:
         case ST_EMPTY:
         case ST_COMPLETE:
+        case ST_IN_PROGRESS_GET:
         case ST_IN_PROGRESS_PUT:
         case ST_IN_PROGRESS_REPLAY:
             return 1;

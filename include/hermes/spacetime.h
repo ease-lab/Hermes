@@ -64,6 +64,7 @@
 #define ST_IN_PROGRESS_PUT 145
 #define ST_IN_PROGRESS_REPLAY 146
 #define ST_REPLAY_COMPLETE 147
+#define ST_IN_PROGRESS_GET 148 // Used only in Chain Replication
 
 // trace opcodes
 #define NOP 148

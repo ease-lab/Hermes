@@ -1264,6 +1264,7 @@ cr_skip_op(spacetime_op_t *op_ptr)
 	return (uint8_t)
 	          ((op_ptr->op_meta.state == ST_PUT_SUCCESS ||
 				op_ptr->op_meta.state == ST_REPLAY_SUCCESS ||
+				op_ptr->op_meta.state == ST_IN_PROGRESS_GET ||
 				op_ptr->op_meta.state == ST_IN_PROGRESS_PUT ||
 				op_ptr->op_meta.state == ST_IN_PROGRESS_REPLAY ||
 				op_ptr->op_meta.state == ST_OP_MEMBERSHIP_CHANGE ||
@@ -1283,7 +1284,13 @@ cr_skip_ack(spacetime_ack_t *ack_ptr)
 }
 
 static inline uint8_t
-cr_skip_writes(spacetime_op_t *op_ptr)
+cr_skip_remote_reads(spacetime_op_t *op_ptr)
+{
+	return (uint8_t) ((op_ptr->op_meta.state == ST_EMPTY) ? 1 : 0);
+}
+
+static inline uint8_t
+cr_skip_remote_writes(spacetime_op_t *op_ptr)
 {
 	return (uint8_t)
 			  ((op_ptr->op_meta.state == ST_EMPTY ||
@@ -1335,6 +1342,34 @@ cr_exec_write(spacetime_op_t *op_ptr, struct mica_op *kv_ptr)
 }
 
 static inline void
+cr_exec_remote_reads(spacetime_op_t *op_ptr, struct mica_op *kv_ptr)
+{
+    if(ENABLE_ASSERTIONS){
+    	assert(machine_id == tail_id());
+		assert(op_ptr->op_meta.opcode == ST_OP_GET);
+    }
+
+	// the following variables used to validate atomicity between a lock-free read of an object
+	spacetime_object_meta prev_meta;
+	spacetime_object_meta *curr_meta = (spacetime_object_meta *) kv_ptr->value;
+	uint8_t* kv_value_ptr = (uint8_t*) &curr_meta[1];
+
+	do {
+		prev_meta = *curr_meta;
+		//switch template with all states
+		switch(curr_meta->state) {
+			case VALID_STATE:
+				memcpy(op_ptr->value, kv_value_ptr, ST_VALUE_SIZE);
+				op_ptr->op_meta.state = ST_GET_COMPLETE;
+				op_ptr->op_meta.val_len = kv_ptr->val_len - sizeof(spacetime_object_meta);
+				break;
+			case INVALID_STATE:
+			default: assert(0);
+		}
+	} while (!cctrl_timestamp_is_same_and_valid(&prev_meta.cctrl, &curr_meta->cctrl));
+}
+
+static inline void
 cr_exec_op(spacetime_op_t *op_ptr, struct mica_op *kv_ptr, uint8_t idx)
 {
 
@@ -1366,6 +1401,8 @@ cr_exec_op(spacetime_op_t *op_ptr, struct mica_op *kv_ptr, uint8_t idx)
 			}
 		} while (!cctrl_timestamp_is_same_and_valid(&prev_meta.cctrl, &curr_meta->cctrl));
 
+		if(op_ptr->op_meta.state == ST_GET_STALL)
+			op_ptr->buff_idx = idx;
 
 	}
 
@@ -1390,11 +1427,9 @@ cr_complete_local_write(spacetime_op_t *read_write_op, uint8_t idx, const uint64
 		assert(((uint64_t *) &read_write_op[idx].op_meta.key)[0] == key[0]);
 	}
 
-	if(read_write_op[idx].op_meta.opcode == ST_OP_PUT) {
-		if(ENABLE_ASSERTIONS)
-			assert(read_write_op[idx].op_meta.state == ST_IN_PROGRESS_PUT);
+	if(read_write_op[idx].op_meta.opcode == ST_OP_PUT)
 		read_write_op[idx].op_meta.state = ST_PUT_COMPLETE;
-	} else assert(0);
+	else assert(0);
 }
 
 static inline void
@@ -1549,9 +1584,10 @@ cr_skip_dispatcher(enum cr_type_t cr_type, void* ptr)
 			return cr_skip_inv(ptr);
 		case Acks:
 			return cr_skip_ack(ptr);
-		case Remote_writes:
-			return cr_skip_writes(ptr);
 		case Remote_reads:
+			return cr_skip_remote_reads(ptr);
+		case Remote_writes:
+			return cr_skip_remote_writes(ptr);
 		default: assert(0);
 	}
 }
@@ -1591,6 +1627,8 @@ cr_exec_dispatcher(enum cr_type_t cr_type, void* op_ptr, struct mica_op *kv_ptr,
 			cr_exec_op(op_ptr, kv_ptr, idx);
 			break;
 		case Remote_reads:
+			cr_exec_remote_reads(op_ptr, kv_ptr);
+			break;
 		default: assert(0);
 	}
 }

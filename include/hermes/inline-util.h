@@ -1342,6 +1342,7 @@ refill_ops_n_suspect_failed_nodes(uint32_t *trace_iter, uint16_t worker_lid,
 					   ops[i].op_meta.state == ST_PUT_STALL ||
 					   ops[i].op_meta.state == ST_REPLAY_COMPLETE ||
 					   ops[i].op_meta.state == ST_IN_PROGRESS_PUT ||
+					   ops[i].op_meta.state == ST_IN_PROGRESS_GET ||
 					   ops[i].op_meta.state == ST_IN_PROGRESS_REPLAY ||
 					   ops[i].op_meta.state == ST_OP_MEMBERSHIP_CHANGE || ///TODO check this
 					   ops[i].op_meta.state == ST_OP_MEMBERSHIP_COMPLETE || ///TODO check this

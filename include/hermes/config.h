@@ -20,8 +20,8 @@
 #define USE_ALL_SOCKETS 1
 #define ENABLE_HYPERTHREADING 1
 #define BATCH_POST_RECVS_TO_NIC 1
-#define WRITE_RATIO 10
-#define MAX_BATCH_OPS_SIZE 50 // up to 254
+#define WRITE_RATIO 1000
+#define MAX_BATCH_OPS_SIZE 125 // up to 254
 
 
 //LATENCY
@@ -73,7 +73,8 @@ static_assert(!ENABLE_VIRTUAL_NODE_IDS || MACHINE_NUM * VIRTUAL_NODE_IDS_PER_NOD
 /*-------------------------------------------------
 -----------------FLOW CONTROL---------------------
 --------------------------------------------------*/
-#define CREDITS_PER_REMOTE_WORKER (MACHINE_NUM * 3)
+//#define CREDITS_PER_REMOTE_WORKER 5 // Hermes
+#define CREDITS_PER_REMOTE_WORKER (MAX_BATCH_OPS_SIZE) // CR
 #define INV_CREDITS CREDITS_PER_REMOTE_WORKER
 #define ACK_CREDITS CREDITS_PER_REMOTE_WORKER
 #define VAL_CREDITS CREDITS_PER_REMOTE_WORKER
