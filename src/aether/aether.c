@@ -49,6 +49,7 @@ aether_ud_channel_init(ud_channel_t *ud_c, char *qp_name, enum channel_type type
 					   // Broadcast
 					   uint8_t is_bcast,
 					   // Credits
+					   uint8_t disable_crd_ctrl,
 					   uint8_t expl_crd_ctrl, ud_channel_t *linked_channel,
 					   uint8_t crds_per_channel, uint16_t num_channels,
 					   uint8_t channel_id,
@@ -57,8 +58,9 @@ aether_ud_channel_init(ud_channel_t *ud_c, char *qp_name, enum channel_type type
 {
 	assert(type != CRD); // if CRD type then used the *_crd_init instead
 	assert(max_coalescing > 0); // To disable coalescing use max_coalescing == 1
-	assert(linked_channel != NULL);
 	assert(channel_id < num_channels);
+	assert(!(disable_crd_ctrl == 1 && expl_crd_ctrl == 1)); //cannot disable crd_ctrl and then set an explicit credit control
+	assert(disable_crd_ctrl == 1 || linked_channel != NULL); //cannot disable crd_ctrl and then set an crd control channel
 
 	_aether_assert_binary(stats_on);
 	_aether_assert_binary(is_bcast);
@@ -72,6 +74,7 @@ aether_ud_channel_init(ud_channel_t *ud_c, char *qp_name, enum channel_type type
 	ud_c->channel_id = channel_id;
 	ud_c->num_channels = num_channels; //num_channels include our own channel
 	ud_c->expl_crd_ctrl = expl_crd_ctrl;
+	ud_c->disable_crd_ctrl = disable_crd_ctrl;
 	ud_c->is_bcast_channel = is_bcast;
 	ud_c->channel_providing_crds = linked_channel;
 	ud_c->num_crds_per_channel = crds_per_channel;
@@ -97,7 +100,7 @@ aether_ud_channel_init(ud_channel_t *ud_c, char *qp_name, enum channel_type type
 
     ud_c->credits_per_channels = malloc(sizeof(uint8_t) * (num_channels));
 	for(int i = 0; i < num_channels; ++i)
-		ud_c->credits_per_channels[i] = (uint8_t) (type == REQ ? crds_per_channel : 0);
+		ud_c->credits_per_channels[i] = (uint8_t) (type == REQ && !disable_crd_ctrl ? crds_per_channel : 0);
 
 
 	ud_c->max_pcie_bcast_batch = (uint16_t) AETHER_MIN(AETHER_MIN_PCIE_BCAST_BATCH + 1, crds_per_channel);
@@ -220,9 +223,12 @@ aether_print_ud_c_overview(ud_channel_t *ud_c)
 	printf("\t\tSS granularity: %d\n", ud_c->ss_granularity);
 
 	printf("\t\tNum remotes: %d\n", ud_c->num_channels - 1);
-	printf("\t\tCredits: %d (%s) --> %s (%d)\n", ud_c->num_crds_per_channel,
-		   ud_c->expl_crd_ctrl ? "Explicit" : "Implicit",
-		   ud_c->channel_providing_crds->qp_name, ud_c->channel_providing_crds->qp_id);
+	if(ud_c->disable_crd_ctrl)
+		printf("\t\tCredits: OFF \n");
+	else
+		printf("\t\tCredits: %d (%s) --> %s (%d)\n", ud_c->num_crds_per_channel,
+			   ud_c->expl_crd_ctrl ? "Explicit" : "Implicit",
+			   ud_c->channel_providing_crds->qp_name, ud_c->channel_providing_crds->qp_id);
 
 
 	printf("\t\tSend Q len: %d\n", ud_c->send_q_depth);
@@ -269,6 +275,7 @@ _aether_ud_channel_crd_init(ud_channel_t *ud_c, char *qp_name, ud_channel_t *lin
 	ud_c->channel_id = channel_id;
 	ud_c->num_channels = num_channels; //num_channels include our own channel
 	ud_c->expl_crd_ctrl = 1;
+	ud_c->disable_crd_ctrl = 0;
     ud_c->is_bcast_channel = 0;
 	ud_c->max_pcie_bcast_batch = 0;
 	ud_c->num_crds_per_channel = crds_per_channel;

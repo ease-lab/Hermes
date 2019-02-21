@@ -1263,12 +1263,8 @@ cr_skip_op(spacetime_op_t *op_ptr)
 {
 	return (uint8_t)
 	          ((op_ptr->op_meta.state == ST_PUT_SUCCESS ||
-				op_ptr->op_meta.state == ST_REPLAY_SUCCESS ||
 				op_ptr->op_meta.state == ST_IN_PROGRESS_GET ||
-				op_ptr->op_meta.state == ST_IN_PROGRESS_PUT ||
-				op_ptr->op_meta.state == ST_IN_PROGRESS_REPLAY ||
-				op_ptr->op_meta.state == ST_OP_MEMBERSHIP_CHANGE ||
-				op_ptr->op_meta.state == ST_PUT_COMPLETE_SEND_VALS) ? 1 : 0);
+				op_ptr->op_meta.state == ST_IN_PROGRESS_PUT  ) ? 1 : 0);
 }
 
 static inline uint8_t
@@ -1295,11 +1291,7 @@ cr_skip_remote_writes(spacetime_op_t *op_ptr)
 	return (uint8_t)
 			  ((op_ptr->op_meta.state == ST_EMPTY ||
 	          	op_ptr->op_meta.state == ST_PUT_SUCCESS ||
-				op_ptr->op_meta.state == ST_REPLAY_SUCCESS ||
-				op_ptr->op_meta.state == ST_IN_PROGRESS_PUT ||
-				op_ptr->op_meta.state == ST_IN_PROGRESS_REPLAY ||
-				op_ptr->op_meta.state == ST_OP_MEMBERSHIP_CHANGE ||
-				op_ptr->op_meta.state == ST_PUT_COMPLETE_SEND_VALS) ? 1 : 0);
+				op_ptr->op_meta.state == ST_IN_PROGRESS_PUT) ? 1 : 0);
 }
 
 
@@ -1324,7 +1316,7 @@ cr_exec_write(spacetime_op_t *op_ptr, struct mica_op *kv_ptr)
 		case INVALID_STATE:
 			// Do not initiate a new write until you get to valid state
 			cctrl_unlock_dec_version(&curr_meta->cctrl);
-				op_ptr->op_meta.state = ST_PUT_STALL;
+			op_ptr->op_meta.state = ST_PUT_STALL;
 			break;
 		case VALID_STATE:
 			curr_meta->state = INVALID_STATE;
@@ -1502,14 +1494,13 @@ cr_exec_inv(spacetime_inv_t *inv_ptr, struct mica_op *kv_ptr,
 
 		}
 	}
-	if(inv_ptr->op_meta.opcode != ST_INV_OUT_OF_GROUP)
-		inv_ptr->op_meta.opcode = ST_INV_SUCCESS;
+	inv_ptr->op_meta.opcode = ST_INV_SUCCESS;
 
 	if(inv_ptr->op_meta.initiator == machine_id && machine_id == tail_id())
 		cr_complete_local_write(read_write_op, inv_ptr->buff_idx, (uint64_t *) &inv_ptr->op_meta.key);
 
 	if(ENABLE_ASSERTIONS)
-		assert(inv_ptr->op_meta.opcode == ST_INV_SUCCESS || inv_ptr->op_meta.opcode == ST_INV_OUT_OF_GROUP);
+		assert(inv_ptr->op_meta.opcode == ST_INV_SUCCESS);
 }
 
 
@@ -1640,6 +1631,7 @@ cr_exec_dispatcher(enum cr_type_t cr_type, void* op_ptr, struct mica_op *kv_ptr,
 //////////////////////////////////////////////////
 //////////// Batch function //////////////////////
 
+#define CR_MAX_BATCH_SIZE MAX(MAX(MAX_BATCH_OPS_SIZE, ACK_RECV_OPS_SIZE),INV_RECV_OPS_SIZE)
 void
 cr_batch_ops_to_KVS(enum cr_type_t cr_type, uint8_t *op_array, int op_num,
 					uint16_t sizeof_op_elem, spacetime_op_t *read_write_op)
@@ -1655,15 +1647,20 @@ cr_batch_ops_to_KVS(enum cr_type_t cr_type, uint8_t *op_array, int op_num,
 	for(I = 0; I < op_num; I++)
 		mica_print_op(&(*op_array)[I]);
 #endif
-	int key_in_store[MAX_BATCH_OPS_SIZE];	    // Is this key in the datastore?
-	unsigned int tag[MAX_BATCH_OPS_SIZE];
-	unsigned int bkt[MAX_BATCH_OPS_SIZE];
-	struct mica_bkt *bkt_ptr[MAX_BATCH_OPS_SIZE];
-	struct mica_op   *kv_ptr[MAX_BATCH_OPS_SIZE];	// Ptr to KV item in log
+//	int key_in_store[MAX_BATCH_OPS_SIZE];	    // Is this key in the datastore?
+//	unsigned int tag[MAX_BATCH_OPS_SIZE];
+//	unsigned int bkt[MAX_BATCH_OPS_SIZE];
+//	struct mica_bkt *bkt_ptr[MAX_BATCH_OPS_SIZE];
+//	struct mica_op   *kv_ptr[MAX_BATCH_OPS_SIZE];	// Ptr to KV item in log
+	int key_in_store[CR_MAX_BATCH_SIZE];	    // Is this key in the datastore?
+	unsigned int tag[CR_MAX_BATCH_SIZE];
+	unsigned int bkt[CR_MAX_BATCH_SIZE];
+	struct mica_bkt *bkt_ptr[CR_MAX_BATCH_SIZE];
+	struct mica_op   *kv_ptr[CR_MAX_BATCH_SIZE];	// Ptr to KV item in log
+
 
 	if(ENABLE_ASSERTIONS)
 		assert(read_write_op != NULL || cr_type != Acks);
-
 
 	// We first lookup the key in the datastore.
 	// The first two @I loops work for both GETs and PUTs.

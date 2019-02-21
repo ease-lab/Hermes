@@ -131,7 +131,7 @@ val_copy_and_modify_elem(uint8_t* msg_to_send, uint8_t* triggering_req)
 
 
 int
-crd_skip_or_get_sender_id(uint8_t *req)
+rem_write_crd_skip_or_get_sender_id(uint8_t *req)
 {
 	spacetime_val_t* val_ptr = (spacetime_val_t *) req;
 
@@ -142,7 +142,7 @@ crd_skip_or_get_sender_id(uint8_t *req)
 }
 
 void
-crd_modify_elem_after_send(uint8_t* req)
+rem_write_crd_modify_elem_after_send(uint8_t *req)
 {
 	spacetime_val_t* val_req = (spacetime_val_t *) req;
 
@@ -230,13 +230,13 @@ run_worker(void *arg)
 	sprintf(val_qp_name, "%s%d", "\033[1m\033[32mVAL\033[0m", worker_lid);
 
 	aether_ud_channel_init(inv_ud_c, inv_qp_name, REQ, INV_MAX_REQ_COALESCE, sizeof(spacetime_inv_t),
-						   DISABLE_INV_INLINING == 0 ? 1 : 0, 1, 0, ack_ud_c, INV_CREDITS, MACHINE_NUM,
+						   DISABLE_INV_INLINING == 0 ? 1 : 0, 1, 0, 0, ack_ud_c, INV_CREDITS, MACHINE_NUM,
 						   (uint8_t) machine_id, 1, 1);
 	aether_ud_channel_init(ack_ud_c, ack_qp_name, RESP, ACK_MAX_REQ_COALESCE, sizeof(spacetime_ack_t),
-						   DISABLE_ACK_INLINING == 0 ? 1 : 0, 0, 0, inv_ud_c, ACK_CREDITS, MACHINE_NUM,
+						   DISABLE_ACK_INLINING == 0 ? 1 : 0, 0, 0, 0, inv_ud_c, ACK_CREDITS, MACHINE_NUM,
 						   (uint8_t) machine_id, 1, 1);
 	aether_ud_channel_init(val_ud_c, val_qp_name, REQ, VAL_MAX_REQ_COALESCE, sizeof(spacetime_val_t),
-						   DISABLE_VAL_INLINING == 0 ? 1 : 0, 1, 1, crd_ud_c, VAL_CREDITS, MACHINE_NUM,
+						   DISABLE_VAL_INLINING == 0 ? 1 : 0, 1, 0, 1, crd_ud_c, VAL_CREDITS, MACHINE_NUM,
 						   (uint8_t) machine_id, 1, 1);
 
 	aether_setup_channel_qps_and_recvs(ud_channel_ptrs, TOTAL_WORKER_UD_QPs, g_share_qs_barrier, worker_lid);
@@ -288,7 +288,7 @@ run_worker(void *arg)
 
 	    if(unlikely(w_stats[worker_lid].total_loops % M_16 == 0)){
 	        //Check something periodically
-//			print_total_send_recv_msgs(&inv_ud_c, &ack_ud_c, &val_ud_c, &crd_ud_c);
+//			print_total_send_recv_msgs_n_credits(&inv_ud_c, &ack_ud_c, &val_ud_c, &crd_ud_c);
 //	        uint8_t remote_node = (uint8_t) (machine_id == 0 ? 1 : 0);
 //	        printf("Inv credits: %d, ack credits: %d\n",
 //	        		inv_ud_c.credits_per_channels[remote_node],
@@ -351,7 +351,8 @@ run_worker(void *arg)
 
 					///~~~~~~~~~~~~~~~~~~~~~~CREDITS~~~~~~~~~~~~~~~~~~~~~~~~~~~
 					aether_issue_credits(crd_ud_c, (uint8_t *) val_recv_ops, VAL_RECV_OPS_SIZE,
-										 sizeof(spacetime_val_t), crd_skip_or_get_sender_id, crd_modify_elem_after_send);
+										 sizeof(spacetime_val_t), rem_write_crd_skip_or_get_sender_id,
+										 rem_write_crd_modify_elem_after_send);
 					vals_polled = 0;
 				}
 			}

@@ -29,7 +29,7 @@ _aether_assertions(ud_channel_t *ud_channel)
 	assert(ud_channel->num_channels > 1);
     assert(ud_channel->max_msg_size > 0);
     assert(ud_channel->max_coalescing > 0);
-	assert(ud_channel->channel_providing_crds != NULL);
+	assert(ud_channel->channel_providing_crds != NULL || ud_channel->disable_crd_ctrl);
     assert(ud_channel->send_q_depth > 0 || ud_channel->recv_q_depth > 0);
 }
 
@@ -245,6 +245,7 @@ aether_poll_buff_and_post_recvs(ud_channel_t* ud_c, uint16_t max_pkts_to_poll,
 
 	//poll completion q
 	uint16_t pkts_polled = (uint16_t) ibv_poll_cq(ud_c->recv_cq, max_pkts_to_poll, ud_c->recv_wc);
+
 	for(int i = 0; i < pkts_polled; ++i){
 
 		index = (ud_c->recv_pull_ptr + 1) % ud_c->recv_q_depth;
@@ -267,7 +268,8 @@ aether_poll_buff_and_post_recvs(ud_channel_t* ud_c, uint16_t max_pkts_to_poll,
 			memcpy(recv_op_ptr, next_req, ud_c->max_msg_size);
 
 			msgs_polled++;
-			ud_c->channel_providing_crds->credits_per_channels[sender]++; //increment packet credits
+			if(!ud_c->disable_crd_ctrl)
+				ud_c->channel_providing_crds->credits_per_channels[sender]++; //increment packet credits
 		}
 
 
@@ -277,8 +279,9 @@ aether_poll_buff_and_post_recvs(ud_channel_t* ud_c, uint16_t max_pkts_to_poll,
 
 
 		if(AETHER_ENABLE_ASSERTIONS)
-			assert(ud_c->channel_providing_crds->credits_per_channels[sender] <=
-				   ud_c->channel_providing_crds->num_crds_per_channel);
+			if(!ud_c->disable_crd_ctrl)
+				assert(ud_c->channel_providing_crds->credits_per_channels[sender] <=
+					   ud_c->channel_providing_crds->num_crds_per_channel);
 	}
 
 
@@ -296,7 +299,7 @@ aether_poll_buff_and_post_recvs(ud_channel_t* ud_c, uint16_t max_pkts_to_poll,
 			green_printf("^^^ Polled msgs: %d packets %s %d, (total pkts: %d, msgs %d)!\n",
 						 pkts_polled, ud_c->qp_name, msgs_polled,
 						 ud_c->stats.recv_total_pkts, ud_c->stats.recv_total_msgs);
-		if(AETHER_ENABLE_CREDIT_PRINTS && ud_c->enable_prints)
+		if(AETHER_ENABLE_CREDIT_PRINTS && ud_c->enable_prints && !ud_c->disable_crd_ctrl)
 			printf("$$$ Credits: %s \033[1m\033[32mincremented\033[0m to %d (for machine %d)\n",
 				   ud_c->channel_providing_crds->qp_name,
 				   ud_c->channel_providing_crds->credits_per_channels[sender], sender);
@@ -317,8 +320,12 @@ aether_poll_buff_and_post_recvs(ud_channel_t* ud_c, uint16_t max_pkts_to_poll,
 static inline uint8_t
 _aether_has_sufficient_crds_no_polling(ud_channel_t *ud_c, uint8_t endpoint_id)
 {
-    if (!ud_c->is_bcast_channel)
+    if(ud_c->disable_crd_ctrl)
+		return 1;
+
+    else if (!ud_c->is_bcast_channel)
         return (uint8_t) (ud_c->credits_per_channels[endpoint_id] > 0);
+
     else
         for (int i = 0; i < ud_c->num_channels; ++i) {
             if (i == ud_c->channel_id) continue;
@@ -327,6 +334,7 @@ _aether_has_sufficient_crds_no_polling(ud_channel_t *ud_c, uint8_t endpoint_id)
             if (ud_c->credits_per_channels[i] <= 0)
                 return 0;
         }
+
     return 1;
 }
 
@@ -348,6 +356,8 @@ _aether_has_sufficient_crds(ud_channel_t *ud_c, uint8_t endpoint_id)
 static inline void
 _aether_dec_crds(ud_channel_t *ud_c, uint8_t endpoint_id)
 {
+	if(ud_c->disable_crd_ctrl) return;
+
     if(AETHER_ENABLE_ASSERTIONS)
         assert(_aether_has_sufficient_crds_no_polling(ud_c, endpoint_id));
 
@@ -656,8 +666,8 @@ aether_issue_credits(ud_channel_t *ud_c, uint8_t *input_array_of_elems,
 		uint8_t* curr_elem = &input_array_of_elems[i * size_of_input_elems];
 		int skip_or_sender_id = skip_or_get_sender_id_func_ptr(curr_elem);
 		if(AETHER_ENABLE_ASSERTIONS) assert(skip_or_sender_id < 255);
-		if(skip_or_sender_id < 0) continue;
 
+		if(skip_or_sender_id < 0) continue;
 		uint8_t curr_msg_dst = (uint8_t) skip_or_sender_id;
 
 		// Check if we have sufficient credits --> (we should always have enough credits for CRDs)

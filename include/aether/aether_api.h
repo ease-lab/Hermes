@@ -87,8 +87,9 @@ typedef struct _ud_channel_t
 
     enum channel_type type;
     uint8_t max_coalescing;
-    uint8_t is_bcast_channel;
     uint8_t expl_crd_ctrl;
+	uint8_t disable_crd_ctrl;
+	uint8_t is_bcast_channel;
     uint8_t is_inlining_enabled;
     struct _ud_channel_t* channel_providing_crds;
 
@@ -168,6 +169,7 @@ void aether_ud_channel_init(ud_channel_t *ud_c, char *qp_name, enum channel_type
 							uint8_t max_coalescing, uint16_t max_req_size,
 							uint8_t enable_inlining, uint8_t is_bcast,
 						    // Credits
+							uint8_t disable_crd_ctrl,
 							uint8_t expl_crd_ctrl, ud_channel_t *linked_channel,
 							uint8_t crds_per_channel, uint16_t num_channels, uint8_t channel_id,
 							// Toggles
