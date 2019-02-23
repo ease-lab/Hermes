@@ -90,7 +90,8 @@ void *print_stats(void* no_arg){
     }
 }
 
-void init_stats(void) //TODO this is not required (global vars are always initialized to zero)
+void
+init_stats(void) //TODO this is not required (global vars are always initialized to zero)
 {
     int i;
     for(i = 0; i < WORKERS_PER_MACHINE; i++){
@@ -124,13 +125,15 @@ void init_stats(void) //TODO this is not required (global vars are always initia
 }
 
 //assuming microsecond latency
-void dump_latency_stats(void){
+void
+dump_latency_stats(void)
+{
     FILE *latency_stats_fd;
     int i = 0;
     char filename[128];
     char* path = "../../results/latency";
 
-    sprintf(filename, "%s/latency_stats_v_%d_m_%d_w_%d_b_%d_c_%d_t_%d_ci_%d_ca_%d_cv_%d.csv", path,
+    sprintf(filename, "%s/CR_latency_stats_v_%d_m_%d_w_%d_b_%d_c_%d_t_%d_ci_%d_ca_%d_cv_%d.csv", path,
             (int) (ST_VALUE_SIZE + 2),
             MACHINE_NUM,
             WRITE_RATIO,

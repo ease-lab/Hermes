@@ -10,7 +10,7 @@ def main(argv):
     zipf_exponent_a = 99 #exponent should be multiplied by 100 i.e 99 --> a=0.99
 
     try:
-        opts, args = getopt.getopt(argv,":hs:c:o:w:k:C:")
+        opts, args = getopt.getopt(argv,":hs:t:o:")
     except getopt.GetoptError:
         print "-s <#servers> -t <#threads/server> -o <output_path>"
         sys.exit(2)

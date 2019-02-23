@@ -1270,7 +1270,8 @@ node_is_in_membership(spacetime_group_membership last_group_membership, int node
 ----------------------------------- LATENCY -------------------------------
 ---------------------------------------------------------------------------*/
 //Add latency to histogram (in microseconds)
-static inline void bookkeep_latency(int useconds, uint8_t op)
+static inline void
+bookkeep_latency(int useconds, uint8_t op)
 {
 	uint32_t* latency_array;
 	int* max_latency_ptr;
@@ -1297,7 +1298,8 @@ static inline void bookkeep_latency(int useconds, uint8_t op)
 
 
 // Necessary bookkeeping to initiate the latency measurement
-static inline void start_latency_measurement(struct timespec *start)
+static inline void
+start_latency_measurement(struct timespec *start)
 {
 	clock_gettime(CLOCK_MONOTONIC, start);
 }

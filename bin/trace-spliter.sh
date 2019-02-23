@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 INPUT_DIR="/home/s1671850/hermes/traces/system-traces/"
-INPUT_FILENAME="simple_trace_w_100000000_k_1000000_a_0.90.txt"
+INPUT_FILENAME="simple_trace_w_100000000_k_1000000_a_0.99.txt"
 OUTPUT_DIR="/home/s1671850/hermes/traces/current-splited-traces/"
 OUTPUT_PREFIX="t_"
 OUTPUT_SUFFIX="_a_0.99.txt"

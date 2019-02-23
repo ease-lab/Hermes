@@ -1315,9 +1315,11 @@ cr_exec_write(spacetime_op_t *op_ptr, struct mica_op *kv_ptr)
 	switch(curr_meta->state) {
 		case INVALID_STATE:
 			// Do not initiate a new write until you get to valid state
-			cctrl_unlock_dec_version(&curr_meta->cctrl);
-			op_ptr->op_meta.state = ST_PUT_STALL;
-			break;
+			if(CR_ENABLE_BLOCKING_INVALID_WRITES_ON_HEAD){
+				cctrl_unlock_dec_version(&curr_meta->cctrl);
+				op_ptr->op_meta.state = ST_PUT_STALL;
+				break;
+			}
 		case VALID_STATE:
 			curr_meta->state = INVALID_STATE;
 			memcpy(kv_value_ptr, op_ptr->value, ST_VALUE_SIZE);
@@ -1462,7 +1464,7 @@ cr_exec_inv(spacetime_inv_t *inv_ptr, struct mica_op *kv_ptr,
 			{
 //							printf("Received an invalidation with >= timestamp\n");
 				///Update Value, TS and last_writer_id
-				curr_meta->last_writer_id = inv_ptr->op_meta.sender;
+//				curr_meta->last_writer_id = inv_ptr->op_meta.sender;
 				kv_ptr->val_len = inv_ptr->op_meta.val_len + sizeof(spacetime_object_meta);
 				if(ENABLE_ASSERTIONS){
 					assert(kv_ptr->val_len == KVS_VALUE_SIZE);
@@ -1489,9 +1491,6 @@ cr_exec_inv(spacetime_inv_t *inv_ptr, struct mica_op *kv_ptr,
 				assert(0);
 			else
 				cctrl_unlock_dec_version(&curr_meta->cctrl);
-
-
-
 		}
 	}
 	inv_ptr->op_meta.opcode = ST_INV_SUCCESS;
@@ -1515,52 +1514,50 @@ cr_exec_ack(spacetime_ack_t *ack_ptr, struct mica_op *kv_ptr,
 	spacetime_object_meta lock_free_read_meta;
 	spacetime_object_meta *curr_meta = (spacetime_object_meta *) kv_ptr->value;
 	if (ack_ptr->opcode != ST_OP_ACK) assert(0);
-	else{
-		uint32_t debug_cntr = 0;
-		do { //Lock free read of keys meta
-			if (ENABLE_ASSERTIONS) {
-				debug_cntr++;
-				if (debug_cntr == M_4) {
-					printf("Worker stuck on a lock-free read (for ACK)\n");
-					debug_cntr = 0;
-				}
-			}
-			lock_free_read_meta = *curr_meta;
-		} while (!cctrl_timestamp_is_same_and_valid(&lock_free_read_meta.cctrl, &curr_meta->cctrl));
 
-		if(ENABLE_ASSERTIONS)
-			assert(!timestamp_is_smaller(lock_free_read_meta.cctrl.ts.version,
-										 lock_free_read_meta.cctrl.ts.tie_breaker_id,
-										 ack_ptr->ts.version, ack_ptr->ts.tie_breaker_id));
-
-		if(timestamp_is_equal(ack_ptr->ts.version,    ack_ptr->ts.tie_breaker_id,
-							  lock_free_read_meta.cctrl.ts.version,
-							  lock_free_read_meta.cctrl.ts.tie_breaker_id))
-		{
-			///Lock and check again if ack TS == last local write
-			cctrl_lock(&curr_meta->cctrl);
-			if(timestamp_is_equal(ack_ptr->ts.version,    ack_ptr->ts.tie_breaker_id,
-								  curr_meta->cctrl.ts.version - 1, curr_meta->cctrl.ts.tie_breaker_id))
-			{
-				switch (curr_meta->state) {
-					case INVALID_STATE:
-						curr_meta->state = VALID_STATE;
-						ack_ptr->opcode = ST_LAST_ACK_SUCCESS;
-						break;
-					case VALID_STATE:
-					default:
-						assert(0);
-				}
+	uint32_t debug_cntr = 0;
+	do { //Lock free read of keys meta
+		if (ENABLE_ASSERTIONS) {
+			debug_cntr++;
+			if (debug_cntr == M_4) {
+				printf("Worker stuck on a lock-free read (for ACK)\n");
+				debug_cntr = 0;
 			}
-			cctrl_unlock_dec_version(&curr_meta->cctrl);
 		}
+		lock_free_read_meta = *curr_meta;
+	} while (!cctrl_timestamp_is_same_and_valid(&lock_free_read_meta.cctrl, &curr_meta->cctrl));
 
-		if(machine_id == ack_ptr->initiator)
-		    cr_complete_local_write(read_write_op, ack_ptr->buff_idx, (uint64_t *) &ack_ptr->key);
+	if(ENABLE_ASSERTIONS)
+		assert(!timestamp_is_smaller(lock_free_read_meta.cctrl.ts.version,
+									 lock_free_read_meta.cctrl.ts.tie_breaker_id,
+									 ack_ptr->ts.version, ack_ptr->ts.tie_breaker_id));
+
+	if(timestamp_is_equal(ack_ptr->ts.version,    ack_ptr->ts.tie_breaker_id,
+						  lock_free_read_meta.cctrl.ts.version,
+						  lock_free_read_meta.cctrl.ts.tie_breaker_id))
+	{
+		///Lock and check again if ack TS == last local write
+		cctrl_lock(&curr_meta->cctrl);
+		if(timestamp_is_equal(ack_ptr->ts.version,    ack_ptr->ts.tie_breaker_id,
+							  curr_meta->cctrl.ts.version - 1, curr_meta->cctrl.ts.tie_breaker_id))
+		{
+			switch (curr_meta->state) {
+				case INVALID_STATE:
+					curr_meta->state = VALID_STATE;
+					ack_ptr->opcode = ST_LAST_ACK_SUCCESS;
+					break;
+				case VALID_STATE:
+				default:
+					assert(0);
+			}
+		}
+		cctrl_unlock_dec_version(&curr_meta->cctrl);
 	}
 
-	if(ack_ptr->opcode != ST_LAST_ACK_SUCCESS)
-		ack_ptr->opcode = ST_ACK_SUCCESS;
+	if(machine_id == ack_ptr->initiator)
+		cr_complete_local_write(read_write_op, ack_ptr->buff_idx, (uint64_t *) &ack_ptr->key);
+
+	ack_ptr->opcode = ST_LAST_ACK_SUCCESS;
 }
 
 //////////// Dispatcher functions

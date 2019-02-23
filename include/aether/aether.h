@@ -228,9 +228,47 @@ _aether_poll_crds_and_post_recvs(ud_channel_t *ud_c)
 		exit(0);
 	}
 }
+static inline void
+_aether_enque_to_overflown_msgs(ud_channel_t* ud_c, uint8_t* msg_ptr)
+{
+	if(AETHER_ENABLE_ASSERTIONS){
+		assert(ud_c->enable_overflow_msgs);
+		assert(ud_c->num_overflow_msgs < ud_c->max_coalescing);
+	}
+
+	uint8_t* dst_ptr = &ud_c->overflow_msg_buff[ud_c->num_overflow_msgs * ud_c->max_msg_size];
+
+	memcpy(dst_ptr, msg_ptr, ud_c->max_msg_size);
+	ud_c->num_overflow_msgs++;
+}
 
 static inline uint16_t
-aether_poll_buff_and_post_recvs(ud_channel_t* ud_c, uint16_t max_pkts_to_poll,
+_aether_deque_from_overflown_msgs(ud_channel_t *ud_c, uint16_t max_msgs_to_poll, uint8_t *recv_ops)
+{
+	uint8_t msgs_to_copy = (uint8_t) (ud_c->num_overflow_msgs <= max_msgs_to_poll ?
+									  ud_c->num_overflow_msgs : max_msgs_to_poll);
+
+	if(ud_c->num_overflow_msgs > 0){
+
+		ud_c->num_overflow_msgs -= msgs_to_copy;
+
+		//Copy msgs from overflow_buff to recv_ops
+		memcpy(recv_ops, ud_c->overflow_msg_buff, msgs_to_copy * ud_c->max_msg_size);
+
+		if(msgs_to_copy == max_msgs_to_poll)
+			// Move rest of overflown msgs to the top of the (FIFO) buffer
+			for(int i = 0; i < ud_c->num_overflow_msgs; ++i){
+				uint8_t* dst_ptr = &ud_c->overflow_msg_buff[ud_c->max_msg_size * i];
+				uint8_t* src_ptr = &ud_c->overflow_msg_buff[ud_c->max_msg_size * (i + msgs_to_copy)];
+				memcpy(dst_ptr, src_ptr, ud_c->max_msg_size);
+			}
+	}
+
+	return msgs_to_copy;
+}
+
+static inline uint16_t
+aether_poll_buff_and_post_recvs(ud_channel_t* ud_c, uint16_t max_msgs_to_poll,
 								uint8_t* recv_ops)
 {
 	if(AETHER_ENABLE_ASSERTIONS)
@@ -242,6 +280,23 @@ aether_poll_buff_and_post_recvs(ud_channel_t* ud_c, uint16_t max_pkts_to_poll,
     uint8_t* next_packet_reqs, *recv_op_ptr, *next_req, *next_packet_req_num_ptr;
 
     uint16_t max_req_size = _aether_ud_recv_max_pkt_size(ud_c);
+	uint16_t dequed_msgs = 0;
+	uint16_t remaining_msgs_to_poll = max_msgs_to_poll;
+
+    if(max_msgs_to_poll < 1) return 0;
+
+    if(ud_c->enable_overflow_msgs){
+		dequed_msgs = _aether_deque_from_overflown_msgs(ud_c, max_msgs_to_poll, recv_ops);
+
+		if(max_msgs_to_poll == dequed_msgs)
+			return max_msgs_to_poll;
+
+		recv_ops = &recv_ops[dequed_msgs * ud_c->max_msg_size];
+		remaining_msgs_to_poll -= dequed_msgs;
+    }
+
+	uint16_t max_pkts_to_poll = (uint16_t) ((remaining_msgs_to_poll / ud_c->max_coalescing) +
+											(ud_c->enable_overflow_msgs ? 1 : 0));
 
 	//poll completion q
 	uint16_t pkts_polled = (uint16_t) ibv_poll_cq(ud_c->recv_cq, max_pkts_to_poll, ud_c->recv_wc);
@@ -263,9 +318,13 @@ aether_poll_buff_and_post_recvs(ud_channel_t* ud_c, uint16_t max_pkts_to_poll,
 //        if(node_is_in_membership(last_group_membership, sender))
 		for(int j = 0; j < next_packet->pkt.req_num; ++j){
 			next_req = &next_packet_reqs[j * ud_c->max_msg_size];
-			recv_op_ptr = &recv_ops[msgs_polled * ud_c->max_msg_size];
 
-			memcpy(recv_op_ptr, next_req, ud_c->max_msg_size);
+			if(msgs_polled >= remaining_msgs_to_poll)
+				_aether_enque_to_overflown_msgs(ud_c, next_req);
+			else{
+				recv_op_ptr = &recv_ops[msgs_polled * ud_c->max_msg_size];
+				memcpy(recv_op_ptr, next_req, ud_c->max_msg_size);
+			}
 
 			msgs_polled++;
 			if(!ud_c->disable_crd_ctrl)
@@ -310,7 +369,8 @@ aether_poll_buff_and_post_recvs(ud_channel_t* ud_c, uint16_t max_pkts_to_poll,
 			assert(ud_c->max_coalescing != 1 || pkts_polled == msgs_polled);
 	}
 
-    return msgs_polled;
+    return msgs_polled + dequed_msgs >= max_msgs_to_poll ?
+		   max_msgs_to_poll : msgs_polled + dequed_msgs;
 }
 
 /* ---------------------------------------------------------------------------
@@ -606,6 +666,9 @@ aether_issue_pkts(ud_channel_t *ud_c,
 		// Break if we do not have sufficient credits
 		if (!_aether_has_sufficient_crds(ud_c, curr_msg_dst)) {
 			has_outstanding_msgs = 1;
+
+            if(ud_c->enable_stats)
+            	ud_c->stats.no_stalls_due_to_credits++;
 
 			if(input_array_rolling_idx != NULL)
 				*input_array_rolling_idx = idx;

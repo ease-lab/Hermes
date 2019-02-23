@@ -128,6 +128,16 @@ aether_ud_channel_init(ud_channel_t *ud_c, char *qp_name, enum channel_type type
     ud_c->send_pkt_buff = malloc(_aether_ud_send_max_pkt_size(ud_c) * ud_c->send_pkt_buff_len);
 
 
+	ud_c->overflow_msg_buff = NULL;
+    //Overflow on polling
+    if(ud_c->max_coalescing > 1){
+		ud_c->num_overflow_msgs = 0;
+		ud_c->enable_overflow_msgs = 1;
+		ud_c->overflow_msg_buff = malloc(ud_c->max_msg_size * (ud_c->max_coalescing - 1));
+    }
+
+
+
     ud_c->send_push_ptr = 0;
     ud_c->recv_push_ptr = 0;
     ud_c->recv_pull_ptr = -1;
@@ -139,7 +149,8 @@ aether_ud_channel_init(ud_channel_t *ud_c, char *qp_name, enum channel_type type
 	ud_c->stats.recv_total_msgs = 0;
 	ud_c->stats.send_total_msgs = 0;
 	ud_c->stats.send_total_pkts = 0;
-	ud_c->stats.send_total_pcie_batches= 0;
+	ud_c->stats.send_total_pcie_batches = 0;
+	ud_c->stats.no_stalls_due_to_credits = 0;
 
 	// Initialize the crd channel as well
 	if(ud_c->expl_crd_ctrl){
@@ -330,7 +341,8 @@ _aether_ud_channel_crd_init(ud_channel_t *ud_c, char *qp_name, ud_channel_t *lin
 	ud_c->stats.recv_total_msgs = 0;
 	ud_c->stats.send_total_msgs = 0;
 	ud_c->stats.send_total_pkts = 0;
-	ud_c->stats.send_total_pcie_batches= 0;
+	ud_c->stats.send_total_pcie_batches = 0;
+	ud_c->stats.no_stalls_due_to_credits = 0;
 
 	ud_c->remote_qps = malloc(sizeof(qp_info_t) * ud_c->num_channels);
 	//The following are set by the *_init_recv function after the creation of control block and QPs

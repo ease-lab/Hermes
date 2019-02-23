@@ -11,7 +11,7 @@
 /// 	Accessible functions not defined below (in aether_api.h but exist only in aether.h) and starting with underscore
 ///		(i.e. "_aether_*") are internal and should not be called directly by the application
 
-#define AETHER_ENABLE_ASSERTIONS 1
+#define AETHER_ENABLE_ASSERTIONS 0
 #define AETHER_MAX_SUPPORTED_INLINING 187
 #define AETHER_ENABLE_BATCH_POST_RECVS_TO_NIC 1
 
@@ -76,6 +76,8 @@ typedef struct {
     uint64_t ss_completions;
     uint64_t recv_total_msgs;
     uint64_t recv_total_pkts;
+
+    uint64_t no_stalls_due_to_credits; //number of stalls due to not enough credits
 }
 ud_channel_stats_t;
 
@@ -149,6 +151,11 @@ typedef struct _ud_channel_t
 
     // Stats
     ud_channel_stats_t stats;
+
+    uint8_t  enable_overflow_msgs;
+	uint8_t  num_overflow_msgs;    // msgs in overflow_msg_buff always <= max_coalescing - 1
+    uint8_t* overflow_msg_buff; // use to keep message in case of polling
+                                    // a pkt and it doesn't fit in the recv array we
 
     // Toggles
     uint8_t enable_stats;

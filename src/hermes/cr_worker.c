@@ -361,6 +361,13 @@ remote_read_resp_skip_or_get_sender_id(uint8_t *req)
 	spacetime_op_t* op_req = (spacetime_op_t *) req;
 
 	if(ENABLE_ASSERTIONS){
+		if(op_req->op_meta.opcode != ST_OP_GET){
+
+			printf("Opcode: %d, state: %d\n", op_req->op_meta.opcode, op_req->op_meta.state);
+			printf("Opcode: %s, state: %s\n",
+				   code_to_str(op_req->op_meta.opcode),
+				   code_to_str(op_req->op_meta.state));
+		}
 		assert(op_req->op_meta.opcode == ST_OP_GET);
 		assert(op_req->op_meta.state == ST_GET_COMPLETE);
 	}
@@ -375,7 +382,10 @@ remote_read_resp_modify_elem_after_send(uint8_t* req)
 
 	if(op_req->op_meta.state == ST_GET_COMPLETE)
 		op_req->op_meta.state = ST_EMPTY;
-	else assert(0);
+	else {
+		printf("St_opcode: %s\n", code_to_str(op_req->op_meta.state));
+	    assert(0);
+	}
 }
 
 void
@@ -405,8 +415,9 @@ remote_read_resp_copy_and_modify_elem(uint8_t* msg_to_send, uint8_t* triggering_
 #define DISABLE_REMOTE_WRITES_INLINING DISABLE_INV_INLINING
 static_assert(CREDITS_PER_REMOTE_WORKER % MACHINE_NUM == 0, ""); // CR ONLY
 #define REMOTE_WRITES_CREDITS (CREDITS_PER_REMOTE_WORKER / MACHINE_NUM)
+//#define REMOTE_WRITES_CREDITS 5
 
-#define ENABLE_REMOTE_READS 0
+#define ENABLE_REMOTE_READS 1
 #define REMOTE_READS_CREDITS 20
 #define REMOTE_READS_MAX_REQ_COALESCE INV_MAX_REQ_COALESCE
 #define DISABLE_REMOTE_READS_INLINING DISABLE_INV_INLINING
@@ -424,7 +435,7 @@ static_assert(CREDITS_PER_REMOTE_WORKER % MACHINE_NUM == 0, ""); // CR ONLY
 #define CR_REMOTE_READS_RESP_UD_QP_ID (CR_REMOTE_READS_UD_QP_ID + 1)
 #define CR_TOTAL_WORKER_UD_QPs (TOTAL_WORKER_UD_QPs + (ENABLE_REMOTE_READS ? 2 : 0) + (ENABLE_EARLY_INV_CRDS ? 1 : 0))
 
-
+#define CR_ACK_RECV_OPS_SIZE CR_ACK_CREDITS
 
 void
 print_ops_and_remote_write_ops(spacetime_op_t* ops, spacetime_op_t* remote_writes)
@@ -437,6 +448,21 @@ print_ops_and_remote_write_ops(spacetime_op_t* ops, spacetime_op_t* remote_write
 		for(int i = 0; i < MAX_BATCH_OPS_SIZE; ++i)
 			printf("remote_writes[%d]: state-> %s, key-> %lu \n", i,
 				   code_to_str(remote_writes[i].op_meta.state), *((uint64_t*) &remote_writes[i].op_meta.key));
+}
+
+void
+print_total_stalls_due_to_credits(ud_channel_t *inv_ud_c, ud_channel_t *ack_ud_c,
+								  ud_channel_t *rem_writes_ud_c, ud_channel_t *rem_reads_ud_c)
+{
+	// Stalls
+	green_printf ("$$$ CRD STALLs : %s %d, %s %d, %s %d,",
+				  inv_ud_c->qp_name, inv_ud_c->stats.send_total_msgs,
+				  ack_ud_c->qp_name, ack_ud_c->stats.send_total_msgs,
+				  rem_writes_ud_c->qp_name, rem_writes_ud_c->stats.send_total_msgs);
+	if(ENABLE_REMOTE_READS)
+		green_printf (", %s %d\n",
+					  rem_reads_ud_c->qp_name, rem_reads_ud_c->stats.send_total_msgs);
+	else printf("\n");
 }
 
 void
@@ -699,6 +725,7 @@ run_worker(void *arg)
 		if (spawn_stats_thread() != 0)
 			red_printf("Stats thread was not successfully spawned \n");
 
+
 	/* -----------------------------------------------------
        ------------------------Main Loop--------------------
 	   ----------------------------------------------------- */
@@ -706,19 +733,24 @@ run_worker(void *arg)
 
 	    if(unlikely(w_stats[worker_lid].total_loops % M_16 == 0)){
 	        //Check something periodically
+//	        print_total_stalls_due_to_credits(inv_ud_c, ack_ud_c, rem_writes_ud_c, rem_reads_ud_c);
 //			print_total_send_recv_msgs_n_credits(inv_ud_c, inv_crd_ud_c, ack_ud_c,
 //												 rem_writes_ud_c, rem_writes_crd_ud_c,
 //												 rem_reads_ud_c, rem_read_resp_ud_c);
 //			print_ops_and_remote_write_ops(ops, remote_writes);
 	    }
 
-	    //TODO
+	    /// DONE
 	    // 1st stage: head only initiate requests 						 [DONE]
 	    // 2nd stage: + rest nodes initiate (local) reads   			 [DONE]
 	    // 3rd stage: + rest nodes initiate (remote) writes via head     [DONE]
 		// 4th stage: + rest nodes initiate remote reads when invalid    [DONE]
 		// 5th stage: + add early INV credits to pipeline more reqs      [DONE]
 		// 6th stage: + poll for remote writes even though stalled exist [DONE]
+		// 7th stage: + poll for messages instead of pkts (ie if you have
+		//              empty space buff slots < max_coalesce poll pkt
+		//              and buffer additional packets                    [DONE]
+		// 8th stage: + Do not stall writes that found Invalid on head   [DONE]
 
 	    if(!ENABLE_ONLY_HEAD_REQS || machine_id == head_id()){
 			refill_ops_n_suspect_failed_nodes(&trace_iter, worker_lid, trace, ops,
@@ -791,6 +823,7 @@ run_worker(void *arg)
 					/// Poll Remote reads
 					uint16_t remote_reads_polled = aether_poll_buff_and_post_recvs(rem_reads_ud_c, MAX_BATCH_OPS_SIZE,
 																				   (uint8_t *) remote_reads);
+
 					/// Batch Remote reads to KVS
 					cr_batch_ops_to_KVS(Remote_reads, (uint8_t *) remote_reads,
 										remote_reads_polled, sizeof(spacetime_op_t), NULL);
@@ -798,7 +831,8 @@ run_worker(void *arg)
 					/// Issue responses of Remote reads
 					aether_issue_pkts(rem_read_resp_ud_c, (uint8_t *) remote_reads,
 									  remote_reads_polled, sizeof(spacetime_op_t), NULL,
-									  remote_read_resp_skip_or_get_sender_id, remote_read_resp_modify_elem_after_send,
+									  remote_read_resp_skip_or_get_sender_id,
+									  remote_read_resp_modify_elem_after_send,
 									  remote_read_resp_copy_and_modify_elem);
 
 				} else {
@@ -807,6 +841,7 @@ run_worker(void *arg)
 									  MAX_BATCH_OPS_SIZE, sizeof(spacetime_op_t), &remote_reads_rolling_idx,
 									  remote_read_skip_or_get_sender_id, remote_read_modify_elem_after_send,
 									  remote_read_copy_and_modify_elem);
+
 					/// Poll respsonses of Remote reads
 					uint16_t remote_read_resps_polled = aether_poll_buff_and_post_recvs(rem_read_resp_ud_c, MAX_BATCH_OPS_SIZE,
 																						(uint8_t *) remote_reads);
@@ -845,10 +880,14 @@ run_worker(void *arg)
 																 inv_fwd_copy_and_modify_elem);
 
 					else if (machine_id == tail_id())
-						/// Initiate ACKS (forward to Head)
+					{
+						/// Initiate ACKS (forward to prev)
 						has_outstanding_invs = aether_issue_pkts(ack_ud_c, (uint8_t *) inv_recv_ops, invs_polled,
 																 sizeof(spacetime_inv_t), NULL, ack_skip_or_get_sender_id,
 																 ack_modify_elem_after_send, ack_copy_and_modify_elem);
+						if(ENABLE_ASSERTIONS)
+							assert(ack_ud_c->stats.send_total_msgs == inv_ud_c->stats.recv_total_msgs - inv_ud_c->num_overflow_msgs);
+					}
 				}
 			}
 
@@ -860,16 +899,20 @@ run_worker(void *arg)
 					/// Batch ACKs to KVS
 					cr_batch_ops_to_KVS(Acks, (uint8_t *) ack_recv_ops, acks_polled, sizeof(spacetime_ack_t), ops);
 
-				if(machine_id != head_id())
+				if(machine_id != head_id()){
+
 					/// FWD ACKs to previous node if not the Head
-					aether_issue_pkts(ack_ud_c, (uint8_t *) ack_recv_ops,
-									  ack_ud_c->recv_pkt_buff_len, sizeof(spacetime_ack_t),
-									  NULL, ack_fwd_skip_or_get_sender_id,
+					aether_issue_pkts(ack_ud_c, (uint8_t *) ack_recv_ops, acks_polled, sizeof(spacetime_ack_t), NULL,
+									  ack_fwd_skip_or_get_sender_id,
 									  ack_fwd_modify_elem_after_send, ack_fwd_copy_and_modify_elem);
+					if(ENABLE_ASSERTIONS)
+						assert(ack_ud_c->stats.send_total_msgs == ack_ud_c->stats.recv_total_msgs - ack_ud_c->num_overflow_msgs);
+				}
+
 
 				else
 					///empty ack_rcv_ops in head node
-					for(int i = 0; i < ack_ud_c->recv_pkt_buff_len; ++i)
+					for(int i = 0; i < ACK_RECV_OPS_SIZE; ++i)
 						ack_recv_ops[i].opcode = ST_EMPTY;
 			}
 		}

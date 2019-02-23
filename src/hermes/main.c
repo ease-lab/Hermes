@@ -32,7 +32,8 @@ int main(int argc, char *argv[])
     assert(MACHINE_NUM <= GROUP_MEMBERSHIP_ARRAY_SIZE * 8);//bit vector for acks / group membership
     assert(sizeof(spacetime_crd_t) < sizeof(((struct ibv_send_wr*)0)->imm_data)); //for inlined credits
 	assert(MACHINE_NUM <= 255);
-    assert(CREDITS_PER_REMOTE_WORKER <= MAX_BATCH_OPS_SIZE);
+
+//    assert(CREDITS_PER_REMOTE_WORKER <= MAX_BATCH_OPS_SIZE);
 
     assert(MAX_PCIE_BCAST_BATCH <= INV_CREDITS);
 	assert(MAX_PCIE_BCAST_BATCH <= VAL_CREDITS);

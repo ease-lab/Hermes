@@ -16,7 +16,7 @@ FILES=(
 #        "hermes"
 #        "hermes-aether"
         "cr"
-        "run-hermes.sh"
+#        "run-hermes.sh"
       )
 
 USERNAME="s1671850" # "user"
