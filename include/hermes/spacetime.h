@@ -289,6 +289,19 @@ void reconfigure_wrs(struct ibv_send_wr *inv_send_wr, struct ibv_sge *inv_send_s
                      spacetime_group_membership last_g_membership, uint16_t worker_lid);
 
 
+
+enum hermes_batch_type_t
+{
+	    local_ops,
+		invs,
+		acks,
+		vals
+};
+
+void hermes_batch_ops_to_KVS(enum hermes_batch_type_t type, uint8_t *op_array, int op_num,
+							 uint16_t sizeof_op_elem, spacetime_group_membership curr_membership,
+							 int *node_suspected, spacetime_op_t *read_write_ops, uint8_t thread_id);
+
 ///////////////////////////////////////
 //////////////////// CR
 ///////////////////////////////////////

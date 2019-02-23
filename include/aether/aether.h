@@ -508,7 +508,7 @@ _aether_forge_wr(ud_channel_t *ud_c, uint8_t dst_qp_id, uint8_t *req_to_copy,
 	copy_and_modify_elem(next_req_ptr, req_to_copy);
 
 	if(AETHER_ENABLE_ASSERTIONS){
-		assert(dst_qp_id != machine_id);
+		assert(dst_qp_id != machine_id || ud_c->is_bcast_channel);
 		assert(curr_pkt_ptr->req_num <= ud_c->max_coalescing);
 	}
 

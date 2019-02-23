@@ -301,7 +301,8 @@ run_worker(void *arg)
 														   num_of_iters_serving_op, last_group_membership,
 														   n_hottest_keys_in_ops_get, n_hottest_keys_in_ops_put);
 
-		batch_ops_to_KVS(MAX_BATCH_OPS_SIZE, &ops, worker_lid, last_group_membership);
+	    hermes_batch_ops_to_KVS(local_ops, (uint8_t *) ops, MAX_BATCH_OPS_SIZE, sizeof(spacetime_op_t),
+								last_group_membership, NULL, NULL, (uint8_t) worker_lid);
 
 		if (WRITE_RATIO > 0) {
 			///~~~~~~~~~~~~~~~~~~~~~~INVS~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -314,8 +315,8 @@ run_worker(void *arg)
 
 
 			if(invs_polled > 0) {
-				batch_invs_to_KVS(invs_polled, &inv_recv_ops, ops, worker_lid,
-								  &node_suspected, num_of_iters_serving_op);
+				hermes_batch_ops_to_KVS(invs, (uint8_t *) inv_recv_ops, invs_polled, sizeof(spacetime_inv_t),
+										last_group_membership, &node_suspected, NULL, (uint8_t) worker_lid);
 
 				///~~~~~~~~~~~~~~~~~~~~~~ACKS~~~~~~~~~~~~~~~~~~~~~~~~~~~
 				aether_issue_pkts(ack_ud_c, (uint8_t *) inv_recv_ops,
@@ -331,7 +332,8 @@ run_worker(void *arg)
 				acks_polled = aether_poll_buff_and_post_recvs(ack_ud_c, ACK_RECV_OPS_SIZE, (uint8_t *) ack_recv_ops);
 
 				if (acks_polled > 0) {
-					batch_acks_to_KVS(acks_polled, &ack_recv_ops, ops, last_group_membership, worker_lid);
+					hermes_batch_ops_to_KVS(acks, (uint8_t *) ack_recv_ops, acks_polled, sizeof(spacetime_ack_t),
+											last_group_membership, NULL, ops, (uint8_t) worker_lid);
 					acks_polled = 0;
 				}
 			}
@@ -347,7 +349,8 @@ run_worker(void *arg)
 				vals_polled = aether_poll_buff_and_post_recvs(val_ud_c, VAL_RECV_OPS_SIZE, (uint8_t *) val_recv_ops);
 
 				if (vals_polled > 0) {
-					batch_vals_to_KVS(vals_polled, &val_recv_ops, ops, worker_lid);
+					hermes_batch_ops_to_KVS(vals, (uint8_t *) val_recv_ops, vals_polled, sizeof(spacetime_val_t),
+											last_group_membership, NULL, NULL, (uint8_t) worker_lid);
 
 					///~~~~~~~~~~~~~~~~~~~~~~CREDITS~~~~~~~~~~~~~~~~~~~~~~~~~~~
 					aether_issue_credits(crd_ud_c, (uint8_t *) val_recv_ops, VAL_RECV_OPS_SIZE,
