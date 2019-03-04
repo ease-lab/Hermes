@@ -140,6 +140,7 @@ void *run_worker(void *arg){
 //	}
 
 
+    struct timespec stopwatch_for_req_latency;
 	/* -----------------------------------------------------
        ------------------------Main Loop--------------------
 	   ----------------------------------------------------- */
@@ -151,6 +152,7 @@ void *run_worker(void *arg){
 //		}
 		node_suspected = refill_ops_n_suspect_failed_nodes(&trace_iter, worker_lid, trace, ops,
 														   num_of_iters_serving_op, last_group_membership,
+														   &stopwatch_for_req_latency,
 														   n_hottest_keys_in_ops_get, n_hottest_keys_in_ops_put);
 
 

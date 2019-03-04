@@ -365,6 +365,21 @@ hermes_exec_read(spacetime_op_t *op_ptr, struct mica_op *kv_ptr,
 				break;
 		}
 	} while (!cctrl_timestamp_is_same_and_valid(&prev_meta.cctrl, &curr_meta->cctrl) && was_locked_read == 0);
+
+	if(ENABLE_READ_COMPLETE_AFTER_VAL_RECV_OF_HOT_REQS &&
+	   op_ptr->op_meta.state == ST_GET_STALL  )
+	{
+		if(op_ptr->op_meta.ts.version == 0 && op_ptr->op_meta.ts.tie_breaker_id == 0){
+			// if its the first time we stall on this read store the timestamp
+			op_ptr->op_meta.ts.version = curr_meta->cctrl.ts.version;
+			op_ptr->op_meta.ts.tie_breaker_id = curr_meta->cctrl.ts.tie_breaker_id;
+
+		} else if(op_ptr->op_meta.ts.version + 1 < curr_meta->cctrl.ts.version){
+			// if the timestamp we saw initially has smaller than 2 versions complete the read;
+			// TODO we also need to get the value here
+			op_ptr->op_meta.state = ST_GET_COMPLETE;
+		}
+	}
 }
 
 static uint64_t g_seed = 0xdeadbeef;
@@ -382,8 +397,8 @@ hermes_exec_write(spacetime_op_t *op_ptr, struct mica_op *kv_ptr,
 
 	///Warning: even if a write is in progress write we may need to update the value of write_buffer_index
 	op_ptr->op_meta.state = ST_EMPTY;
-
 	cctrl_lock(&curr_meta->cctrl);
+	uint16_t curr_ts = (uint16_t) (curr_meta->cctrl.ts.version - 1);
 	uint8_t v_node_id = (uint8_t) machine_id;
 	switch(curr_meta->state) {
 		case VALID_STATE:
@@ -392,6 +407,11 @@ hermes_exec_write(spacetime_op_t *op_ptr, struct mica_op *kv_ptr,
 				///stall write: until all acks from last write arrive
 				/// on multiple threads we can't complete writes / replays on VAL
 				cctrl_unlock_dec_version(&curr_meta->cctrl);
+				if(ENABLE_WRITE_COALESCE_TO_THE_SAME_KEY_IN_SAME_NODE && op_ptr->op_meta.ts.version == 0){
+					// if its the first time we stall on this read store the timestamp
+					op_ptr->op_meta.ts.version = curr_ts;
+					op_ptr->op_meta.state = ST_IN_PROGRESS_PUT;
+				}
 			} else {
 				curr_meta->state = WRITE_STATE;
 				memcpy(kv_value_ptr, op_ptr->value, ST_VALUE_SIZE);
@@ -414,6 +434,12 @@ hermes_exec_write(spacetime_op_t *op_ptr, struct mica_op *kv_ptr,
 			break;
 		case INVALID_WRITE_STATE:
 		case WRITE_STATE:
+			if(ENABLE_WRITE_COALESCE_TO_THE_SAME_KEY_IN_SAME_NODE && op_ptr->op_meta.ts.version == 0){
+				// if its the first time we stall on this read store the timestamp
+				op_ptr->op_meta.ts.version = curr_ts;
+				op_ptr->op_meta.state = ST_IN_PROGRESS_PUT;
+			}
+
 		case REPLAY_STATE:
 			cctrl_unlock_dec_version(&curr_meta->cctrl);
 			break;
@@ -426,6 +452,13 @@ hermes_exec_write(spacetime_op_t *op_ptr, struct mica_op *kv_ptr,
 		op_ptr->op_meta.ts.tie_breaker_id = v_node_id;
 	else
 		op_ptr->op_meta.state = ST_PUT_STALL;
+
+	if(ENABLE_WRITE_COALESCE_TO_THE_SAME_KEY_IN_SAME_NODE && op_ptr->op_meta.state == ST_PUT_STALL)
+		if(op_ptr->op_meta.ts.version > 0 && op_ptr->op_meta.ts.version + 1 < curr_ts){
+			// if the timestamp we saw initially has smaller than 2 versions it means that
+			// the local write we coalesced with is completed
+			op_ptr->op_meta.state = ST_PUT_COMPLETE;
+		}
 }
 
 static inline void

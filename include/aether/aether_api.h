@@ -11,7 +11,7 @@
 /// 	Accessible functions not defined below (in aether_api.h but exist only in aether.h) and starting with underscore
 ///		(i.e. "_aether_*") are internal and should not be called directly by the application
 
-#define AETHER_ENABLE_ASSERTIONS 1
+#define AETHER_ENABLE_ASSERTIONS 0
 #define AETHER_MAX_SUPPORTED_INLINING 187
 #define AETHER_ENABLE_BATCH_POST_RECVS_TO_NIC 1
 

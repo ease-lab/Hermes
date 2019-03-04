@@ -1320,16 +1320,37 @@ stop_latency_measurment(uint8_t req_opcode, struct timespec *start)
 /* ---------------------------------------------------------------------------
 ------------------------------------OTHERS------------------------------------
 ---------------------------------------------------------------------------*/
+static inline void
+stop_latency_of_completed_writes(spacetime_op_t *ops, uint16_t worker_lid,
+								 struct timespec *stopwatch)
+{
+	if(MEASURE_LATENCY && machine_id == 0 && worker_lid == THREAD_MEASURING_LATENCY)
+		if(ops[0].op_meta.opcode == ST_OP_PUT &&
+		   (ops[0].op_meta.state == ST_MISS || ops[0].op_meta.state == ST_PUT_COMPLETE))
+				stop_latency_measurment(ops[0].op_meta.opcode, stopwatch);
+}
+
+static inline void
+stop_latency_of_completed_reads(spacetime_op_t *ops, uint16_t worker_lid,
+								struct timespec *stopwatch)
+{
+	if(MEASURE_LATENCY && machine_id == 0 && worker_lid == THREAD_MEASURING_LATENCY)
+		if(ops[0].op_meta.opcode == ST_OP_GET &&
+		   (ops[0].op_meta.state == ST_MISS || ops[0].op_meta.state == ST_GET_COMPLETE))
+				stop_latency_measurment(ops[0].op_meta.opcode, stopwatch);
+}
+
 static inline int
 refill_ops_n_suspect_failed_nodes(uint32_t *trace_iter, uint16_t worker_lid,
 								  struct spacetime_trace_command *trace, spacetime_op_t *ops,
 								  uint32_t *refilled_per_ops_debug_cnt,
 								  spacetime_group_membership last_group_membership,
+								  struct timespec *start,
 								  spacetime_op_t** n_hottest_keys_in_ops_get,
 								  spacetime_op_t** n_hottest_keys_in_ops_put)
 {
 	static uint8_t first_iter_has_passed[WORKERS_PER_MACHINE] = { 0 };
-	static struct timespec start;
+//	static struct timespec start;
 	int i = 0, refilled_ops = 0, node_suspected = -1;
 	for(i = 0; i < MAX_BATCH_OPS_SIZE; i++) {
 		if(ENABLE_ASSERTIONS)
@@ -1364,9 +1385,6 @@ refill_ops_n_suspect_failed_nodes(uint32_t *trace_iter, uint16_t worker_lid,
 								 code_to_str(ops[i].op_meta.state), ops[i].op_meta.ts.version,
 								 ops[i].op_meta.ts.tie_breaker_id, ops[i].op_meta.val_len, ops[i].value[0]);
 
-				if(MEASURE_LATENCY && machine_id == 0 && worker_lid == THREAD_MEASURING_LATENCY && i == 0)
-					stop_latency_measurment(ops[i].op_meta.opcode, &start);
-
                 if(ops[i].op_meta.state != ST_MISS)
 					w_stats[worker_lid].completed_ops_per_worker += ENABLE_COALESCE_OF_HOT_REQS ? ops[i].no_coales : 1;
                 else
@@ -1383,7 +1401,7 @@ refill_ops_n_suspect_failed_nodes(uint32_t *trace_iter, uint16_t worker_lid,
 				assert(trace[*trace_iter].opcode == ST_OP_PUT || trace[*trace_iter].opcode == ST_OP_GET);
 
             if(MEASURE_LATENCY && machine_id == 0 && worker_lid == THREAD_MEASURING_LATENCY && i == 0)
-				start_latency_measurement(&start);
+				start_latency_measurement(start);
 
            /// INSERT new req(s) to ops
 			uint8_t key_id;
@@ -1410,12 +1428,18 @@ refill_ops_n_suspect_failed_nodes(uint32_t *trace_iter, uint16_t worker_lid,
 			}
 
 			ops[i].op_meta.state = ST_NEW;
-			ops[i].op_meta.opcode = (uint8_t) (ENABLE_ALL_NODES_GETS_EXCEPT_HEAD && machine_id != 0 ?
+			ops[i].op_meta.opcode = (uint8_t) (CR_ENABLE_ALL_NODES_GETS_EXCEPT_HEAD && machine_id != 0 ?
 											   ST_OP_GET : trace[*trace_iter].opcode);
 			memcpy(&ops[i].op_meta.key, &trace[*trace_iter].key_hash, sizeof(spacetime_key_t));
 
 			if (ops[i].op_meta.opcode == ST_OP_PUT)
 				memset(ops[i].value, ((uint8_t) 'a' + machine_id), ST_VALUE_SIZE);
+			else if(ENABLE_READ_COMPLETE_AFTER_VAL_RECV_OF_HOT_REQS){
+				//if its a read reset the timestamp
+				ops[i].op_meta.ts.version = 0;
+				ops[i].op_meta.ts.tie_breaker_id = 0;
+			}
+
 			ops[i].op_meta.val_len = (uint8) (ops[i].op_meta.opcode == ST_OP_PUT ? ST_VALUE_SIZE : 0);
 
 			// instead of MOD add

@@ -21,16 +21,16 @@ class LatencyParser:
 
     def printStats(self, array, max_latency):
         self.avgLatency(array)
-        self.percentileLatency(array, 20)
+        #self.percentileLatency(array, 20)
         self.percentileLatency(array, 50)
         self.percentileLatency(array, 90)
         self.percentileLatency(array, 95)
         self.percentileLatency(array, 99)
-        self.percentileLatency(array, 99.9)
-        self.percentileLatency(array, 99.99)
-        self.percentileLatency(array, 99.999)
-        self.percentileLatency(array, 99.9999)
-        self.percentileLatency(array, 100)
+        #self.percentileLatency(array, 99.9)
+        #self.percentileLatency(array, 99.99)
+        #self.percentileLatency(array, 99.999)
+        #self.percentileLatency(array, 99.9999)
+        #self.percentileLatency(array, 100)
         print "Max Latency: ", max_latency, "us"
 
     def printAllStats(self):

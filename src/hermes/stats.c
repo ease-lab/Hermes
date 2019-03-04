@@ -84,8 +84,6 @@ void *print_stats(void* no_arg){
             green_printf("SYSTEM MIOPS: %.2f \n", total_throughput);
             printf("---------------------------------------\n");
         }
-        if(DUMP_STATS_2_FILE == 1)
-            dump_stats_2_file(&all_stats);
 
     }
 }
@@ -133,27 +131,27 @@ dump_latency_stats(void)
     char filename[128];
     char* path = "../../results/latency";
 
-    sprintf(filename, "%s/CR_latency_stats_v_%d_m_%d_w_%d_b_%d_c_%d_t_%d_ci_%d_ca_%d_cv_%d.csv", path,
-            (int) (ST_VALUE_SIZE + 2),
+    sprintf(filename, "%s/%s_latency_m_%d_w_%d_b_%d_wr_%d_c_%d%s.csv", path,
+            CR_IS_RUNNING == 1? "CR" : "Hermes",
             MACHINE_NUM,
-            WRITE_RATIO,
-            MAX_BATCH_OPS_SIZE,
-            CREDITS_PER_REMOTE_WORKER,
             WORKERS_PER_MACHINE,
-            INV_MAX_REQ_COALESCE,
-            ACK_MAX_REQ_COALESCE,
-            VAL_MAX_REQ_COALESCE);
+            MAX_BATCH_OPS_SIZE,
+            WRITE_RATIO,
+            CREDITS_PER_REMOTE_WORKER,
+            FEED_FROM_TRACE == 1 ? "_a_0.99": "");
 
     latency_stats_fd = fopen(filename, "w");
     fprintf(latency_stats_fd, "#---------------- Read Reqs --------------\n");
     for(i = 0; i < LATENCY_BUCKETS; ++i)
-        fprintf(latency_stats_fd, "reads: %d, %d\n",i * LATENCY_PRECISION, latency_count.read_reqs[i]);
+//        if(latency_count.read_reqs[i] > 0)
+            fprintf(latency_stats_fd, "reads: %d, %d\n",i * LATENCY_PRECISION, latency_count.read_reqs[i]);
     fprintf(latency_stats_fd, "reads: -1, %d\n", latency_count.read_reqs[LATENCY_BUCKETS]); //print outliers
     fprintf(latency_stats_fd, "reads-hl: %d\n", latency_count.max_read_latency); //print max read latency
 
     fprintf(latency_stats_fd, "#---------------- Write Reqs ---------------\n");
     for(i = 0; i < LATENCY_BUCKETS; ++i)
-        fprintf(latency_stats_fd, "writes: %d, %d\n",i * LATENCY_PRECISION, latency_count.write_reqs[i]);
+//        if(latency_count.write_reqs[i] > 0)
+            fprintf(latency_stats_fd, "writes: %d, %d\n",i * LATENCY_PRECISION, latency_count.write_reqs[i]);
     fprintf(latency_stats_fd, "writes: -1, %d\n", latency_count.write_reqs[LATENCY_BUCKETS]); //print outliers
     fprintf(latency_stats_fd, "writes-hl: %d\n", latency_count.max_write_latency); //print max write latency
 

@@ -205,6 +205,7 @@ print_total_send_recv_msgs(ud_channel_t *inv_ud_c, ud_channel_t *ack_ud_c,
 void*
 run_worker(void *arg)
 {
+	assert(CR_IS_RUNNING == 0);
 	struct thread_params params = *(struct thread_params *) arg;
 	uint16_t worker_lid = (uint16_t) params.id;	// Local ID of this worker thread
 	uint16_t worker_gid = (uint16_t) (machine_id * WORKERS_PER_MACHINE + params.id);	// Global ID of this worker thread
@@ -281,6 +282,7 @@ run_worker(void *arg)
 	if (worker_lid == 0)
 		if (spawn_stats_thread() != 0) red_printf("Stats thread was not successfully spawned \n");
 
+    struct timespec stopwatch_for_req_latency;
 	/* -----------------------------------------------------
        ------------------------Main Loop--------------------
 	   ----------------------------------------------------- */
@@ -299,10 +301,13 @@ run_worker(void *arg)
 
 		node_suspected = refill_ops_n_suspect_failed_nodes(&trace_iter, worker_lid, trace, ops,
 														   num_of_iters_serving_op, last_group_membership,
+														   &stopwatch_for_req_latency,
 														   n_hottest_keys_in_ops_get, n_hottest_keys_in_ops_put);
 
 	    hermes_batch_ops_to_KVS(local_ops, (uint8_t *) ops, MAX_BATCH_OPS_SIZE, sizeof(spacetime_op_t),
 								last_group_membership, NULL, NULL, (uint8_t) worker_lid);
+
+	    stop_latency_of_completed_reads(ops, worker_lid, &stopwatch_for_req_latency);
 
 		if (WRITE_RATIO > 0) {
 			///~~~~~~~~~~~~~~~~~~~~~~INVS~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -322,7 +327,7 @@ run_worker(void *arg)
 				aether_issue_pkts(ack_ud_c, (uint8_t *) inv_recv_ops,
 								  invs_polled, sizeof(spacetime_inv_t), NULL,
 								  ack_skip_or_get_sender_id, ack_modify_elem_after_send, ack_copy_and_modify_elem);
-				invs_polled = 0;
+
 				if(ENABLE_ASSERTIONS)
 					assert(inv_ud_c->stats.recv_total_msgs == ack_ud_c->stats.send_total_msgs);
 			}
@@ -331,10 +336,11 @@ run_worker(void *arg)
 				///Poll for Acks
 				acks_polled = aether_poll_buff_and_post_recvs(ack_ud_c, ACK_RECV_OPS_SIZE, (uint8_t *) ack_recv_ops);
 
-				if (acks_polled > 0) {
+				if (acks_polled > 0){
 					hermes_batch_ops_to_KVS(acks, (uint8_t *) ack_recv_ops, acks_polled, sizeof(spacetime_ack_t),
 											last_group_membership, NULL, ops, (uint8_t) worker_lid);
-					acks_polled = 0;
+
+					stop_latency_of_completed_writes(ops, worker_lid, &stopwatch_for_req_latency);
 				}
 			}
 
@@ -356,7 +362,6 @@ run_worker(void *arg)
 					aether_issue_credits(crd_ud_c, (uint8_t *) val_recv_ops, VAL_RECV_OPS_SIZE,
 										 sizeof(spacetime_val_t), rem_write_crd_skip_or_get_sender_id,
 										 rem_write_crd_modify_elem_after_send);
-					vals_polled = 0;
 				}
 			}
 

@@ -11,8 +11,8 @@ allIPs=(
 #          atlanata
         129.215.165.1
             ####    compute cluster    ####
-#          chicago       detroit      baltimore
-        129.215.165.3 129.215.165.4 129.215.165.2
+#         baltimore     chicago       detroit
+       129.215.165.2 129.215.165.3 129.215.165.4
         )
 localIP=$(ip addr | grep 'state UP' -A2 | grep 'inet 129.'| awk '{print $2}' | cut -f1  -d'/')
 
@@ -76,8 +76,7 @@ sleep 1
 blue "Running hermes threads"
 
 sudo LD_LIBRARY_PATH=/usr/local/lib/ -E \
-#	./hermes                            \
-    ./hermes-aether                     \
+	./cr                                \
 	--machine-id $machine_id            \
 	--is-roce 0                         \
 	--dev-name "mlx5_0"                 \

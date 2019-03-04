@@ -411,31 +411,6 @@ remote_read_resp_copy_and_modify_elem(uint8_t* msg_to_send, uint8_t* triggering_
 
 
 
-#define REMOTE_WRITES_MAX_REQ_COALESCE INV_MAX_REQ_COALESCE
-#define DISABLE_REMOTE_WRITES_INLINING DISABLE_INV_INLINING
-static_assert(CREDITS_PER_REMOTE_WORKER % MACHINE_NUM == 0, ""); // CR ONLY
-#define REMOTE_WRITES_CREDITS (CREDITS_PER_REMOTE_WORKER / MACHINE_NUM)
-//#define REMOTE_WRITES_CREDITS 5
-
-#define ENABLE_REMOTE_READS 1
-#define REMOTE_READS_CREDITS 20
-#define REMOTE_READS_MAX_REQ_COALESCE INV_MAX_REQ_COALESCE
-#define DISABLE_REMOTE_READS_INLINING DISABLE_INV_INLINING
-
-#define ENABLE_EARLY_INV_CRDS 1
-
-#define CR_ACK_CREDITS (255) //(MACHINE_NUM * ACK_CREDITS)
-
-#define CR_INV_UD_QP_ID 0
-#define CR_INV_CRD_UD_QP_ID 1
-#define CR_ACK_UD_QP_ID (ENABLE_EARLY_INV_CRDS == 1 ? 2 : 1)
-#define CR_REMOTE_WRITES_UD_QP_ID (CR_ACK_UD_QP_ID + 1)
-#define CR_REMOTE_WRITE_CRD_UD_QP_ID (CR_REMOTE_WRITES_UD_QP_ID + 1)
-#define CR_REMOTE_READS_UD_QP_ID  (CR_REMOTE_WRITE_CRD_UD_QP_ID + 1)
-#define CR_REMOTE_READS_RESP_UD_QP_ID (CR_REMOTE_READS_UD_QP_ID + 1)
-#define CR_TOTAL_WORKER_UD_QPs (TOTAL_WORKER_UD_QPs + (ENABLE_REMOTE_READS ? 2 : 0) + (ENABLE_EARLY_INV_CRDS ? 1 : 0))
-
-#define CR_ACK_RECV_OPS_SIZE CR_ACK_CREDITS
 
 void
 print_ops_and_remote_write_ops(spacetime_op_t* ops, spacetime_op_t* remote_writes)
@@ -459,7 +434,7 @@ print_total_stalls_due_to_credits(ud_channel_t *inv_ud_c, ud_channel_t *ack_ud_c
 				  inv_ud_c->qp_name, inv_ud_c->stats.send_total_msgs,
 				  ack_ud_c->qp_name, ack_ud_c->stats.send_total_msgs,
 				  rem_writes_ud_c->qp_name, rem_writes_ud_c->stats.send_total_msgs);
-	if(ENABLE_REMOTE_READS)
+	if(CR_ENABLE_REMOTE_READS)
 		green_printf (", %s %d\n",
 					  rem_reads_ud_c->qp_name, rem_reads_ud_c->stats.send_total_msgs);
 	else printf("\n");
@@ -474,14 +449,14 @@ print_total_send_recv_msgs_n_credits(ud_channel_t *inv_ud_c, ud_channel_t *inv_c
 	// Sends
 	green_printf ("--> Total Send: %s %d",
 				  inv_ud_c->qp_name, inv_ud_c->stats.send_total_msgs);
-	if(ENABLE_EARLY_INV_CRDS)
+	if(CR_ENABLE_EARLY_INV_CRDS)
 		green_printf (", %s %d",
 					  inv_crd_ud_c->qp_name, inv_crd_ud_c->stats.send_total_msgs);
 	green_printf (", %s %d, %s %d, %s %d",
 				  ack_ud_c->qp_name, ack_ud_c->stats.send_total_msgs,
 				  rem_writes_ud_c->qp_name, rem_writes_ud_c->stats.send_total_msgs,
 				  crd_ud_c->qp_name, crd_ud_c->stats.send_total_msgs);
-	if(ENABLE_REMOTE_READS)
+	if(CR_ENABLE_REMOTE_READS)
 		green_printf (", %s %d, %s %d\n",
 					  rem_reads_ud_c->qp_name, rem_reads_ud_c->stats.send_total_msgs,
 					  rem_read_resp_ud_c->qp_name, rem_read_resp_ud_c->stats.send_total_msgs);
@@ -491,14 +466,14 @@ print_total_send_recv_msgs_n_credits(ud_channel_t *inv_ud_c, ud_channel_t *inv_c
 	// Receives
 	green_printf ("vvv Total Recv: %s %d",
 				  inv_ud_c->qp_name, inv_ud_c->stats.recv_total_msgs);
-	if(ENABLE_EARLY_INV_CRDS)
+	if(CR_ENABLE_EARLY_INV_CRDS)
 		green_printf (", %s %d",
 					  inv_crd_ud_c->qp_name, inv_crd_ud_c->stats.recv_total_msgs);
 	green_printf (", %s %d, %s %d, %s %d",
 				  ack_ud_c->qp_name, ack_ud_c->stats.recv_total_msgs,
 				  rem_writes_ud_c->qp_name, rem_writes_ud_c->stats.recv_total_msgs,
 				  crd_ud_c->qp_name, crd_ud_c->stats.recv_total_msgs);
-	if(ENABLE_REMOTE_READS)
+	if(CR_ENABLE_REMOTE_READS)
 		green_printf (", %s %d, %s %d\n",
 					  rem_reads_ud_c->qp_name, rem_reads_ud_c->stats.recv_total_msgs,
 					  rem_read_resp_ud_c->qp_name, rem_read_resp_ud_c->stats.recv_total_msgs);
@@ -596,6 +571,10 @@ cr_move_stalled_writes_to_top_n_return_free_space(spacetime_op_t *remote_writes)
 void*
 run_worker(void *arg)
 {
+	assert(CR_IS_RUNNING == 1);
+	assert(ENABLE_COALESCE_OF_HOT_REQS == 0);
+	assert(CREDITS_PER_REMOTE_WORKER % MACHINE_NUM == 0); // CR ONLY
+
 	struct thread_params params = *(struct thread_params *) arg;
 	uint16_t worker_lid = (uint16_t) params.id;	// Local ID of this worker thread
 	uint16_t worker_gid = (uint16_t) (machine_id * WORKERS_PER_MACHINE + params.id);	// Global ID of this worker thread
@@ -629,7 +608,7 @@ run_worker(void *arg)
 	sprintf(rem_reads_qp_name ,  "%s[%d]", "\033[1m\033[32mREMOTE_READS\033[0m", worker_lid);
 	sprintf(rem_read_resps_qp_name, "%s[%d]", "\033[1m\033[32mREMOTE_READ_RESPS\033[0m", worker_lid);
 
-	if(ENABLE_EARLY_INV_CRDS){
+	if(CR_ENABLE_EARLY_INV_CRDS){
 		aether_ud_channel_init(inv_ud_c, inv_qp_name, REQ, INV_MAX_REQ_COALESCE, sizeof(spacetime_inv_t),
 							   DISABLE_INV_INLINING == 0 ? 1 : 0, 0, 0, 1, inv_crd_ud_c, INV_CREDITS,
 							   MACHINE_NUM, (uint8_t) machine_id, 1, 1);
@@ -647,20 +626,20 @@ run_worker(void *arg)
 							   (uint8_t) machine_id, 1, 1);
 	}
 
-	aether_ud_channel_init(rem_writes_ud_c, rem_writes_qp_name, REQ, REMOTE_WRITES_MAX_REQ_COALESCE,
-						   sizeof(spacetime_op_t), DISABLE_REMOTE_WRITES_INLINING == 0 ? 1 : 0, 0, 0, 1,
-						   rem_writes_crd_ud_c, REMOTE_WRITES_CREDITS, MACHINE_NUM, (uint8_t) machine_id, 1, 1);
+	aether_ud_channel_init(rem_writes_ud_c, rem_writes_qp_name, REQ, CR_REMOTE_WRITES_MAX_REQ_COALESCE,
+						   sizeof(spacetime_op_t), CR_DISABLE_REMOTE_WRITES_INLINING == 0 ? 1 : 0, 0, 0, 1,
+						   rem_writes_crd_ud_c, CR_REMOTE_WRITES_CREDITS, MACHINE_NUM, (uint8_t) machine_id, 1, 1);
 
 	///////////////
 	///<4th stage>
-	if(ENABLE_REMOTE_READS){
-		aether_ud_channel_init(rem_reads_ud_c, rem_reads_qp_name, REQ, REMOTE_WRITES_MAX_REQ_COALESCE,
-							   sizeof(spacetime_op_t), DISABLE_REMOTE_READS_INLINING == 0 ? 1 : 0, 0, 0, 0,
-							   rem_read_resp_ud_c, REMOTE_READS_CREDITS, MACHINE_NUM, (uint8_t) machine_id, 1, 1);
+	if(CR_ENABLE_REMOTE_READS){
+		aether_ud_channel_init(rem_reads_ud_c, rem_reads_qp_name, REQ, CR_REMOTE_WRITES_MAX_REQ_COALESCE,
+							   sizeof(spacetime_op_t), CR_DISABLE_REMOTE_READS_INLINING == 0 ? 1 : 0, 0, 0, 0,
+							   rem_read_resp_ud_c, CR_REMOTE_READS_CREDITS, MACHINE_NUM, (uint8_t) machine_id, 1, 1);
 
-		aether_ud_channel_init(rem_read_resp_ud_c, rem_read_resps_qp_name, RESP, REMOTE_READS_MAX_REQ_COALESCE,
-							   sizeof(spacetime_op_t), DISABLE_REMOTE_READS_INLINING == 0 ? 1 : 0, 0, 0, 0,
-							   rem_reads_ud_c, REMOTE_READS_CREDITS, MACHINE_NUM, (uint8_t) machine_id, 1, 1);
+		aether_ud_channel_init(rem_read_resp_ud_c, rem_read_resps_qp_name, RESP, CR_REMOTE_READS_MAX_REQ_COALESCE,
+							   sizeof(spacetime_op_t), CR_DISABLE_REMOTE_READS_INLINING == 0 ? 1 : 0, 0, 0, 0,
+							   rem_reads_ud_c, CR_REMOTE_READS_CREDITS, MACHINE_NUM, (uint8_t) machine_id, 1, 1);
 	}
 	///</4th stage>
 	///////////////
@@ -726,6 +705,7 @@ run_worker(void *arg)
 			red_printf("Stats thread was not successfully spawned \n");
 
 
+	struct timespec stopwatch_for_req_latency;
 	/* -----------------------------------------------------
        ------------------------Main Loop--------------------
 	   ----------------------------------------------------- */
@@ -752,9 +732,10 @@ run_worker(void *arg)
 		//              and buffer additional packets                    [DONE]
 		// 8th stage: + Do not stall writes that found Invalid on head   [DONE]
 
-	    if(!ENABLE_ONLY_HEAD_REQS || machine_id == head_id()){
+	    if(!CR_ENABLE_ONLY_HEAD_REQS || machine_id == head_id()){
 			refill_ops_n_suspect_failed_nodes(&trace_iter, worker_lid, trace, ops,
 											  num_of_iters_serving_op, last_group_membership,
+											  &stopwatch_for_req_latency,
 											  n_hottest_keys_in_ops_get, n_hottest_keys_in_ops_put);
 			cr_batch_ops_to_KVS(Local_ops, (uint8_t *) ops, MAX_BATCH_OPS_SIZE, sizeof(spacetime_op_t), NULL);
 		}
@@ -762,6 +743,17 @@ run_worker(void *arg)
 		if (WRITE_RATIO > 0) {
 
 			if(machine_id == head_id()) {
+			    //TODO: Still we might allow more invs than ACK recvs available
+				if(!CR_ENABLE_EARLY_INV_CRDS ||
+				   inv_ud_c->stats.send_total_msgs - ack_ud_c->stats.recv_total_msgs <= CR_ACK_CREDITS)
+				{
+					/// Initiate INVs for head writes
+					aether_issue_pkts(inv_ud_c, (uint8_t *) ops,
+									  MAX_BATCH_OPS_SIZE, sizeof(spacetime_op_t), &rolling_idx,
+									  inv_skip_or_get_sender_id, inv_modify_elem_after_send,
+									  inv_copy_and_modify_elem);
+				}
+
 				///////////////
 			    ///<3rd stage>
 				aether_poll_buff_and_post_recvs(rem_writes_ud_c, free_rem_write_slots,
@@ -770,9 +762,11 @@ run_worker(void *arg)
 				cr_batch_ops_to_KVS(Remote_writes, (uint8_t *) remote_writes,
 									MAX_BATCH_OPS_SIZE, sizeof(spacetime_op_t), NULL);
 
+				stop_latency_of_completed_reads(ops, worker_lid, &stopwatch_for_req_latency);
+
 				//TODO: Still we might allow more invs than ACK recvs available
 				const uint16_t max_outstanding_remote_writes = CR_ACK_CREDITS;
-				if(!ENABLE_EARLY_INV_CRDS ||
+				if(!CR_ENABLE_EARLY_INV_CRDS ||
 				   inv_ud_c->stats.send_total_msgs - ack_ud_c->stats.recv_total_msgs <= max_outstanding_remote_writes)
 				{
 					/// Initiate INVs for remotes writes
@@ -793,16 +787,7 @@ run_worker(void *arg)
 				///</3rd stage>
 				///////////////
 
-				//TODO: Still we might allow more invs than ACK recvs available
-				if(!ENABLE_EARLY_INV_CRDS ||
-				   inv_ud_c->stats.send_total_msgs - ack_ud_c->stats.recv_total_msgs <= CR_ACK_CREDITS)
-				{
-					/// Initiate INVs for head writes
-					aether_issue_pkts(inv_ud_c, (uint8_t *) ops,
-									  MAX_BATCH_OPS_SIZE, sizeof(spacetime_op_t), &rolling_idx,
-									  inv_skip_or_get_sender_id, inv_modify_elem_after_send,
-									  inv_copy_and_modify_elem);
-				}
+
 			}
 
 			///////////////
@@ -818,7 +803,7 @@ run_worker(void *arg)
 
 			///////////////
 			///<4th stage>
-			if(ENABLE_REMOTE_READS) {
+			if(CR_ENABLE_REMOTE_READS) {
 				if(machine_id == tail_id()){
 					/// Poll Remote reads
 					uint16_t remote_reads_polled = aether_poll_buff_and_post_recvs(rem_reads_ud_c, MAX_BATCH_OPS_SIZE,
@@ -847,6 +832,7 @@ run_worker(void *arg)
 																						(uint8_t *) remote_reads);
 					/// Complete Remote reads
 					cr_complete_local_reads(remote_reads, remote_read_resps_polled, ops);
+					stop_latency_of_completed_reads(ops, worker_lid, &stopwatch_for_req_latency);
 				}
 			}
 			///</4th stage>
@@ -861,7 +847,7 @@ run_worker(void *arg)
 						/// Batch INVs to KVS
 						cr_batch_ops_to_KVS(Invs, (uint8_t *) inv_recv_ops, invs_polled, sizeof(spacetime_inv_t), ops);
 
-						if (ENABLE_EARLY_INV_CRDS)
+						if (CR_ENABLE_EARLY_INV_CRDS)
 							/// Issue credits for INVs to previous node in chain
 							aether_issue_credits(inv_crd_ud_c, (uint8_t *) inv_recv_ops, invs_polled,
 												 sizeof(spacetime_inv_t), inv_crd_skip_or_get_sender_id,
@@ -895,9 +881,12 @@ run_worker(void *arg)
 				///Poll for Acks
 				acks_polled = aether_poll_buff_and_post_recvs(ack_ud_c, ACK_RECV_OPS_SIZE, (uint8_t *) ack_recv_ops);
 
-				if (acks_polled > 0)
+				if (acks_polled > 0){
 					/// Batch ACKs to KVS
 					cr_batch_ops_to_KVS(Acks, (uint8_t *) ack_recv_ops, acks_polled, sizeof(spacetime_ack_t), ops);
+
+					stop_latency_of_completed_writes(ops, worker_lid, &stopwatch_for_req_latency);
+				}
 
 				if(machine_id != head_id()){
 
