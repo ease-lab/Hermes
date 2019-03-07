@@ -41,6 +41,7 @@ src/Armonia/main
 /results/*
 /results/*.txt
 /results/latency/*.txt
+traces/trace-parts/*
 /results/scattered-results/*
 /results/aggregated-system-results/*.csv
 /traces/system-traces/*.txt
