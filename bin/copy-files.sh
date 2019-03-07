@@ -15,7 +15,7 @@ HOSTS=( ##### network  cluster #####
 FILES=(
 #        "hermes"
 #        "run-hermes.sh"
-        "hermes-aether"
+        "hermes-wings"
 #        "cr"
 #        "run-cr.sh"
       )

@@ -7,7 +7,7 @@
 #include <spacetime.h>
 #include <infiniband/verbs.h>
 #include <inline-util.h>
-#include "../../include/aether/aether.h"
+#include "../../include/wings/wings.h"
 
 // implement a Multicast / Unicast channel
 // Support for:
@@ -22,39 +22,39 @@
 //          Mode 2: poll reqs, do not copy msgs and post rcvs when said
 //      Enable implicit (request - response mode) and explicit (batched) credits flow control
 
-void _aether_setup_send_wr_and_sgl(ud_channel_t *ud_c);
-void _aether_setup_recv_wr_and_sgl(ud_channel_t *ud_c, struct hrd_ctrl_blk *cb);
-void _aether_setup_crd_wr_and_sgl(ud_channel_t *ud_c, struct hrd_ctrl_blk *cb);
-void _aether_setup_incoming_buff_and_post_initial_recvs(ud_channel_t *ud_c);
-void _aether_ud_channel_init_recv(ud_channel_t *ud_c, struct hrd_ctrl_blk *cb, uint8_t qp_id,
-							 volatile uint8_t *incoming_reqs_ptr);
+void _wings_setup_send_wr_and_sgl(ud_channel_t *ud_c);
+void _wings_setup_recv_wr_and_sgl(ud_channel_t *ud_c, struct hrd_ctrl_blk *cb);
+void _wings_setup_crd_wr_and_sgl(ud_channel_t *ud_c, struct hrd_ctrl_blk *cb);
+void _wings_setup_incoming_buff_and_post_initial_recvs(ud_channel_t *ud_c);
+void _wings_ud_channel_init_recv(ud_channel_t *ud_c, struct hrd_ctrl_blk *cb, uint8_t qp_id,
+								 volatile uint8_t *incoming_reqs_ptr);
 
 
-void _aether_ud_channel_crd_init(ud_channel_t *ud_c, char *qp_name, ud_channel_t *linked_channel,
-								 uint8_t crds_per_channel, uint16_t num_channels, uint8_t channel_id,
-								 uint8_t enable_stats, uint8_t enable_prints);
+void _wings_ud_channel_crd_init(ud_channel_t *ud_c, char *qp_name, ud_channel_t *linked_channel,
+								uint8_t crds_per_channel, uint16_t num_channels, uint8_t channel_id,
+								uint8_t enable_stats, uint8_t enable_prints);
 
-void _aether_print_on_off_toggle(uint16_t bin_flag, char *str);
+void _wings_print_on_off_toggle(uint16_t bin_flag, char *str);
 
 
 
-void _aether_share_qp_info_via_memcached(ud_channel_t **ud_c_array, uint16_t ud_c_num,
-										 dbit_vector_t* shared_rdy_var, int worker_lid,
-										 struct hrd_ctrl_blk *cb);
+void _wings_share_qp_info_via_memcached(ud_channel_t **ud_c_array, uint16_t ud_c_num,
+										dbit_vector_t *shared_rdy_var, int worker_lid,
+										struct hrd_ctrl_blk *cb);
 
 
 void
-aether_ud_channel_init(ud_channel_t *ud_c, char *qp_name, enum channel_type type,
-					   uint8_t max_coalescing, uint16_t max_req_size, uint8_t enable_inlining,
-					   // Broadcast
-					   uint8_t is_bcast,
-					   // Credits
-					   uint8_t disable_crd_ctrl,
-					   uint8_t expl_crd_ctrl, ud_channel_t *linked_channel,
-					   uint8_t crds_per_channel, uint16_t num_channels,
-					   uint8_t channel_id,
-					   // Toggles
-					   uint8_t stats_on, uint8_t prints_on)
+wings_ud_channel_init(ud_channel_t *ud_c, char *qp_name, enum channel_type type,
+					  uint8_t max_coalescing, uint16_t max_req_size, uint8_t enable_inlining,
+		// Broadcast
+					  uint8_t is_bcast,
+		// Credits
+					  uint8_t disable_crd_ctrl,
+					  uint8_t expl_crd_ctrl, ud_channel_t *linked_channel,
+					  uint8_t crds_per_channel, uint16_t num_channels,
+					  uint8_t channel_id,
+		// Toggles
+					  uint8_t stats_on, uint8_t prints_on)
 {
 	assert(type != CRD); // if CRD type then used the *_crd_init instead
 	assert(max_coalescing > 0); // To disable coalescing use max_coalescing == 1
@@ -62,11 +62,11 @@ aether_ud_channel_init(ud_channel_t *ud_c, char *qp_name, enum channel_type type
 	assert(!(disable_crd_ctrl == 1 && expl_crd_ctrl == 1)); //cannot disable crd_ctrl and then set an explicit credit control
 	assert(disable_crd_ctrl == 1 || linked_channel != NULL); //cannot disable crd_ctrl and then set an crd control channel
 
-	_aether_assert_binary(stats_on);
-	_aether_assert_binary(is_bcast);
-	_aether_assert_binary(prints_on);
-	_aether_assert_binary(expl_crd_ctrl);
-	_aether_assert_binary(enable_inlining);
+	_wings_assert_binary(stats_on);
+	_wings_assert_binary(is_bcast);
+	_wings_assert_binary(prints_on);
+	_wings_assert_binary(expl_crd_ctrl);
+	_wings_assert_binary(enable_inlining);
 
 
 	ud_c->type = type;
@@ -90,11 +90,11 @@ aether_ud_channel_init(ud_channel_t *ud_c, char *qp_name, enum channel_type type
 
 	uint16_t remote_channels = (uint16_t) (num_channels - 1);
 	ud_c->is_inlining_enabled = enable_inlining;
-    if(_aether_ud_send_max_pkt_size(ud_c) > AETHER_MAX_SUPPORTED_INLINING) {
+    if(_wings_ud_send_max_pkt_size(ud_c) > WINGS_MAX_SUPPORTED_INLINING) {
         if(ud_c->is_inlining_enabled)
             printf("Unfortunately, inlining for msgs sizes up to (%d) "
                    "is higher than the supported (%d)\n",
-				   _aether_ud_send_max_pkt_size(ud_c), AETHER_MAX_SUPPORTED_INLINING);
+				   _wings_ud_send_max_pkt_size(ud_c), WINGS_MAX_SUPPORTED_INLINING);
         ud_c->is_inlining_enabled = 0;
     }
 
@@ -103,7 +103,7 @@ aether_ud_channel_init(ud_channel_t *ud_c, char *qp_name, enum channel_type type
 		ud_c->credits_per_channels[i] = (uint8_t) (type == REQ && !disable_crd_ctrl ? crds_per_channel : 0);
 
 
-	ud_c->max_pcie_bcast_batch = (uint16_t) AETHER_MIN(AETHER_MIN_PCIE_BCAST_BATCH + 1, crds_per_channel);
+	ud_c->max_pcie_bcast_batch = (uint16_t) WINGS_MIN(WINGS_MIN_PCIE_BCAST_BATCH + 1, crds_per_channel);
     //Warning! use min to avoid resetting the first req prior batching to the NIC
 	//WARNING: todo check why we need to have MIN_PCIE_BCAST_BATCH + 1 instead of just MIN_PCIE_BCAST_BATCH
 	uint16_t max_msgs_in_pcie_bcast = (uint16_t) (ud_c->max_pcie_bcast_batch * remote_channels); //must be smaller than the q_depth
@@ -125,7 +125,7 @@ aether_ud_channel_init(ud_channel_t *ud_c, char *qp_name, enum channel_type type
 	ud_c->recv_pkt_buff_len = ud_c->max_recv_wrs;
 	ud_c->send_pkt_buff_len = (uint16_t) (ud_c->max_send_wrs * (ud_c->is_inlining_enabled ? 1 : 2));
 
-    ud_c->send_pkt_buff = malloc(_aether_ud_send_max_pkt_size(ud_c) * ud_c->send_pkt_buff_len);
+    ud_c->send_pkt_buff = malloc(_wings_ud_send_max_pkt_size(ud_c) * ud_c->send_pkt_buff_len);
 
 
 	ud_c->overflow_msg_buff = NULL;
@@ -156,8 +156,8 @@ aether_ud_channel_init(ud_channel_t *ud_c, char *qp_name, enum channel_type type
 	if(ud_c->expl_crd_ctrl){
 		char crd_qp_name[1000];
 		sprintf(crd_qp_name, "\033[1m\033[36mCRD\033[0m-%s", qp_name);
-		_aether_ud_channel_crd_init(linked_channel, crd_qp_name, ud_c, crds_per_channel,
-									num_channels, channel_id, stats_on, prints_on);
+		_wings_ud_channel_crd_init(linked_channel, crd_qp_name, ud_c, crds_per_channel,
+								   num_channels, channel_id, stats_on, prints_on);
 	}
 
 	ud_c->remote_qps = malloc(sizeof(qp_info_t) * ud_c->num_channels);
@@ -169,16 +169,16 @@ aether_ud_channel_init(ud_channel_t *ud_c, char *qp_name, enum channel_type type
 	ud_c->recv_cq = NULL; //set by init_recv
 	ud_c->recv_pkt_buff = NULL;
 	ud_c->send_mem_region = NULL; //set by init_recv
-//	_aether_setup_send_wr_and_sgl(ud_c);
-//	_aether_setup_recv_wr_and_sgl(ud_c, cb);
+//	_wings_setup_send_wr_and_sgl(ud_c);
+//	_wings_setup_recv_wr_and_sgl(ud_c, cb);
 
     assert(ud_c->max_pcie_bcast_batch <= crds_per_channel);
 }
 
 
 void
-aether_setup_channel_qps_and_recvs(ud_channel_t **ud_c_array, uint16_t ud_c_num,
-								   dbit_vector_t* shared_rdy_var, uint16_t worker_lid)
+wings_setup_channel_qps_and_recvs(ud_channel_t **ud_c_array, uint16_t ud_c_num,
+								  dbit_vector_t *shared_rdy_var, uint16_t worker_lid)
 {
 
 	uint32_t dgram_buff_size = 0;
@@ -190,7 +190,7 @@ aether_setup_channel_qps_and_recvs(ud_channel_t **ud_c_array, uint16_t ud_c_num,
 	    send_q_depths[i] = ud_c_array[i]->send_q_depth;
 		recv_q_depths[i] = ud_c_array[i]->recv_q_depth;
 		dgram_buff_size += ud_c_array[i]->type == CRD ? 64 :
-						   _aether_ud_recv_max_pkt_size(ud_c_array[i]) * ud_c_array[i]->recv_q_depth;
+						   _wings_ud_recv_max_pkt_size(ud_c_array[i]) * ud_c_array[i]->recv_q_depth;
 	}
 
 	struct hrd_ctrl_blk *cb = hrd_ctrl_blk_init(worker_lid,	/* local_hid */
@@ -201,34 +201,34 @@ aether_setup_channel_qps_and_recvs(ud_channel_t **ud_c_array, uint16_t ud_c_num,
 												BASE_SHM_KEY + worker_lid, /* key */
 												recv_q_depths, send_q_depths); /* Depth of the dgram RECV, SEND Q*/
 
-	_aether_share_qp_info_via_memcached(ud_c_array, ud_c_num, shared_rdy_var, worker_lid, cb);
+	_wings_share_qp_info_via_memcached(ud_c_array, ud_c_num, shared_rdy_var, worker_lid, cb);
 
 	volatile uint8_t *incoming_reqs_ptr = cb->dgram_buf;
 	for(uint8_t i = 0; i < ud_c_num; ++i){
 		// Init recv and setup wrs and sgls of ud_channel
-		_aether_ud_channel_init_recv(ud_c_array[i], cb, (uint8_t) i, incoming_reqs_ptr);
+		_wings_ud_channel_init_recv(ud_c_array[i], cb, (uint8_t) i, incoming_reqs_ptr);
 		incoming_reqs_ptr += ud_c_array[i]->type == CRD ? 64 :
-							 _aether_ud_recv_max_pkt_size(ud_c_array[i]) * ud_c_array[i]->recv_q_depth;
+							 _wings_ud_recv_max_pkt_size(ud_c_array[i]) * ud_c_array[i]->recv_q_depth;
 	}
 
 	sleep(1); /// Give some leeway to post receives, before start bcasting! (see above warning)
 }
 
 void
-aether_print_ud_c_overview(ud_channel_t *ud_c)
+wings_print_ud_c_overview(ud_channel_t *ud_c)
 {
 	printf("%s Channel[%d] %s(%d) --> %s\n",
 		   ud_c->is_bcast_channel ? "Bcast" : "Unicast", ud_c->channel_id,
 	       ud_c->qp_name, ud_c->qp_id, ud_c->type == REQ ? "REQ" : "RESP");
 
-	_aether_print_on_off_toggle(ud_c->is_inlining_enabled, "Inlining");
-	_aether_print_on_off_toggle(ud_c->max_coalescing, "Coalescing");
-	_aether_print_on_off_toggle(ud_c->max_pcie_bcast_batch, "Max PCIe batch");
+	_wings_print_on_off_toggle(ud_c->is_inlining_enabled, "Inlining");
+	_wings_print_on_off_toggle(ud_c->max_coalescing, "Coalescing");
+	_wings_print_on_off_toggle(ud_c->max_pcie_bcast_batch, "Max PCIe batch");
 
 	printf("\t\tMax msg size: %d\n", ud_c->max_msg_size);
 	if(ud_c->type != CRD)
 		printf("\t\tMax pkt size: send = %dB, recv = %dB\n",
-			   _aether_ud_send_max_pkt_size(ud_c), _aether_ud_recv_max_pkt_size(ud_c));
+			   _wings_ud_send_max_pkt_size(ud_c), _wings_ud_recv_max_pkt_size(ud_c));
 	else
 		printf("\t\tMax pkt size: send = 4B (immediate), recv = 4B(immediate)\n");
 	printf("\t\tSS granularity: %d\n", ud_c->ss_granularity);
@@ -251,8 +251,8 @@ aether_print_ud_c_overview(ud_channel_t *ud_c)
 	printf("\t\tSend pkt len: %d\n", ud_c->send_pkt_buff_len);
 	printf("\t\tRecv pkt len: %d\n", ud_c->recv_pkt_buff_len);
 
-	_aether_print_on_off_toggle(ud_c->enable_stats, "Stats");
-	_aether_print_on_off_toggle(ud_c->enable_prints, "Prints");
+	_wings_print_on_off_toggle(ud_c->enable_stats, "Stats");
+	_wings_print_on_off_toggle(ud_c->enable_prints, "Prints");
 }
 
 
@@ -260,7 +260,7 @@ aether_print_ud_c_overview(ud_channel_t *ud_c)
 ----------------------------------- SETUPs ------------------------------------
 ---------------------------------------------------------------------------*/
 void
-_aether_print_on_off_toggle(uint16_t bin_flag, char *str)
+_wings_print_on_off_toggle(uint16_t bin_flag, char *str)
 {
 	if(bin_flag > 1)
 		printf("\t\t%s : %s (%d)\n", str, "\033[1m\033[32mOn\033[0m", bin_flag);
@@ -269,14 +269,14 @@ _aether_print_on_off_toggle(uint16_t bin_flag, char *str)
 }
 
 void
-_aether_ud_channel_crd_init(ud_channel_t *ud_c, char *qp_name, ud_channel_t *linked_channel,
-							uint8_t crds_per_channel, uint16_t num_channels, uint8_t channel_id,
-							uint8_t enable_stats, uint8_t enable_prints)
+_wings_ud_channel_crd_init(ud_channel_t *ud_c, char *qp_name, ud_channel_t *linked_channel,
+						   uint8_t crds_per_channel, uint16_t num_channels, uint8_t channel_id,
+						   uint8_t enable_stats, uint8_t enable_prints)
 {
 	assert(channel_id < num_channels);
 
-	_aether_assert_binary(enable_stats);
-	_aether_assert_binary(enable_prints);
+	_wings_assert_binary(enable_stats);
+	_wings_assert_binary(enable_prints);
 
 
     ud_c->type = CRD;
@@ -298,7 +298,7 @@ _aether_ud_channel_crd_init(ud_channel_t *ud_c, char *qp_name, ud_channel_t *lin
 
     ud_c->no_crds_to_send_per_endpoint = malloc(sizeof(uint16_t) * num_channels);
 
-	static_assert(sizeof(aether_crd_t) <= 4, ""); // Credits are always send as immediate <=4B
+	static_assert(sizeof(wings_crd_t) <= 4, ""); // Credits are always send as immediate <=4B
 	ud_c->max_msg_size = 0; //non immediate size
 	ud_c->max_coalescing = 1;
 
@@ -325,7 +325,7 @@ _aether_ud_channel_crd_init(ud_channel_t *ud_c, char *qp_name, ud_channel_t *lin
 	ud_c->recv_pkt_buff_len = ud_c->max_recv_wrs * ud_c->max_coalescing;
 	ud_c->send_pkt_buff_len = ud_c->max_send_wrs ;
 
-    ud_c->send_pkt_buff = NULL; //malloc(_aether_ud_send_max_pkt_size(ud_c) * ud_c->send_pkt_buff_len);
+    ud_c->send_pkt_buff = NULL; //malloc(_wings_ud_send_max_pkt_size(ud_c) * ud_c->send_pkt_buff_len);
 
 	ud_c->send_mem_region = NULL;
 
@@ -351,13 +351,13 @@ _aether_ud_channel_crd_init(ud_channel_t *ud_c, char *qp_name, ud_channel_t *lin
 	ud_c->send_cq = NULL;
 	ud_c->recv_cq = NULL;
 	ud_c->recv_pkt_buff = NULL;
-//	_aether_setup_crd_wr_and_sgl(ud_c, cb);
+//	_wings_setup_crd_wr_and_sgl(ud_c, cb);
 }
 
 
 void
-_aether_ud_channel_init_recv(ud_channel_t *ud_c, struct hrd_ctrl_blk *cb, uint8_t qp_id,
-							 volatile uint8_t *incoming_reqs_ptr)
+_wings_ud_channel_init_recv(ud_channel_t *ud_c, struct hrd_ctrl_blk *cb, uint8_t qp_id,
+							volatile uint8_t *incoming_reqs_ptr)
 {
 //	assert(remote_qps != NULL);
 
@@ -373,25 +373,25 @@ _aether_ud_channel_init_recv(ud_channel_t *ud_c, struct hrd_ctrl_blk *cb, uint8_
 
 	if(ud_c->type != CRD){
 		ud_c->send_mem_region = ud_c->is_inlining_enabled ?  NULL :
-								register_buffer(cb->pd, ud_c->send_pkt_buff, _aether_ud_send_max_pkt_size(ud_c)
+								register_buffer(cb->pd, ud_c->send_pkt_buff, _wings_ud_send_max_pkt_size(ud_c)
 																			 * ud_c->send_pkt_buff_len);
-		_aether_setup_send_wr_and_sgl(ud_c);
-		_aether_setup_recv_wr_and_sgl(ud_c, cb);
+		_wings_setup_send_wr_and_sgl(ud_c);
+		_wings_setup_recv_wr_and_sgl(ud_c, cb);
 	} else
-		_aether_setup_crd_wr_and_sgl(ud_c, cb);
+		_wings_setup_crd_wr_and_sgl(ud_c, cb);
 
 	// post initial receivs
 	/// WARNING try to avoid races of posting initial receives and sending msgs
-	_aether_setup_incoming_buff_and_post_initial_recvs(ud_c);
+	_wings_setup_incoming_buff_and_post_initial_recvs(ud_c);
 }
 
 void
-_aether_setup_crd_wr_and_sgl(ud_channel_t *ud_c, struct hrd_ctrl_blk *cb)
+_wings_setup_crd_wr_and_sgl(ud_channel_t *ud_c, struct hrd_ctrl_blk *cb)
 {
 	assert(ud_c->type == CRD);
 
 	// Credit Send WRs / sgl
-    aether_crd_t crd_tmp;
+    wings_crd_t crd_tmp;
     crd_tmp.crd_num = 0;
 	crd_tmp.sender_id = (uint8_t) ud_c->channel_id;
 
@@ -407,7 +407,7 @@ _aether_setup_crd_wr_and_sgl(ud_channel_t *ud_c, struct hrd_ctrl_blk *cb)
         ud_c->send_wr[i].next = NULL;
         ud_c->send_wr[i].send_flags = IBV_SEND_INLINE;
         ud_c->send_wr[i].imm_data = 0;
-        memcpy(&ud_c->send_wr[i].imm_data, &crd_tmp, sizeof(aether_crd_t));
+        memcpy(&ud_c->send_wr[i].imm_data, &crd_tmp, sizeof(wings_crd_t));
     }
 
 	// Credit Recv WRs / sgl
@@ -424,7 +424,7 @@ _aether_setup_crd_wr_and_sgl(ud_channel_t *ud_c, struct hrd_ctrl_blk *cb)
 }
 
 void
-_aether_setup_send_wr_and_sgl(ud_channel_t *ud_c)
+_wings_setup_send_wr_and_sgl(ud_channel_t *ud_c)
 {
 	assert(ud_c->type != CRD);
 
@@ -436,7 +436,7 @@ _aether_setup_send_wr_and_sgl(ud_channel_t *ud_c)
         ud_c->send_sgl = malloc(sizeof(struct ibv_sge) * ud_c->max_pcie_bcast_batch);
 
         for(int i = 0; i < ud_c->max_pcie_bcast_batch; ++i)
-            ud_c->send_sgl[i].length = _aether_ud_send_max_pkt_size(ud_c);
+            ud_c->send_sgl[i].length = _wings_ud_send_max_pkt_size(ud_c);
 
         for(int i = 0; i < max_msgs_in_pcie_batch; ++i){
             int sgl_index = i / remote_channels;
@@ -469,7 +469,7 @@ _aether_setup_send_wr_and_sgl(ud_channel_t *ud_c)
         ud_c->send_wr  = malloc(sizeof(struct ibv_send_wr) * ud_c->max_send_wrs);
         for(int i = 0; i < ud_c->max_send_wrs; ++i){
 
-            ud_c->send_sgl[i].length = sizeof(aether_pkt_t) + _aether_ud_recv_max_pkt_size(ud_c);
+            ud_c->send_sgl[i].length = sizeof(wings_pkt_t) + _wings_ud_recv_max_pkt_size(ud_c);
 
             ud_c->send_wr[i].num_sge = 1;
             ud_c->send_wr[i].opcode = IBV_WR_SEND; /// Attention!! there is no immediate here
@@ -486,7 +486,7 @@ _aether_setup_send_wr_and_sgl(ud_channel_t *ud_c)
 }
 
 void
-_aether_setup_recv_wr_and_sgl(ud_channel_t *ud_c, struct hrd_ctrl_blk *cb)
+_wings_setup_recv_wr_and_sgl(ud_channel_t *ud_c, struct hrd_ctrl_blk *cb)
 {
 	assert(ud_c->type != CRD);
 
@@ -494,7 +494,7 @@ _aether_setup_recv_wr_and_sgl(ud_channel_t *ud_c, struct hrd_ctrl_blk *cb)
     ud_c->recv_wr = malloc(sizeof(struct ibv_recv_wr) * ud_c->max_recv_wrs);
 
 	for (int i = 0; i < ud_c->max_recv_wrs; i++) {
-		ud_c->recv_sgl[i].length = _aether_ud_recv_max_pkt_size(ud_c);
+		ud_c->recv_sgl[i].length = _wings_ud_recv_max_pkt_size(ud_c);
 		ud_c->recv_sgl[i].lkey = cb->dgram_buf_mr->lkey;
         ud_c->recv_wr[i].sg_list = &ud_c->recv_sgl[i];
         ud_c->recv_wr[i].num_sge = 1;
@@ -504,24 +504,24 @@ _aether_setup_recv_wr_and_sgl(ud_channel_t *ud_c, struct hrd_ctrl_blk *cb)
 
 
 void
-_aether_setup_incoming_buff_and_post_initial_recvs(ud_channel_t *ud_c)
+_wings_setup_incoming_buff_and_post_initial_recvs(ud_channel_t *ud_c)
 {
 
     if(ud_c->type != CRD){
 		//init recv buffs as empty (not need for CRD since CRD msgs are --immediate-- header-only)
 		for(uint16_t i = 0; i < ud_c->send_pkt_buff_len; ++i)
-			_aether_get_nth_pkt_ptr_from_send_buff(ud_c, i)->req_num = 0;
+			_wings_get_nth_pkt_ptr_from_send_buff(ud_c, i)->req_num = 0;
 		for(uint16_t i = 0; i < ud_c->recv_pkt_buff_len; ++i)
-			_aether_get_nth_pkt_ptr_from_recv_buff(ud_c, i)->pkt.req_num = 0;
+			_wings_get_nth_pkt_ptr_from_recv_buff(ud_c, i)->pkt.req_num = 0;
     }
 
-	if(AETHER_ENABLE_POST_RECV_PRINTS && ud_c->enable_prints)
+	if(WINGS_ENABLE_POST_RECV_PRINTS && ud_c->enable_prints)
 		yellow_printf("vvv Post Initial Receives: %s %d\n", ud_c->qp_name, ud_c->max_recv_wrs);
 
 	if(ud_c->type != CRD)
-		_aether_post_recvs(ud_c, ud_c->max_recv_wrs);
+		_wings_post_recvs(ud_c, ud_c->max_recv_wrs);
 	else
-		_aether_post_crd_recvs(ud_c, ud_c->max_recv_wrs);
+		_wings_post_crd_recvs(ud_c, ud_c->max_recv_wrs);
 }
 
 
@@ -530,7 +530,7 @@ _aether_setup_incoming_buff_and_post_initial_recvs(ud_channel_t *ud_c)
    -------------------------------- QP Sharing -------------------------------
    --------------------------------------------------------------------------- */
 unsigned long
-_aether_simple_hash(unsigned char *str)
+_wings_simple_hash(unsigned char *str)
 {
 	int c;
 	unsigned long hash = 5381;
@@ -541,7 +541,7 @@ _aether_simple_hash(unsigned char *str)
 }
 
 void
-_aether_get_remote_qps(struct hrd_ctrl_blk *cb, ud_channel_t **ud_c_array, uint16_t ud_c_num)
+_wings_get_remote_qps(struct hrd_ctrl_blk *cb, ud_channel_t **ud_c_array, uint16_t ud_c_num)
 {
     int ib_port_index = 0;
     int local_port_i = ib_port_index;
@@ -557,7 +557,7 @@ _aether_get_remote_qps(struct hrd_ctrl_blk *cb, ud_channel_t **ud_c_array, uint1
     for(int i = 0; i < ud_c_num; ++i){
     	for(int j = 0; j < ud_c_array[i]->num_channels; ++j){
 			if (j == ud_c_array[i]->channel_id) continue; // skip the local channel id
-			sprintf(qp_global_name, "%lu-%d", _aether_simple_hash((unsigned char *) ud_c_array[i]->qp_name), j);
+			sprintf(qp_global_name, "%lu-%d", _wings_simple_hash((unsigned char *) ud_c_array[i]->qp_name), j);
 			// Get the UD queue pair for the ith machine
 			worker_qp[j] = NULL;
 //			printf("Looking for %s\n", qp_global_name);
@@ -596,20 +596,20 @@ _aether_get_remote_qps(struct hrd_ctrl_blk *cb, ud_channel_t **ud_c_array, uint1
 
 
 void
-_aether_share_qp_info_via_memcached(ud_channel_t **ud_c_array, uint16_t ud_c_num,
-									dbit_vector_t* shared_rdy_var,
-									int worker_lid, struct hrd_ctrl_blk *cb)
+_wings_share_qp_info_via_memcached(ud_channel_t **ud_c_array, uint16_t ud_c_num,
+								   dbit_vector_t *shared_rdy_var,
+								   int worker_lid, struct hrd_ctrl_blk *cb)
 {
     for(int i = 0; i < ud_c_num; i++){
         char qp_global_name[HRD_QP_NAME_SIZE];
         sprintf(qp_global_name, "%lu-%d",
-        		_aether_simple_hash((unsigned char *) ud_c_array[i]->qp_name),
+				_wings_simple_hash((unsigned char *) ud_c_array[i]->qp_name),
         		ud_c_array[i]->channel_id);
         hrd_publish_dgram_qp(cb, i, qp_global_name, WORKER_SL);
 //		printf("Publishing: %s \n",  qp_global_name);
     }
 
-	_aether_get_remote_qps(cb, ud_c_array, ud_c_num);
+	_wings_get_remote_qps(cb, ud_c_array, ud_c_num);
     if(shared_rdy_var == NULL) {
     	assert(worker_lid == 0);
     	return;

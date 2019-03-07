@@ -18,9 +18,9 @@
 /src/herd-hybrid/main
 /src/herd-UD/main
 src/Armonia/main
-/src/hermes/cr
+/src/CR/cr
 /src/hermes/hermes
-/src/hermes/hermes-aether
+/src/hermes/hermes-wings
 
 # ignore debug files
 /debug/*.txt

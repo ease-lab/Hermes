@@ -5,7 +5,7 @@
 #include <getopt.h>
 #include <time_rdtsc.h>
 #include "../../include/hades/hades.h"
-#include "../../include/aether/aether_api.h"
+#include "../../include/wings/wings_api.h"
 
 
 #define DISABLE_INLINING 0
@@ -61,11 +61,11 @@ main(int argc, char *argv[])
     char qp_name[200];
     sprintf(qp_name, "%s%d", "\033[1m\033[32mHBeat\033[0m", worker_lid);
 
-    aether_ud_channel_init(hbeat_c, qp_name, REQ, 1, sizeof(hades_membership_t),
+    wings_ud_channel_init(hbeat_c, qp_name, REQ, 1, sizeof(hades_membership_t),
                            ENABLE_HADES_INLINING, 1, 1, hbeat_crd_c, credits,
                            machine_num, (uint8_t) machine_id, 1, 1);
 
-    aether_setup_channel_qps_and_recvs(ud_c_ptrs, 2, NULL, 0);
+    wings_setup_channel_qps_and_recvs(ud_c_ptrs, 2, NULL, 0);
 
 
     struct timespec ts_last_send;

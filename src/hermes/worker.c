@@ -8,6 +8,11 @@
 #include "time_rdtsc.h"
 ///
 
+////
+////
+//// WARNING: This is deprecated use aether-worker instead.
+////
+////
 void *run_worker(void *arg){
 	struct thread_params params = *(struct thread_params *) arg;
 	uint16_t worker_lid = (uint16_t) params.id;	/* Local ID of this worker thread*/

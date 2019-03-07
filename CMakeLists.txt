@@ -10,9 +10,9 @@ set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall")
 
 set(SOURCE_FILES_cr
         #Source files
-        src/hermes/cr_worker.c
+        src/CR/cr_wings_worker.c
 
-        src/aether/aether.c
+        src/wings/wings.c
 
         src/hermes/main.c
         src/hermes/stats.c
@@ -25,8 +25,8 @@ set(SOURCE_FILES_cr
 
 
         ##### header files ####
-        include/aether/aether.h
-        include/aether/aether_api.h
+        include/wings/wings.h
+        include/wings/wings_api.h
 
         include/mica/city.h
         include/libhrd/hrd.h
@@ -41,12 +41,12 @@ set(SOURCE_FILES_cr
 
 set(SOURCE_FILES_hades
         #Source files
-        src/aether/aether.c
+        src/wings/wings.c
         src/hades/hades.c
 
         ##### header files ####
-        include/aether/aether_api.h
-        include/aether/aether.h
+        include/wings/wings_api.h
+        include/wings/wings.h
         include/hades/hades.h
         )
 
@@ -56,7 +56,7 @@ set(SOURCE_FILES_hermes
         src/hermes/main.c
         src/hermes/util.c
 #        src/hermes/worker.c
-        src/hermes/aether_worker.c
+        src/hermes/hermes_wings_worker.c
         src/hermes/stats.c
         src/hermes/spacetime.c
         src/libhrd/hrd_conn.c
@@ -64,7 +64,7 @@ set(SOURCE_FILES_hermes
         src/mica/mica.c
         src/mica/city.c
 
-        src/aether/aether.c
+        src/wings/wings.c
 
         ##### header files ####
         include/libhrd/hrd.h
@@ -76,8 +76,8 @@ set(SOURCE_FILES_hermes
         include/hermes/concur_ctrl.h
         include/hermes/bit_vector.h
         include/hades/hades.h
-        include/aether/aether.h
-        include/aether/aether_api.h)
+        include/wings/wings.h
+        include/wings/wings_api.h)
 
 
 add_executable(cr ${SOURCE_FILES_cr})

@@ -6,7 +6,7 @@
 
 ///
 #include "time_rdtsc.h"
-#include "../../include/aether/aether.h"
+#include "../../include/wings/wings.h"
 ///
 
 int
@@ -213,7 +213,7 @@ run_worker(void *arg)
 
 
 	/* --------------------------------------------------------
-	------------------- RDMA AETHER DECLARATIONS---------------
+	------------------- RDMA WINGS DECLARATIONS---------------
 	---------------------------------------------------------*/
 	ud_channel_t ud_channels[TOTAL_WORKER_UD_QPs];
 	ud_channel_t* ud_channel_ptrs[TOTAL_WORKER_UD_QPs];
@@ -230,17 +230,17 @@ run_worker(void *arg)
 	sprintf(ack_qp_name, "%s%d", "\033[33mACK\033[0m", worker_lid);
 	sprintf(val_qp_name, "%s%d", "\033[1m\033[32mVAL\033[0m", worker_lid);
 
-	aether_ud_channel_init(inv_ud_c, inv_qp_name, REQ, INV_MAX_REQ_COALESCE, sizeof(spacetime_inv_t),
+	wings_ud_channel_init(inv_ud_c, inv_qp_name, REQ, INV_MAX_REQ_COALESCE, sizeof(spacetime_inv_t),
 						   DISABLE_INV_INLINING == 0 ? 1 : 0, 1, 0, 0, ack_ud_c, INV_CREDITS, MACHINE_NUM,
 						   (uint8_t) machine_id, 1, 1);
-	aether_ud_channel_init(ack_ud_c, ack_qp_name, RESP, ACK_MAX_REQ_COALESCE, sizeof(spacetime_ack_t),
+	wings_ud_channel_init(ack_ud_c, ack_qp_name, RESP, ACK_MAX_REQ_COALESCE, sizeof(spacetime_ack_t),
 						   DISABLE_ACK_INLINING == 0 ? 1 : 0, 0, 0, 0, inv_ud_c, ACK_CREDITS, MACHINE_NUM,
 						   (uint8_t) machine_id, 1, 1);
-	aether_ud_channel_init(val_ud_c, val_qp_name, REQ, VAL_MAX_REQ_COALESCE, sizeof(spacetime_val_t),
+	wings_ud_channel_init(val_ud_c, val_qp_name, REQ, VAL_MAX_REQ_COALESCE, sizeof(spacetime_val_t),
 						   DISABLE_VAL_INLINING == 0 ? 1 : 0, 1, 0, 1, crd_ud_c, VAL_CREDITS, MACHINE_NUM,
 						   (uint8_t) machine_id, 1, 1);
 
-	aether_setup_channel_qps_and_recvs(ud_channel_ptrs, TOTAL_WORKER_UD_QPs, g_share_qs_barrier, worker_lid);
+	wings_setup_channel_qps_and_recvs(ud_channel_ptrs, TOTAL_WORKER_UD_QPs, g_share_qs_barrier, worker_lid);
 
 	channel_assertions(inv_ud_c, ack_ud_c, val_ud_c, crd_ud_c);
 
@@ -311,12 +311,12 @@ run_worker(void *arg)
 
 		if (WRITE_RATIO > 0) {
 			///~~~~~~~~~~~~~~~~~~~~~~INVS~~~~~~~~~~~~~~~~~~~~~~~~~~~
-			aether_issue_pkts(inv_ud_c, (uint8_t *) ops,
+			wings_issue_pkts(inv_ud_c, (uint8_t *) ops,
 							  MAX_BATCH_OPS_SIZE, sizeof(spacetime_op_t), &rolling_inv_index,
 							  inv_skip_or_get_sender_id, inv_modify_elem_after_send, inv_copy_and_modify_elem);
 
 			///Poll for INVs
-			invs_polled = aether_poll_buff_and_post_recvs(inv_ud_c, INV_RECV_OPS_SIZE, (uint8_t *) inv_recv_ops);
+			invs_polled = wings_poll_buff_and_post_recvs(inv_ud_c, INV_RECV_OPS_SIZE, (uint8_t *) inv_recv_ops);
 
 
 			if(invs_polled > 0) {
@@ -324,7 +324,7 @@ run_worker(void *arg)
 										last_group_membership, &node_suspected, NULL, (uint8_t) worker_lid);
 
 				///~~~~~~~~~~~~~~~~~~~~~~ACKS~~~~~~~~~~~~~~~~~~~~~~~~~~~
-				aether_issue_pkts(ack_ud_c, (uint8_t *) inv_recv_ops,
+				wings_issue_pkts(ack_ud_c, (uint8_t *) inv_recv_ops,
 								  invs_polled, sizeof(spacetime_inv_t), NULL,
 								  ack_skip_or_get_sender_id, ack_modify_elem_after_send, ack_copy_and_modify_elem);
 
@@ -334,7 +334,7 @@ run_worker(void *arg)
 
 			if(has_outstanding_vals == 0 && has_outstanding_vals_from_memb_change == 0) {
 				///Poll for Acks
-				acks_polled = aether_poll_buff_and_post_recvs(ack_ud_c, ACK_RECV_OPS_SIZE, (uint8_t *) ack_recv_ops);
+				acks_polled = wings_poll_buff_and_post_recvs(ack_ud_c, ACK_RECV_OPS_SIZE, (uint8_t *) ack_recv_ops);
 
 				if (acks_polled > 0){
 					hermes_batch_ops_to_KVS(acks, (uint8_t *) ack_recv_ops, acks_polled, sizeof(spacetime_ack_t),
@@ -346,20 +346,20 @@ run_worker(void *arg)
 
 			if(!DISABLE_VALS_FOR_DEBUGGING) {
 				///~~~~~~~~~~~~~~~~~~~~~~ VALs ~~~~~~~~~~~~~~~~~~~~~~~~~~~
-				has_outstanding_vals = aether_issue_pkts(val_ud_c, (uint8_t *) ack_recv_ops,
+				has_outstanding_vals = wings_issue_pkts(val_ud_c, (uint8_t *) ack_recv_ops,
 														 ack_ud_c->recv_pkt_buff_len, sizeof(spacetime_ack_t),
 														 NULL, val_skip_or_get_sender_id,
 														 val_modify_elem_after_send, val_copy_and_modify_elem);
 
 				///Poll for Vals
-				vals_polled = aether_poll_buff_and_post_recvs(val_ud_c, VAL_RECV_OPS_SIZE, (uint8_t *) val_recv_ops);
+				vals_polled = wings_poll_buff_and_post_recvs(val_ud_c, VAL_RECV_OPS_SIZE, (uint8_t *) val_recv_ops);
 
 				if (vals_polled > 0) {
 					hermes_batch_ops_to_KVS(vals, (uint8_t *) val_recv_ops, vals_polled, sizeof(spacetime_val_t),
 											last_group_membership, NULL, NULL, (uint8_t) worker_lid);
 
 					///~~~~~~~~~~~~~~~~~~~~~~CREDITS~~~~~~~~~~~~~~~~~~~~~~~~~~~
-					aether_issue_credits(crd_ud_c, (uint8_t *) val_recv_ops, VAL_RECV_OPS_SIZE,
+					wings_issue_credits(crd_ud_c, (uint8_t *) val_recv_ops, VAL_RECV_OPS_SIZE,
 										 sizeof(spacetime_val_t), rem_write_crd_skip_or_get_sender_id,
 										 rem_write_crd_modify_elem_after_send);
 				}

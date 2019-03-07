@@ -6,7 +6,7 @@
 
 ///
 #include "time_rdtsc.h"
-#include "../../include/aether/aether.h"
+#include "../../include/wings/wings.h"
 ///
 
 static inline uint8_t
@@ -583,7 +583,7 @@ run_worker(void *arg)
 
 
 	/* --------------------------------------------------------
-	------------------- RDMA AETHER DECLARATIONS---------------
+	------------------- RDMA WINGS DECLARATIONS---------------
 	---------------------------------------------------------*/
 	ud_channel_t ud_channels[CR_TOTAL_WORKER_UD_QPs];
 	ud_channel_t* ud_channel_ptrs[CR_TOTAL_WORKER_UD_QPs];
@@ -609,42 +609,42 @@ run_worker(void *arg)
 	sprintf(rem_read_resps_qp_name, "%s[%d]", "\033[1m\033[32mREMOTE_READ_RESPS\033[0m", worker_lid);
 
 	if(CR_ENABLE_EARLY_INV_CRDS){
-		aether_ud_channel_init(inv_ud_c, inv_qp_name, REQ, INV_MAX_REQ_COALESCE, sizeof(spacetime_inv_t),
+		wings_ud_channel_init(inv_ud_c, inv_qp_name, REQ, INV_MAX_REQ_COALESCE, sizeof(spacetime_inv_t),
 							   DISABLE_INV_INLINING == 0 ? 1 : 0, 0, 0, 1, inv_crd_ud_c, INV_CREDITS,
 							   MACHINE_NUM, (uint8_t) machine_id, 1, 1);
 
-		aether_ud_channel_init(ack_ud_c, ack_qp_name, RESP, ACK_MAX_REQ_COALESCE, sizeof(spacetime_ack_t),
+		wings_ud_channel_init(ack_ud_c, ack_qp_name, RESP, ACK_MAX_REQ_COALESCE, sizeof(spacetime_ack_t),
 							   DISABLE_ACK_INLINING == 0 ? 1 : 0, 0, 1, 0, NULL, CR_ACK_CREDITS, MACHINE_NUM,
 							   (uint8_t) machine_id, 1, 1);
 	} else {
-		aether_ud_channel_init(inv_ud_c, inv_qp_name, REQ, INV_MAX_REQ_COALESCE, sizeof(spacetime_inv_t),
+		wings_ud_channel_init(inv_ud_c, inv_qp_name, REQ, INV_MAX_REQ_COALESCE, sizeof(spacetime_inv_t),
 							   DISABLE_INV_INLINING == 0 ? 1 : 0, 0, 0, 0, ack_ud_c, INV_CREDITS, MACHINE_NUM,
 							   (uint8_t) machine_id, 1, 1);
 
-		aether_ud_channel_init(ack_ud_c, ack_qp_name, RESP, ACK_MAX_REQ_COALESCE, sizeof(spacetime_ack_t),
+		wings_ud_channel_init(ack_ud_c, ack_qp_name, RESP, ACK_MAX_REQ_COALESCE, sizeof(spacetime_ack_t),
 							   DISABLE_ACK_INLINING == 0 ? 1 : 0, 0, 0, 0, inv_ud_c, ACK_CREDITS, MACHINE_NUM,
 							   (uint8_t) machine_id, 1, 1);
 	}
 
-	aether_ud_channel_init(rem_writes_ud_c, rem_writes_qp_name, REQ, CR_REMOTE_WRITES_MAX_REQ_COALESCE,
+	wings_ud_channel_init(rem_writes_ud_c, rem_writes_qp_name, REQ, CR_REMOTE_WRITES_MAX_REQ_COALESCE,
 						   sizeof(spacetime_op_t), CR_DISABLE_REMOTE_WRITES_INLINING == 0 ? 1 : 0, 0, 0, 1,
 						   rem_writes_crd_ud_c, CR_REMOTE_WRITES_CREDITS, MACHINE_NUM, (uint8_t) machine_id, 1, 1);
 
 	///////////////
 	///<4th stage>
 	if(CR_ENABLE_REMOTE_READS){
-		aether_ud_channel_init(rem_reads_ud_c, rem_reads_qp_name, REQ, CR_REMOTE_WRITES_MAX_REQ_COALESCE,
+		wings_ud_channel_init(rem_reads_ud_c, rem_reads_qp_name, REQ, CR_REMOTE_WRITES_MAX_REQ_COALESCE,
 							   sizeof(spacetime_op_t), CR_DISABLE_REMOTE_READS_INLINING == 0 ? 1 : 0, 0, 0, 0,
 							   rem_read_resp_ud_c, CR_REMOTE_READS_CREDITS, MACHINE_NUM, (uint8_t) machine_id, 1, 1);
 
-		aether_ud_channel_init(rem_read_resp_ud_c, rem_read_resps_qp_name, RESP, CR_REMOTE_READS_MAX_REQ_COALESCE,
+		wings_ud_channel_init(rem_read_resp_ud_c, rem_read_resps_qp_name, RESP, CR_REMOTE_READS_MAX_REQ_COALESCE,
 							   sizeof(spacetime_op_t), CR_DISABLE_REMOTE_READS_INLINING == 0 ? 1 : 0, 0, 0, 0,
 							   rem_reads_ud_c, CR_REMOTE_READS_CREDITS, MACHINE_NUM, (uint8_t) machine_id, 1, 1);
 	}
 	///</4th stage>
 	///////////////
 
-	aether_setup_channel_qps_and_recvs(ud_channel_ptrs, CR_TOTAL_WORKER_UD_QPs, g_share_qs_barrier, worker_lid);
+	wings_setup_channel_qps_and_recvs(ud_channel_ptrs, CR_TOTAL_WORKER_UD_QPs, g_share_qs_barrier, worker_lid);
 
 	/* -------------------------------------------------------
 	------------------- OTHER DECLARATIONS--------------------
@@ -748,7 +748,7 @@ run_worker(void *arg)
 				   inv_ud_c->stats.send_total_msgs - ack_ud_c->stats.recv_total_msgs <= CR_ACK_CREDITS)
 				{
 					/// Initiate INVs for head writes
-					aether_issue_pkts(inv_ud_c, (uint8_t *) ops,
+					wings_issue_pkts(inv_ud_c, (uint8_t *) ops,
 									  MAX_BATCH_OPS_SIZE, sizeof(spacetime_op_t), &rolling_idx,
 									  inv_skip_or_get_sender_id, inv_modify_elem_after_send,
 									  inv_copy_and_modify_elem);
@@ -756,7 +756,7 @@ run_worker(void *arg)
 
 				///////////////
 			    ///<3rd stage>
-				aether_poll_buff_and_post_recvs(rem_writes_ud_c, free_rem_write_slots,
+				wings_poll_buff_and_post_recvs(rem_writes_ud_c, free_rem_write_slots,
 												(uint8_t *) &remote_writes[MAX_BATCH_OPS_SIZE - free_rem_write_slots]);
 
 				cr_batch_ops_to_KVS(Remote_writes, (uint8_t *) remote_writes,
@@ -770,7 +770,7 @@ run_worker(void *arg)
 				   inv_ud_c->stats.send_total_msgs - ack_ud_c->stats.recv_total_msgs <= max_outstanding_remote_writes)
 				{
 					/// Initiate INVs for remotes writes
-					aether_issue_pkts(inv_ud_c, (uint8_t *) remote_writes,
+					wings_issue_pkts(inv_ud_c, (uint8_t *) remote_writes,
 									  MAX_BATCH_OPS_SIZE, sizeof(spacetime_op_t), NULL,
 									  remote_write_head_skip_or_get_sender_id,
 									  remote_write_head_modify_elem_after_send,
@@ -778,7 +778,7 @@ run_worker(void *arg)
 				}
 
 				/// Issue credits for remotes writes
-				aether_issue_credits(rem_writes_crd_ud_c, (uint8_t *) remote_writes,
+				wings_issue_credits(rem_writes_crd_ud_c, (uint8_t *) remote_writes,
 									 MAX_BATCH_OPS_SIZE, sizeof(spacetime_op_t),
 									 rem_write_crd_skip_or_get_sender_id,
 									 rem_write_crd_modify_elem_after_send);
@@ -794,7 +794,7 @@ run_worker(void *arg)
 			///</3rd stage>
 			else
 				/// Initiate Remote writes
-				aether_issue_pkts(rem_writes_ud_c, (uint8_t *) ops,
+				wings_issue_pkts(rem_writes_ud_c, (uint8_t *) ops,
 								  MAX_BATCH_OPS_SIZE, sizeof(spacetime_op_t), &rolling_idx,
 								  remote_write_skip_or_get_sender_id, inv_modify_elem_after_send,
 								  remote_write_copy_and_modify_elem);
@@ -806,7 +806,7 @@ run_worker(void *arg)
 			if(CR_ENABLE_REMOTE_READS) {
 				if(machine_id == tail_id()){
 					/// Poll Remote reads
-					uint16_t remote_reads_polled = aether_poll_buff_and_post_recvs(rem_reads_ud_c, MAX_BATCH_OPS_SIZE,
+					uint16_t remote_reads_polled = wings_poll_buff_and_post_recvs(rem_reads_ud_c, MAX_BATCH_OPS_SIZE,
 																				   (uint8_t *) remote_reads);
 
 					/// Batch Remote reads to KVS
@@ -814,7 +814,7 @@ run_worker(void *arg)
 										remote_reads_polled, sizeof(spacetime_op_t), NULL);
 
 					/// Issue responses of Remote reads
-					aether_issue_pkts(rem_read_resp_ud_c, (uint8_t *) remote_reads,
+					wings_issue_pkts(rem_read_resp_ud_c, (uint8_t *) remote_reads,
 									  remote_reads_polled, sizeof(spacetime_op_t), NULL,
 									  remote_read_resp_skip_or_get_sender_id,
 									  remote_read_resp_modify_elem_after_send,
@@ -822,13 +822,13 @@ run_worker(void *arg)
 
 				} else {
 					/// Initiate Remote reads
-					aether_issue_pkts(rem_reads_ud_c, (uint8_t *) ops,
+					wings_issue_pkts(rem_reads_ud_c, (uint8_t *) ops,
 									  MAX_BATCH_OPS_SIZE, sizeof(spacetime_op_t), &remote_reads_rolling_idx,
 									  remote_read_skip_or_get_sender_id, remote_read_modify_elem_after_send,
 									  remote_read_copy_and_modify_elem);
 
 					/// Poll respsonses of Remote reads
-					uint16_t remote_read_resps_polled = aether_poll_buff_and_post_recvs(rem_read_resp_ud_c, MAX_BATCH_OPS_SIZE,
+					uint16_t remote_read_resps_polled = wings_poll_buff_and_post_recvs(rem_read_resp_ud_c, MAX_BATCH_OPS_SIZE,
 																						(uint8_t *) remote_reads);
 					/// Complete Remote reads
 					cr_complete_local_reads(remote_reads, remote_read_resps_polled, ops);
@@ -841,7 +841,7 @@ run_worker(void *arg)
 			if(machine_id != head_id()) {
 				///Poll for INVs
 				if(has_outstanding_invs == 0){
-					invs_polled = aether_poll_buff_and_post_recvs(inv_ud_c, INV_RECV_OPS_SIZE, (uint8_t *) inv_recv_ops);
+					invs_polled = wings_poll_buff_and_post_recvs(inv_ud_c, INV_RECV_OPS_SIZE, (uint8_t *) inv_recv_ops);
 
 					if (invs_polled > 0) {
 						/// Batch INVs to KVS
@@ -849,7 +849,7 @@ run_worker(void *arg)
 
 						if (CR_ENABLE_EARLY_INV_CRDS)
 							/// Issue credits for INVs to previous node in chain
-							aether_issue_credits(inv_crd_ud_c, (uint8_t *) inv_recv_ops, invs_polled,
+							wings_issue_credits(inv_crd_ud_c, (uint8_t *) inv_recv_ops, invs_polled,
 												 sizeof(spacetime_inv_t), inv_crd_skip_or_get_sender_id,
 												 inv_crd_modify_elem_after_send);
 					}
@@ -859,7 +859,7 @@ run_worker(void *arg)
 						/// Batch INVs to KVS
 					if (machine_id != tail_id() && machine_id != head_id())
 						/// Forward INVS to next node in chain
-						has_outstanding_invs = aether_issue_pkts(inv_ud_c, (uint8_t *) inv_recv_ops, invs_polled,
+						has_outstanding_invs = wings_issue_pkts(inv_ud_c, (uint8_t *) inv_recv_ops, invs_polled,
 																 sizeof(spacetime_inv_t), NULL,
 																 inv_skip_or_fwd_to_next_node,
 																 inv_fwd_modify_elem_after_send,
@@ -868,7 +868,7 @@ run_worker(void *arg)
 					else if (machine_id == tail_id())
 					{
 						/// Initiate ACKS (forward to prev)
-						has_outstanding_invs = aether_issue_pkts(ack_ud_c, (uint8_t *) inv_recv_ops, invs_polled,
+						has_outstanding_invs = wings_issue_pkts(ack_ud_c, (uint8_t *) inv_recv_ops, invs_polled,
 																 sizeof(spacetime_inv_t), NULL, ack_skip_or_get_sender_id,
 																 ack_modify_elem_after_send, ack_copy_and_modify_elem);
 						if(ENABLE_ASSERTIONS)
@@ -879,7 +879,7 @@ run_worker(void *arg)
 
 			if(machine_id != tail_id()){
 				///Poll for Acks
-				acks_polled = aether_poll_buff_and_post_recvs(ack_ud_c, ACK_RECV_OPS_SIZE, (uint8_t *) ack_recv_ops);
+				acks_polled = wings_poll_buff_and_post_recvs(ack_ud_c, ACK_RECV_OPS_SIZE, (uint8_t *) ack_recv_ops);
 
 				if (acks_polled > 0){
 					/// Batch ACKs to KVS
@@ -891,7 +891,7 @@ run_worker(void *arg)
 				if(machine_id != head_id()){
 
 					/// FWD ACKs to previous node if not the Head
-					aether_issue_pkts(ack_ud_c, (uint8_t *) ack_recv_ops, acks_polled, sizeof(spacetime_ack_t), NULL,
+					wings_issue_pkts(ack_ud_c, (uint8_t *) ack_recv_ops, acks_polled, sizeof(spacetime_ack_t), NULL,
 									  ack_fwd_skip_or_get_sender_id,
 									  ack_fwd_modify_elem_after_send, ack_fwd_copy_and_modify_elem);
 					if(ENABLE_ASSERTIONS)
