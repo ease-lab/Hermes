@@ -34,9 +34,9 @@ set(SOURCE_FILES_cr
 
         include/hermes/util.h
         include/hermes/config.h
-        include/hermes/bit_vector.h
+        include/utils/bit_vector.h
         include/hermes/concur_ctrl.h
-        )
+        src/CR/crKV.c)
 
 
 set(SOURCE_FILES_hades
@@ -74,10 +74,10 @@ set(SOURCE_FILES_hermes
         include/hermes/util.h
         include/hermes/config.h
         include/hermes/concur_ctrl.h
-        include/hermes/bit_vector.h
+        include/utils/bit_vector.h
         include/hades/hades.h
         include/wings/wings.h
-        include/wings/wings_api.h)
+        include/wings/wings_api.h src/hermes/hermesKV.c)
 
 
 add_executable(cr ${SOURCE_FILES_cr})

@@ -8,7 +8,7 @@
 #include "config.h"
 #include "util.h"
 #include "concur_ctrl.h"
-#include "bit_vector.h"
+#include "../../include/utils/bit_vector.h"
 #include "hrd.h"
 
 

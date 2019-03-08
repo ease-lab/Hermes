@@ -629,7 +629,7 @@ _wings_batch_pkts_2_NIC(ud_channel_t *ud_c, uint16_t pkts_in_batch, uint16_t msg
 		for(int i = 0; i < wr_idx; ++i){
 			uint16_t sgl_idx = (uint16_t) (i / (ud_c->is_bcast_channel ? remote_channels : 1));
 
-			if(ud_c->type != CRD && !ud_c->is_header_only){
+			if(ud_c->type != CRD){
 				assert(ud_c->send_wr[i].num_sge == 1);
 				assert(ud_c->send_wr[i].opcode == IBV_WR_SEND);
 				assert(ud_c->send_wr[i].sg_list == &ud_c->send_sgl[sgl_idx]);
@@ -640,11 +640,8 @@ _wings_batch_pkts_2_NIC(ud_channel_t *ud_c, uint16_t pkts_in_batch, uint16_t msg
 				assert(ud_c->send_wr[i].num_sge == 0);
 				assert(ud_c->send_wr[i].sg_list->length == 0);
 				assert(ud_c->send_wr[i].opcode == IBV_WR_SEND_WITH_IMM);
-				if(ud_c->type == CRD){
-					assert(((wings_crd_t*) &(ud_c->send_wr[i].imm_data))->crd_num > 0);
-					assert(((wings_crd_t*) &(ud_c->send_wr[i].imm_data))->sender_id == ud_c->channel_id);
-				}else
-					assert(((wings_hdr_only_t*) &(ud_c->send_wr[i].imm_data))->sender_id == ud_c->channel_id);
+				assert(((wings_crd_t*) &(ud_c->send_wr[i].imm_data))->crd_num > 0);
+				assert(((wings_crd_t*) &(ud_c->send_wr[i].imm_data))->sender_id == ud_c->channel_id);
 			}
 
 			assert(ud_c->send_wr[i].wr.ud.remote_qkey == HRD_DEFAULT_QKEY);

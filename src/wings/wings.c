@@ -45,15 +45,16 @@ void _wings_share_qp_info_via_memcached(ud_channel_t **ud_c_array, uint16_t ud_c
 
 void
 wings_ud_channel_init(ud_channel_t *ud_c, char *qp_name, enum channel_type type,
-					  uint8_t max_coalescing, uint16_t max_req_size, uint8_t enable_inlining,
-		// Broadcast
+					  uint8_t max_coalescing, uint16_t max_req_size,
+					  uint8_t enable_inlining, uint8_t is_header_only,
+				      // Broadcast
 					  uint8_t is_bcast,
-		// Credits
+		              // Credits
 					  uint8_t disable_crd_ctrl,
 					  uint8_t expl_crd_ctrl, ud_channel_t *linked_channel,
 					  uint8_t crds_per_channel, uint16_t num_channels,
 					  uint8_t channel_id,
-		// Toggles
+		              // Toggles
 					  uint8_t stats_on, uint8_t prints_on)
 {
 	assert(type != CRD); // if CRD type then used the *_crd_init instead
@@ -66,8 +67,15 @@ wings_ud_channel_init(ud_channel_t *ud_c, char *qp_name, enum channel_type type,
 	_wings_assert_binary(is_bcast);
 	_wings_assert_binary(prints_on);
 	_wings_assert_binary(expl_crd_ctrl);
+	_wings_assert_binary(is_header_only);
 	_wings_assert_binary(enable_inlining);
 
+
+	ud_c->is_header_only = is_header_only;
+	if(ud_c->is_header_only)
+	    /// WARNING: hdr_only msgs have an additional 1st B indicating sender_id
+		/// (which must not be taken into account on max_req_size)
+		assert(max_req_size <= 3 * sizeof(uint8_t) && max_coalescing == 1);
 
 	ud_c->type = type;
 	ud_c->qp_name = qp_name;
@@ -76,21 +84,22 @@ wings_ud_channel_init(ud_channel_t *ud_c, char *qp_name, enum channel_type type,
 	ud_c->expl_crd_ctrl = expl_crd_ctrl;
 	ud_c->disable_crd_ctrl = disable_crd_ctrl;
 	ud_c->is_bcast_channel = is_bcast;
-	ud_c->channel_providing_crds = linked_channel;
 	ud_c->num_crds_per_channel = crds_per_channel;
+	ud_c->channel_providing_crds = linked_channel;
 
 	ud_c->enable_stats = stats_on;
     ud_c->enable_prints = prints_on;
 
 
-	ud_c->max_msg_size = max_req_size;
+	ud_c->max_msg_size = (uint16_t) (max_req_size + (ud_c->is_header_only == 1 ? 1 : 0)); // hdr_only msgs have an additional 1st B indicating sender_id
 	ud_c->max_coalescing = max_coalescing;
+
 
 	ud_c->no_crds_to_send_per_endpoint = NULL; // unused for type != CRD
 
 	uint16_t remote_channels = (uint16_t) (num_channels - 1);
-	ud_c->is_inlining_enabled = enable_inlining;
-    if(_wings_ud_send_max_pkt_size(ud_c) > WINGS_MAX_SUPPORTED_INLINING) {
+	ud_c->is_inlining_enabled = (uint8_t) (ud_c->is_header_only ? 1 : enable_inlining);
+    if(!ud_c->is_header_only && _wings_ud_send_max_pkt_size(ud_c) > WINGS_MAX_SUPPORTED_INLINING) {
         if(ud_c->is_inlining_enabled)
             printf("Unfortunately, inlining for msgs sizes up to (%d) "
                    "is higher than the supported (%d)\n",
@@ -125,7 +134,8 @@ wings_ud_channel_init(ud_channel_t *ud_c, char *qp_name, enum channel_type type,
 	ud_c->recv_pkt_buff_len = ud_c->max_recv_wrs;
 	ud_c->send_pkt_buff_len = (uint16_t) (ud_c->max_send_wrs * (ud_c->is_inlining_enabled ? 1 : 2));
 
-    ud_c->send_pkt_buff = malloc(_wings_ud_send_max_pkt_size(ud_c) * ud_c->send_pkt_buff_len);
+    ud_c->send_pkt_buff = ud_c->is_header_only ? NULL :
+						  malloc(_wings_ud_send_max_pkt_size(ud_c) * ud_c->send_pkt_buff_len);
 
 
 	ud_c->overflow_msg_buff = NULL;
@@ -134,6 +144,10 @@ wings_ud_channel_init(ud_channel_t *ud_c, char *qp_name, enum channel_type type,
 		ud_c->num_overflow_msgs = 0;
 		ud_c->enable_overflow_msgs = 1;
 		ud_c->overflow_msg_buff = malloc(ud_c->max_msg_size * (ud_c->max_coalescing - 1));
+    } else{
+		ud_c->num_overflow_msgs = 0;
+		ud_c->enable_overflow_msgs = 0;
+		ud_c->overflow_msg_buff = NULL;
     }
 
 
@@ -189,17 +203,15 @@ wings_setup_channel_qps_and_recvs(ud_channel_t **ud_c_array, uint16_t ud_c_num,
 	for(int i = 0; i < ud_c_num; ++i){
 	    send_q_depths[i] = ud_c_array[i]->send_q_depth;
 		recv_q_depths[i] = ud_c_array[i]->recv_q_depth;
-		dgram_buff_size += ud_c_array[i]->type == CRD ? 64 :
+		dgram_buff_size += ud_c_array[i]->type == CRD || ud_c_array[i]->is_header_only ? 64 :
 						   _wings_ud_recv_max_pkt_size(ud_c_array[i]) * ud_c_array[i]->recv_q_depth;
 	}
 
-	struct hrd_ctrl_blk *cb = hrd_ctrl_blk_init(worker_lid,	/* local_hid */
-												0, -1, /* port_index, numa_node_id */
-												0, 0,	/* #conn qps, uc */
-												NULL, 0, -1,	/* prealloc conn buf, buf size, key */
-												ud_c_num, dgram_buff_size,	/* num_dgram_qps, dgram_buf_size */
-												BASE_SHM_KEY + worker_lid, /* key */
-												recv_q_depths, send_q_depths); /* Depth of the dgram RECV, SEND Q*/
+	struct hrd_ctrl_blk *cb = hrd_ctrl_blk_init(worker_lid, 0, -1, 0,	       // local_hid, port_index, numa_node_id, #conn qps
+												0, NULL, 0, -1,	               // #conn uc, prealloc conn buf, buf size, key
+												ud_c_num, dgram_buff_size,	   // num_dgram_qps, dgram_buf_size
+												BASE_SHM_KEY + worker_lid,     // key
+												recv_q_depths, send_q_depths); // Depth of the dgram RECV, SEND Q
 
 	_wings_share_qp_info_via_memcached(ud_c_array, ud_c_num, shared_rdy_var, worker_lid, cb);
 
@@ -207,11 +219,11 @@ wings_setup_channel_qps_and_recvs(ud_channel_t **ud_c_array, uint16_t ud_c_num,
 	for(uint8_t i = 0; i < ud_c_num; ++i){
 		// Init recv and setup wrs and sgls of ud_channel
 		_wings_ud_channel_init_recv(ud_c_array[i], cb, (uint8_t) i, incoming_reqs_ptr);
-		incoming_reqs_ptr += ud_c_array[i]->type == CRD ? 64 :
+		incoming_reqs_ptr += ud_c_array[i]->type == CRD  || ud_c_array[i]->is_header_only ? 64 :
 							 _wings_ud_recv_max_pkt_size(ud_c_array[i]) * ud_c_array[i]->recv_q_depth;
 	}
 
-	sleep(1); /// Give some leeway to post receives, before start bcasting! (see above warning)
+	sleep(1); /// Give some leeway to post receives, before start bcasting!
 }
 
 void
@@ -226,11 +238,11 @@ wings_print_ud_c_overview(ud_channel_t *ud_c)
 	_wings_print_on_off_toggle(ud_c->max_pcie_bcast_batch, "Max PCIe batch");
 
 	printf("\t\tMax msg size: %d\n", ud_c->max_msg_size);
-	if(ud_c->type != CRD)
+	if(ud_c->type != CRD && !ud_c->is_header_only)
 		printf("\t\tMax pkt size: send = %dB, recv = %dB\n",
 			   _wings_ud_send_max_pkt_size(ud_c), _wings_ud_recv_max_pkt_size(ud_c));
 	else
-		printf("\t\tMax pkt size: send = 4B (immediate), recv = 4B(immediate)\n");
+		printf("\t\tMax pkt size: send = 4B (inlined_payload), recv = 4B(inlined_payload)\n");
 	printf("\t\tSS granularity: %d\n", ud_c->ss_granularity);
 
 	printf("\t\tNum remotes: %d\n", ud_c->num_channels - 1);
@@ -296,12 +308,12 @@ _wings_ud_channel_crd_init(ud_channel_t *ud_c, char *qp_name, ud_channel_t *link
     ud_c->enable_prints = enable_prints;
 
 
-    ud_c->no_crds_to_send_per_endpoint = malloc(sizeof(uint16_t) * num_channels);
-
-	static_assert(sizeof(wings_crd_t) <= 4, ""); // Credits are always send as immediate <=4B
-	ud_c->max_msg_size = 0; //non immediate size
+	static_assert(sizeof(wings_crd_t) <= 4, ""); // Credits are always send as inlined_payload <=4B
+	ud_c->max_msg_size = 0; //non inlined_payload size
 	ud_c->max_coalescing = 1;
 
+
+	ud_c->no_crds_to_send_per_endpoint = malloc(sizeof(uint16_t) * num_channels);
 
 	uint16_t remote_channels = (uint16_t) (num_channels - 1);
 	ud_c->is_inlining_enabled = 1;
@@ -322,8 +334,8 @@ _wings_ud_channel_crd_init(ud_channel_t *ud_c, char *qp_name, ud_channel_t *link
 	ud_c->recv_wc = malloc(sizeof(struct ibv_wc) * ud_c->max_recv_wrs);
 
 
-	ud_c->recv_pkt_buff_len = ud_c->max_recv_wrs * ud_c->max_coalescing;
-	ud_c->send_pkt_buff_len = ud_c->max_send_wrs ;
+	ud_c->recv_pkt_buff_len = ud_c->max_recv_wrs * ud_c->max_coalescing; //TODO: is this correct?
+	ud_c->send_pkt_buff_len = ud_c->max_send_wrs;
 
     ud_c->send_pkt_buff = NULL; //malloc(_wings_ud_send_max_pkt_size(ud_c) * ud_c->send_pkt_buff_len);
 
@@ -372,7 +384,7 @@ _wings_ud_channel_init_recv(ud_channel_t *ud_c, struct hrd_ctrl_blk *cb, uint8_t
 	ud_c->recv_cq = cb->dgram_recv_cq[ud_c->qp_id];
 
 	if(ud_c->type != CRD){
-		ud_c->send_mem_region = ud_c->is_inlining_enabled ?  NULL :
+		ud_c->send_mem_region = ud_c->is_inlining_enabled || ud_c->is_header_only ?  NULL :
 								register_buffer(cb->pd, ud_c->send_pkt_buff, _wings_ud_send_max_pkt_size(ud_c)
 																			 * ud_c->send_pkt_buff_len);
 		_wings_setup_send_wr_and_sgl(ud_c);
@@ -428,15 +440,22 @@ _wings_setup_send_wr_and_sgl(ud_channel_t *ud_c)
 {
 	assert(ud_c->type != CRD);
 
+	wings_hdr_only_t hdr_only_tmp;
+	hdr_only_tmp.sender_id = (uint8_t) ud_c->channel_id;
+	memset(hdr_only_tmp.inlined_payload, 0, 3 * sizeof(uint8_t));
+
     if(ud_c->is_bcast_channel){ //Send bcast WRs
 
 		uint16_t remote_channels = (uint16_t) (ud_c->num_channels - 1);
         uint16_t max_msgs_in_pcie_batch = (uint16_t) (ud_c->max_pcie_bcast_batch * remote_channels);
         ud_c->send_wr  = malloc(sizeof(struct ibv_send_wr) * max_msgs_in_pcie_batch);
-        ud_c->send_sgl = malloc(sizeof(struct ibv_sge) * ud_c->max_pcie_bcast_batch);
+        ud_c->send_sgl = malloc(sizeof(struct ibv_sge) * ud_c->is_header_only ? 1 : ud_c->max_pcie_bcast_batch);
 
-        for(int i = 0; i < ud_c->max_pcie_bcast_batch; ++i)
-            ud_c->send_sgl[i].length = _wings_ud_send_max_pkt_size(ud_c);
+		if(ud_c->is_header_only)
+			ud_c->send_sgl->length = 0;
+		else
+			for(int i = 0; i < ud_c->max_pcie_bcast_batch; ++i)
+				ud_c->send_sgl[i].length = _wings_ud_send_max_pkt_size(ud_c);
 
         for(int i = 0; i < max_msgs_in_pcie_batch; ++i){
             int sgl_index = i / remote_channels;
@@ -450,9 +469,19 @@ _wings_setup_send_wr_and_sgl(ud_channel_t *ud_c)
             ud_c->send_wr[i].wr.ud.ah = ud_c->remote_qps[rm_qp_id].ah;
             ud_c->send_wr[i].wr.ud.remote_qpn = ud_c->remote_qps[rm_qp_id].qpn;
 
-            ud_c->send_wr[i].num_sge = 1;
-            ud_c->send_wr[i].opcode = IBV_WR_SEND; /// Attention!! there is no immediate here
-            ud_c->send_wr[i].sg_list = &ud_c->send_sgl[sgl_index];
+            if(!ud_c->is_header_only){
+				ud_c->send_wr[i].num_sge = 1;
+				ud_c->send_wr[i].opcode = IBV_WR_SEND; /// Attention!! there is no immediate here
+				ud_c->send_wr[i].sg_list = &ud_c->send_sgl[sgl_index];
+
+            }else{
+				ud_c->send_wr[i].next = NULL;
+				ud_c->send_wr[i].imm_data = 0;
+				ud_c->send_wr[i].num_sge  = 0;
+				ud_c->send_wr[i].sg_list = ud_c->send_sgl;
+				ud_c->send_wr[i].opcode  = IBV_WR_SEND_WITH_IMM;
+				memcpy(&ud_c->send_wr[i].imm_data, &hdr_only_tmp, sizeof(wings_hdr_only_t));
+            }
 
             if (!ud_c->is_inlining_enabled) {
                 ud_c->send_wr[i].send_flags = 0;
@@ -469,12 +498,23 @@ _wings_setup_send_wr_and_sgl(ud_channel_t *ud_c)
         ud_c->send_wr  = malloc(sizeof(struct ibv_send_wr) * ud_c->max_send_wrs);
         for(int i = 0; i < ud_c->max_send_wrs; ++i){
 
-            ud_c->send_sgl[i].length = sizeof(wings_pkt_t) + _wings_ud_recv_max_pkt_size(ud_c);
+			ud_c->send_wr[i].wr.ud.remote_qkey = HRD_DEFAULT_QKEY;
 
-            ud_c->send_wr[i].num_sge = 1;
-            ud_c->send_wr[i].opcode = IBV_WR_SEND; /// Attention!! there is no immediate here
-            ud_c->send_wr[i].sg_list = &ud_c->send_sgl[i];
-            ud_c->send_wr[i].wr.ud.remote_qkey = HRD_DEFAULT_QKEY;
+            if(!ud_c->is_header_only){
+//				ud_c->send_sgl[i].length =  sizeof(wings_pkt_t) + _wings_ud_recv_max_pkt_size(ud_c);
+				ud_c->send_sgl[i].length = _wings_ud_send_max_pkt_size(ud_c);
+				ud_c->send_wr[i].num_sge = 1;
+				ud_c->send_wr[i].opcode = IBV_WR_SEND; /// Attention!! there is no immediate here
+				ud_c->send_wr[i].sg_list = &ud_c->send_sgl[i];
+
+            }else{
+				ud_c->send_wr[i].next = NULL;
+				ud_c->send_wr[i].imm_data = 0;
+				ud_c->send_wr[i].num_sge  = 0;
+				ud_c->send_wr[i].sg_list = ud_c->send_sgl;
+				ud_c->send_wr[i].opcode  = IBV_WR_SEND_WITH_IMM;
+				memcpy(&ud_c->send_wr[i].imm_data, &hdr_only_tmp, sizeof(wings_hdr_only_t));
+            }
 
             if (!ud_c->is_inlining_enabled){
                 ud_c->send_wr[i].send_flags = 0;
@@ -490,15 +530,24 @@ _wings_setup_recv_wr_and_sgl(ud_channel_t *ud_c, struct hrd_ctrl_blk *cb)
 {
 	assert(ud_c->type != CRD);
 
-    ud_c->recv_sgl= malloc(sizeof(struct ibv_sge) * ud_c->max_recv_wrs);
-    ud_c->recv_wr = malloc(sizeof(struct ibv_recv_wr) * ud_c->max_recv_wrs);
+	ud_c->recv_sgl= malloc(sizeof(struct ibv_sge) * (ud_c->is_header_only == 1 ? 1 : ud_c->max_recv_wrs));
+	if(ud_c->is_header_only){
+		ud_c->recv_sgl->length = 64; // TODO can we make this zero?
+		ud_c->recv_sgl->lkey = cb->dgram_buf_mr->lkey;
+		ud_c->recv_sgl->addr = (uint64_t) ud_c->recv_pkt_buff;
+	}
 
+	ud_c->recv_wr = malloc(sizeof(struct ibv_recv_wr) * ud_c->max_recv_wrs);
 	for (int i = 0; i < ud_c->max_recv_wrs; i++) {
-		ud_c->recv_sgl[i].length = _wings_ud_recv_max_pkt_size(ud_c);
-		ud_c->recv_sgl[i].lkey = cb->dgram_buf_mr->lkey;
-        ud_c->recv_wr[i].sg_list = &ud_c->recv_sgl[i];
-        ud_c->recv_wr[i].num_sge = 1;
-        ud_c->recv_wr[i].next = (i == ud_c->max_recv_wrs - 1) ? NULL : &ud_c->recv_wr[i + 1];
+		if(!ud_c->is_header_only) {
+			ud_c->recv_sgl[i].length = _wings_ud_recv_max_pkt_size(ud_c);
+			ud_c->recv_sgl[i].lkey = cb->dgram_buf_mr->lkey;
+			ud_c->recv_wr[i].sg_list = &ud_c->recv_sgl[i];
+			ud_c->recv_wr[i].next = (i == ud_c->max_recv_wrs - 1) ? NULL : &ud_c->recv_wr[i + 1];
+		}
+
+		ud_c->recv_wr[i].num_sge = 1;
+		ud_c->recv_wr[i].sg_list = ud_c->is_header_only == 1 ? ud_c->recv_sgl : &ud_c->recv_sgl[i];
 	}
 }
 
@@ -506,9 +555,8 @@ _wings_setup_recv_wr_and_sgl(ud_channel_t *ud_c, struct hrd_ctrl_blk *cb)
 void
 _wings_setup_incoming_buff_and_post_initial_recvs(ud_channel_t *ud_c)
 {
-
-    if(ud_c->type != CRD){
-		//init recv buffs as empty (not need for CRD since CRD msgs are --immediate-- header-only)
+    if(ud_c->is_header_only == 0 && ud_c->type != CRD){
+		//init recv buffs as empty (not need for CRD since CRD msgs are --inlined_payload-- header-only)
 		for(uint16_t i = 0; i < ud_c->send_pkt_buff_len; ++i)
 			_wings_get_nth_pkt_ptr_from_send_buff(ud_c, i)->req_num = 0;
 		for(uint16_t i = 0; i < ud_c->recv_pkt_buff_len; ++i)
@@ -518,10 +566,10 @@ _wings_setup_incoming_buff_and_post_initial_recvs(ud_channel_t *ud_c)
 	if(WINGS_ENABLE_POST_RECV_PRINTS && ud_c->enable_prints)
 		yellow_printf("vvv Post Initial Receives: %s %d\n", ud_c->qp_name, ud_c->max_recv_wrs);
 
-	if(ud_c->type != CRD)
+	if(ud_c->is_header_only == 0 && ud_c->type != CRD)
 		_wings_post_recvs(ud_c, ud_c->max_recv_wrs);
 	else
-		_wings_post_crd_recvs(ud_c, ud_c->max_recv_wrs);
+		_wings_post_hdr_only_recvs(ud_c, ud_c->max_recv_wrs);
 }
 
 

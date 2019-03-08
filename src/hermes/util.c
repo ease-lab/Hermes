@@ -644,8 +644,8 @@ void setup_send_WRs(struct ibv_send_wr *inv_send_wr, struct ibv_sge *inv_send_sg
         val_send_wr[i].wr.ud.remote_qkey = HRD_DEFAULT_QKEY;
 
 
-        inv_send_wr[i].opcode = IBV_WR_SEND; // Attention!! there is no immediate here
-        val_send_wr[i].opcode = IBV_WR_SEND; // Attention!! there is no immediate here
+        inv_send_wr[i].opcode = IBV_WR_SEND; // Attention!! there is no inlined_payload here
+        val_send_wr[i].opcode = IBV_WR_SEND; // Attention!! there is no inlined_payload here
 
         inv_send_wr[i].num_sge = 1;
         val_send_wr[i].num_sge = 1;
@@ -673,7 +673,7 @@ void setup_send_WRs(struct ibv_send_wr *inv_send_wr, struct ibv_sge *inv_send_sg
     for (i = 0; i < MAX_SEND_ACK_WRS; i++) {
         ack_send_wr[i].wr.ud.remote_qkey = HRD_DEFAULT_QKEY;
         ack_send_sgl[i].length = sizeof(spacetime_ack_packet_t);
-        ack_send_wr[i].opcode = IBV_WR_SEND; // Attention!! there is no immediate here, cids do the job!
+        ack_send_wr[i].opcode = IBV_WR_SEND; // Attention!! there is no inlined_payload here, cids do the job!
         ack_send_wr[i].num_sge = 1;
         ///change inline
         ack_send_wr[i].sg_list = &ack_send_sgl[i];
@@ -727,7 +727,7 @@ void setup_incoming_buffs_and_post_initial_recvs(ud_req_inv_t *incoming_invs, ud
                                                  struct hrd_ctrl_blk *cb, uint16_t worker_lid)
 {
     int i;
-    //init recv buffs as empty (not need for CRD since CRD msgs are (immediate) header-only
+    //init recv buffs as empty (not need for CRD since CRD msgs are (inlined_payload) header-only
 	for(i = 0; i < RECV_INV_Q_DEPTH; i++)
 		incoming_invs[i].packet.req_num = 0;
 	for(i = 0; i < RECV_ACK_Q_DEPTH; i++)

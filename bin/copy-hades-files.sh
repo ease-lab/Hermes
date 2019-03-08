@@ -2,10 +2,10 @@
 HOSTS=( ##### network  cluster #####
          "houston"
          "sanantonio"
-         "austin"
-         "indianapolis"
-         "atlanta"
-         "philly"
+#         "austin"
+#         "indianapolis"
+#         "atlanta"
+#         "philly"
          ##### compute cluster #####
 #         "baltimore"
 #         "chicago"
@@ -13,18 +13,15 @@ HOSTS=( ##### network  cluster #####
         )
 
 FILES=(
-#        "hermes"
-#        "run-hermes.sh"
-        "hermes-wings"
-#        "cr"
-#        "run-cr.sh"
+        "hades"
+        "run-hades.sh"
       )
 
 USERNAME="s1671850" # "user"
 LOCAL_HOST=`hostname`
 MAKE_FOLDER="/home/${USERNAME}/hermes/src"
-HOME_FOLDER="/home/${USERNAME}/hermes/src/hermes"
-DEST_FOLDER="/home/${USERNAME}/hermes-exec/src/hermes"
+HOME_FOLDER="/home/${USERNAME}/hermes/src/hades"
+DEST_FOLDER="/home/${USERNAME}/hermes-exec/src/hades"
 
 cd $MAKE_FOLDER
 make clean

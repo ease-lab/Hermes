@@ -1344,10 +1344,10 @@ static inline int
 refill_ops_n_suspect_failed_nodes(uint32_t *trace_iter, uint16_t worker_lid,
 								  struct spacetime_trace_command *trace, spacetime_op_t *ops,
 								  uint32_t *refilled_per_ops_debug_cnt,
-								  spacetime_group_membership last_group_membership,
+								  spacetime_group_membership *last_group_membership,
 								  struct timespec *start,
-								  spacetime_op_t** n_hottest_keys_in_ops_get,
-								  spacetime_op_t** n_hottest_keys_in_ops_put)
+								  spacetime_op_t **n_hottest_keys_in_ops_get,
+								  spacetime_op_t **n_hottest_keys_in_ops_put)
 {
 	static uint8_t first_iter_has_passed[WORKERS_PER_MACHINE] = { 0 };
 //	static struct timespec start;
@@ -1453,16 +1453,17 @@ refill_ops_n_suspect_failed_nodes(uint32_t *trace_iter, uint16_t worker_lid,
 		}else if(ops[i].op_meta.state == ST_IN_PROGRESS_PUT){
 			refilled_per_ops_debug_cnt[i]++;
 			///Failure suspicion
-			if(unlikely(refilled_per_ops_debug_cnt[i] > NUM_OF_IDLE_ITERS_FOR_SUSPICION)){
-				if(machine_id < NODES_WITH_FAILURE_DETECTOR && worker_lid == WORKER_EMULATING_FAILURE_DETECTOR){
-					node_suspected = find_suspected_node(&ops[i], worker_lid, last_group_membership);
-					cyan_printf("Worker: %d SUSPECTS node: %d (req %d)\n", worker_lid, node_suspected, i);
-					ops[i].op_meta.state = ST_OP_MEMBERSHIP_CHANGE;
-					ops[i].value[0] = (uint8_t) node_suspected;
-                    //reset counter for failure suspicion
-					memset(refilled_per_ops_debug_cnt, 0, sizeof(uint32_t) * MAX_BATCH_OPS_SIZE);
+			if(CR_IS_RUNNING == 0)
+				if(unlikely(refilled_per_ops_debug_cnt[i] > NUM_OF_IDLE_ITERS_FOR_SUSPICION)){
+					if(machine_id < NODES_WITH_FAILURE_DETECTOR && worker_lid == WORKER_EMULATING_FAILURE_DETECTOR){
+						node_suspected = find_suspected_node(&ops[i], worker_lid, last_group_membership);
+						cyan_printf("Worker: %d SUSPECTS node: %d (req %d)\n", worker_lid, node_suspected, i);
+						ops[i].op_meta.state = ST_OP_MEMBERSHIP_CHANGE;
+						ops[i].value[0] = (uint8_t) node_suspected;
+						//reset counter for failure suspicion
+						memset(refilled_per_ops_debug_cnt, 0, sizeof(uint32_t) * MAX_BATCH_OPS_SIZE);
+					}
 				}
-			}
 		}
 	}
 

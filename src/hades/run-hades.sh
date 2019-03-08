@@ -73,7 +73,7 @@ blue "Reset server QP registry"
 memcached -l 0.0.0.0 1>/dev/null 2>/dev/null &
 sleep 1
 
-blue "Running hermes threads"
+blue "Running hades"
 
 sudo LD_LIBRARY_PATH=/usr/local/lib/ -E \
 	./hades                             \

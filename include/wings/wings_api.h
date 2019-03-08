@@ -5,13 +5,13 @@
 #ifndef WINGS_API_H
 #define WINGS_API_H
 #include <hrd.h>
-#include "bit_vector.h"
+#include "../utils/bit_vector.h"
 
 /// WARNING!!
 /// 	Accessible functions not defined below (in wings_api.h but exist only in wings.h) and starting with underscore
 ///		(i.e. "_wings_*") are internal and should not be called directly by the application
 
-#define WINGS_ENABLE_ASSERTIONS 0
+#define WINGS_ENABLE_ASSERTIONS 1
 #define WINGS_MAX_SUPPORTED_INLINING 187
 #define WINGS_ENABLE_BATCH_POST_RECVS_TO_NIC 1
 
@@ -20,7 +20,7 @@
 #define WINGS_MIN_PCIE_BCAST_BATCH 1
 #define WINGS_MIN(x,y) (x < y ? x : y)
 
-#define WINGS_ENABLE_PRINTS 0
+#define WINGS_ENABLE_PRINTS 1
 #define WINGS_ENABLE_SS_PRINTS (1 && WINGS_ENABLE_PRINTS)
 #define WINGS_ENABLE_SEND_PRINTS (1 && WINGS_ENABLE_PRINTS)
 #define WINGS_ENABLE_RECV_PRINTS (1 && WINGS_ENABLE_PRINTS)
@@ -66,7 +66,16 @@ typedef struct
     uint8_t sender_id;   // support for up to 256 unique senders per instance (e.g. thread)
     uint16_t crd_num;    // credit num
 }__attribute__((packed))
-wings_crd_t; // always send as immediate
+wings_crd_t; // always send as inlined_payload
+
+typedef struct
+{
+    uint8_t sender_id;    // support for up to 256 unique senders per instance (e.g. thread)
+    uint8_t inlined_payload[3]; // available space to be used by the application
+}__attribute__((packed))
+wings_hdr_only_t; // always send as inlined_payload
+
+static_assert(sizeof(wings_hdr_only_t) == 4 * sizeof(uint8_t),"");
 
 typedef struct {
     uint64_t send_total_msgs;
@@ -89,8 +98,9 @@ typedef struct _ud_channel_t
 
     enum channel_type type;
     uint8_t max_coalescing;
-    uint8_t expl_crd_ctrl;
+	uint8_t expl_crd_ctrl;
 	uint8_t disable_crd_ctrl;
+	uint8_t is_header_only;
 	uint8_t is_bcast_channel;
     uint8_t is_inlining_enabled;
     struct _ud_channel_t* channel_providing_crds;
@@ -174,12 +184,13 @@ void wings_print_ud_c_overview(ud_channel_t *ud_c);
 
 void wings_ud_channel_init(ud_channel_t *ud_c, char *qp_name, enum channel_type type,
 						   uint8_t max_coalescing, uint16_t max_req_size,
-						   uint8_t enable_inlining, uint8_t is_bcast,
-		// Credits
+						   uint8_t enable_inlining,uint8_t is_header_only,
+						   uint8_t is_bcast,
+						   // Credits
 						   uint8_t disable_crd_ctrl,
 						   uint8_t expl_crd_ctrl, ud_channel_t *linked_channel,
 						   uint8_t crds_per_channel, uint16_t num_channels, uint8_t channel_id,
-		// Toggles
+						   // Toggles
 						   uint8_t stats_on, uint8_t prints_on);
 
 

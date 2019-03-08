@@ -5,14 +5,15 @@
 #include "inline-util.h"
 
 ///
-#include "time_rdtsc.h"
+#include "../../include/utils/time_rdtsc.h"
 ///
 
 ////
 ////
-//// WARNING: This is deprecated use aether-worker instead.
+//// WARNING: This is deprecated use hermes_wings_worker instead.
 ////
 ////
+
 void *run_worker(void *arg){
 	struct thread_params params = *(struct thread_params *) arg;
 	uint16_t worker_lid = (uint16_t) params.id;	/* Local ID of this worker thread*/

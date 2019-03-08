@@ -16,7 +16,7 @@
 #include "mica.h"
 #include "concur_ctrl.h"
 #include "config.h"
-#include "bit_vector.h"
+#include "../utils/bit_vector.h"
 
 #define SPACETIME_NUM_KEYS (1000 * 1000)
 #define SPACETIME_NUM_BKTS (2 * 1024 * 1024)
@@ -146,7 +146,7 @@ typedef struct
     uint8_t sender;
     uint8_t val_credits;
 }
-spacetime_crd_t; //always send as immediate
+spacetime_crd_t; //always send as inlined_payload
 
 
 
@@ -279,7 +279,7 @@ void batch_vals_to_KVS(int op_num, spacetime_val_t **op, spacetime_op_t *read_wr
 
 void group_membership_init(void);
 int find_suspected_node(spacetime_op_t *op, int thread_id,
-                        spacetime_group_membership curr_membership);
+                        spacetime_group_membership *curr_membership);
 void complete_writes_and_replays_on_follower_removal(int op_num, spacetime_op_t **op,
                                                      spacetime_group_membership curr_membership, int thread_id);
 void reset_bcast_send_buffers(spacetime_inv_packet_t *inv_send_packet_ops, int *inv_push_ptr,
@@ -319,6 +319,15 @@ void
 cr_batch_ops_to_KVS(enum cr_type_t cr_type, uint8_t *op_array, int op_num,
 					uint16_t sizeof_op_elem, spacetime_op_t *read_write_op);
 
+static inline uint8_t
+is_last_ack(bit_vector_t gathered_acks,
+			spacetime_group_membership curr_g_membership)
+{
+	bv_and(&gathered_acks, curr_g_membership.g_membership);
+	return bv_are_equal(gathered_acks, curr_g_membership.g_membership);
+}
+
+extern struct spacetime_kv kv;
 extern spacetime_group_membership group_membership;
 
 

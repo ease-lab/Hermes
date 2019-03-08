@@ -11,7 +11,7 @@ all: ${APPS} clean-o
 hermes: ../libhrd/hrd_conn.o ../libhrd/hrd_util.o ../mica/mica.o ../mica/city.o main.o worker.o util.o stats.o spacetime.o
 	${LD} -o $@ $^ ${LDFLAGS}
 
-hermes-wings: ../libhrd/hrd_conn.o ../libhrd/hrd_util.o ../mica/mica.o ../mica/city.o main.o hermes_wings_worker.o util.o stats.o spacetime.o ../wings/wings.o
+hermes-wings: ../libhrd/hrd_conn.o ../libhrd/hrd_util.o ../mica/mica.o ../mica/city.o main.o hermes_wings_worker.o util.o stats.o spacetime.o hermesKV.o ../wings/wings.o
 	${LD} -o $@ $^ ${LDFLAGS}
 
 PHONY: clean
