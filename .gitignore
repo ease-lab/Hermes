@@ -20,6 +20,7 @@
 src/Armonia/main
 /src/CR/cr
 /src/hermes/hermes
+/src/hades/hades
 /src/hermes/hermes-wings
 
 # ignore debug files

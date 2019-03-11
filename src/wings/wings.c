@@ -62,6 +62,7 @@ wings_ud_channel_init(ud_channel_t *ud_c, char *qp_name, enum channel_type type,
 	assert(channel_id < num_channels);
 	assert(!(disable_crd_ctrl == 1 && expl_crd_ctrl == 1)); //cannot disable crd_ctrl and then set an explicit credit control
 	assert(disable_crd_ctrl == 1 || linked_channel != NULL); //cannot disable crd_ctrl and then set an crd control channel
+	assert(is_bcast == 0 || is_header_only == 0);
 
 	_wings_assert_binary(stats_on);
 	_wings_assert_binary(is_bcast);
@@ -494,8 +495,9 @@ _wings_setup_send_wr_and_sgl(ud_channel_t *ud_c)
 
     }else{ //Send unicast WRs
 
-        ud_c->send_sgl = malloc(sizeof(struct ibv_sge) * ud_c->max_send_wrs);
+//        ud_c->send_sgl = malloc(sizeof(struct ibv_sge) * ud_c->max_send_wrs);
         ud_c->send_wr  = malloc(sizeof(struct ibv_send_wr) * ud_c->max_send_wrs);
+		ud_c->send_sgl = malloc(sizeof(struct ibv_sge) * (ud_c->is_header_only ? 1 : ud_c->max_send_wrs));
         for(int i = 0; i < ud_c->max_send_wrs; ++i){
 
 			ud_c->send_wr[i].wr.ud.remote_qkey = HRD_DEFAULT_QKEY;
@@ -508,6 +510,7 @@ _wings_setup_send_wr_and_sgl(ud_channel_t *ud_c)
 				ud_c->send_wr[i].sg_list = &ud_c->send_sgl[i];
 
             }else{
+				ud_c->send_sgl->length = 0;
 				ud_c->send_wr[i].next = NULL;
 				ud_c->send_wr[i].imm_data = 0;
 				ud_c->send_wr[i].num_sge  = 0;

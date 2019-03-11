@@ -20,7 +20,7 @@
 #define WINGS_MIN_PCIE_BCAST_BATCH 1
 #define WINGS_MIN(x,y) (x < y ? x : y)
 
-#define WINGS_ENABLE_PRINTS 1
+#define WINGS_ENABLE_PRINTS 0
 #define WINGS_ENABLE_SS_PRINTS (1 && WINGS_ENABLE_PRINTS)
 #define WINGS_ENABLE_SEND_PRINTS (1 && WINGS_ENABLE_PRINTS)
 #define WINGS_ENABLE_RECV_PRINTS (1 && WINGS_ENABLE_PRINTS)
@@ -175,8 +175,20 @@ ud_channel_t;
 
 // Define some function pointers used when issuing pkts
 typedef void (*modify_input_elem_after_send_t) (uint8_t*);
-typedef int  (*skip_input_elem_or_get_sender_id_t) (uint8_t*); //Should return -1 to skip otherwise returns the sender id
+typedef int  (*skip_input_elem_or_get_dst_id_t) (uint8_t*); //Should return -1 to skip otherwise returns the sender id
 typedef void (*copy_and_modify_input_elem_t) (uint8_t* msg_to_send, uint8_t* triggering_req);
+
+static inline void
+wings_NOP_modify_elem_after_send(uint8_t* req)
+{ /*Do not change anything*/ }
+
+static inline int
+wings_bcast_dst_id(uint8_t* req)
+{ return 0; }
+
+//static inline void
+//wings_just_copy_input_elem(uint8_t* msg_to_send, uint8_t* triggering_req)
+//{ /*Do not change anything*/ }
 
 
 /// Init and Util functions
@@ -206,15 +218,16 @@ static inline uint8_t
 wings_issue_pkts(ud_channel_t *ud_c,
 				 uint8_t *input_array_of_elems, uint16_t input_array_len,
 				 uint16_t size_of_input_elems, uint16_t *input_array_rolling_idx,
-				 skip_input_elem_or_get_sender_id_t skip_or_get_sender_id_func_ptr,
+				 skip_input_elem_or_get_dst_id_t skip_or_get_sender_id_func_ptr,
 				 modify_input_elem_after_send_t modify_elem_after_send,
 				 copy_and_modify_input_elem_t copy_and_modify_elem);
 
 static inline void
 wings_issue_credits(ud_channel_t *ud_c, uint8_t *input_array_of_elems,
 					uint16_t input_array_len, uint16_t size_of_input_elems,
-					skip_input_elem_or_get_sender_id_t skip_or_get_sender_id_func_ptr,
+					skip_input_elem_or_get_dst_id_t skip_or_get_sender_id_func_ptr,
 					modify_input_elem_after_send_t modify_elem_after_send);
+
 
 
 #endif //WINGS_API_H

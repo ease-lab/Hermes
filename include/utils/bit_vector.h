@@ -80,6 +80,8 @@ bv_bit_get_internal(const uint8_t* bit_array, uint16_t size_in_bits, uint8_t bit
     return (uint8_t) ((bit_array[BV_BIT_SLOT(bit)] & BV_BIT_MOD(bit)) == 0 ? 0 : 1);
 }
 
+
+
 static inline void
 bv_bit_set_internal(uint8_t* bit_array, uint16_t size_in_bits, uint8_t bit)
 {
@@ -149,7 +151,14 @@ bv_copy_internal(uint8_t* ba_dst, uint16_t size_in_bits_dst,
     memcpy(ba_dst, ba_src, bv_bits_to_bytes(size_in_bits_src));
 }
 
-
+static inline uint8_t
+bv_no_setted_bits_internal(uint8_t* bit_array, uint16_t size_in_bits)
+{
+    uint8_t cnt = 0;
+    for(uint8_t i = 0; i < size_in_bits; ++i)
+        cnt += bv_bit_get_internal(bit_array, size_in_bits, i);
+    return cnt;
+}
 
 
 /// Bitvector Bitwise ops internal
@@ -261,6 +270,11 @@ dbv_reset_all(dbit_vector_t *bv)
     bv_reset_all_internal(bv->bit_array, bv->bv_size);
 }
 
+static inline uint8_t
+dbv_no_setted_bits(dbit_vector_t bv)
+{
+    return bv_no_setted_bits_internal(bv.bit_array, bv.bv_size);
+}
 
 
 
@@ -422,6 +436,11 @@ bv_reset_all(bit_vector_t *bv)
     bv_reset_all_internal(bv->bit_array, BV_BIT_VECTOR_SIZE);
 }
 
+static inline uint8_t
+bv_no_setted_bits(bit_vector_t bv)
+{
+    return bv_no_setted_bits_internal(bv.bit_array, BV_BIT_VECTOR_SIZE);
+}
 
 
 

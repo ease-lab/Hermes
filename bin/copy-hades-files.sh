@@ -2,10 +2,10 @@
 HOSTS=( ##### network  cluster #####
          "houston"
          "sanantonio"
-#         "austin"
+         "austin"
 #         "indianapolis"
-#         "atlanta"
 #         "philly"
+#         "atlanta"
          ##### compute cluster #####
 #         "baltimore"
 #         "chicago"

@@ -688,7 +688,7 @@ static inline uint8_t
 wings_issue_pkts(ud_channel_t *ud_c,
 				 uint8_t *input_array_of_elems, uint16_t input_array_len,
 				 uint16_t size_of_input_elems, uint16_t *input_array_rolling_idx,
-				 skip_input_elem_or_get_sender_id_t skip_or_get_sender_id_func_ptr,
+				 skip_input_elem_or_get_dst_id_t skip_or_get_sender_id_func_ptr,
 				 modify_input_elem_after_send_t modify_elem_after_send,
 				 copy_and_modify_input_elem_t copy_and_modify_elem)
 {
@@ -768,7 +768,7 @@ wings_issue_pkts(ud_channel_t *ud_c,
 static inline void
 wings_issue_credits(ud_channel_t *ud_c, uint8_t *input_array_of_elems,
 					uint16_t input_array_len, uint16_t size_of_input_elems,
-					skip_input_elem_or_get_sender_id_t skip_or_get_sender_id_func_ptr,
+					skip_input_elem_or_get_dst_id_t skip_or_get_sender_id_func_ptr,
 					modify_input_elem_after_send_t modify_elem_after_send)
 {
 	if(WINGS_ENABLE_ASSERTIONS)
