@@ -10,6 +10,10 @@
 /// 	Functions starting with underscore (i.e. "_wings_*")
 /// 	are internal and should not be called directly
 
+
+
+void wings_reconfigure_wrs_ah(ud_channel_t *ud_c, uint8_t endpoint_id);
+
 /* --------------------------------------------------------------------------
 --------------------------------- Helper Functions --------------------------
 ---------------------------------------------------------------------------*/
@@ -479,6 +483,14 @@ _wings_dec_crds(ud_channel_t *ud_c, uint8_t endpoint_id)
         else
             printf(" (for endpoint %d)\n", endpoint_id);
     }
+}
+
+
+
+static inline void
+wings_reset_credits(ud_channel_t *ud_c, uint8_t endpoint_id)
+{
+	ud_c->credits_per_channels[endpoint_id] = (uint8_t) ud_c->channel_providing_crds->num_crds_per_channel;
 }
 
 /* ---------------------------------------------------------------------------

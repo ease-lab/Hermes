@@ -472,7 +472,7 @@ void hrd_connect_qp(struct hrd_ctrl_blk *cb,
 	// // <vasilis>  ---ROCE----------
 	if (is_roce == 1) {
 		conn_attr.ah_attr.is_global = 1;
-	  conn_attr.ah_attr.dlid = 0;
+		conn_attr.ah_attr.dlid = 0;
 		conn_attr.ah_attr.grh.dgid.global.interface_id =  remote_qp_attr->gid_global_interface_id;
 		conn_attr.ah_attr.grh.dgid.global.subnet_prefix = remote_qp_attr->gid_global_subnet_prefix;
 		conn_attr.ah_attr.grh.sgid_index = 0;

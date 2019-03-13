@@ -78,6 +78,5 @@ blue "Running hades"
 sudo LD_LIBRARY_PATH=/usr/local/lib/ -E \
 	./hades                             \
 	--machine-id $machine_id            \
-	--is-roce 0                         \
 	--dev-name "mlx5_0"                 \
 	2>&1

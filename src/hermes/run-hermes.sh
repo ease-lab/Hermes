@@ -77,7 +77,8 @@ blue "Running hermes threads"
 
 sudo LD_LIBRARY_PATH=/usr/local/lib/ -E \
 #	./hermes                            \
-    ./hermes-wings                      \
+        #valgrind --leak-check=yes 	    \
+        ./hermes-wings                      \
 	--machine-id $machine_id            \
 	--is-roce 0                         \
 	--dev-name "mlx5_0"                 \

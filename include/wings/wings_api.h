@@ -27,6 +27,9 @@
 #define WINGS_ENABLE_CREDIT_PRINTS (1 && WINGS_ENABLE_PRINTS)
 #define WINGS_ENABLE_POST_RECV_PRINTS (1 && WINGS_ENABLE_PRINTS)
 
+
+#define WINGS_IS_ROCE 0
+
 /* Useful when `x = (x + 1) % N` is done in a loop */
 #define WINGS_MOD_ADD(x, N) do { \
 	x = x + 1; \
@@ -153,6 +156,8 @@ typedef struct _ud_channel_t
 
     struct ibv_mr* send_mem_region; // NULL if inlining is enabled
 
+	struct ibv_pd *pd;	// A protection domain for this ud channel
+
     // Remote QPs
     qp_info_t* remote_qps;
 
@@ -194,6 +199,9 @@ wings_bcast_dst_id(uint8_t* req)
 /// Init and Util functions
 void wings_print_ud_c_overview(ud_channel_t *ud_c);
 
+void wings_ud_channel_destroy(ud_channel_t *ud_c); // This must be used to destroy all ud_c (both CRD and typical ud_c)
+
+// This is used to int only non-CRDs channels (CRDs are initialized internally)
 void wings_ud_channel_init(ud_channel_t *ud_c, char *qp_name, enum channel_type type,
 						   uint8_t max_coalescing, uint16_t max_req_size,
 						   uint8_t enable_inlining,uint8_t is_header_only,

@@ -44,6 +44,24 @@ void _wings_share_qp_info_via_memcached(ud_channel_t **ud_c_array, uint16_t ud_c
 
 
 void
+wings_ud_channel_destroy(ud_channel_t *ud_c)
+{
+	free(ud_c->qp_name);
+	free(ud_c->recv_wc);
+	free(ud_c->remote_qps);
+	free(ud_c->credits_per_channels);
+
+	if(ud_c->send_pkt_buff != NULL)
+		free(ud_c->send_pkt_buff);
+
+	if(ud_c->type != CRD && ud_c->max_coalescing > 1)
+		free(ud_c->overflow_msg_buff);
+
+	if(ud_c->type == CRD)
+		free(ud_c->no_crds_to_send_per_endpoint);
+}
+
+void
 wings_ud_channel_init(ud_channel_t *ud_c, char *qp_name, enum channel_type type,
 					  uint8_t max_coalescing, uint16_t max_req_size,
 					  uint8_t enable_inlining, uint8_t is_header_only,
@@ -79,7 +97,6 @@ wings_ud_channel_init(ud_channel_t *ud_c, char *qp_name, enum channel_type type,
 		assert(max_req_size <= 3 * sizeof(uint8_t) && max_coalescing == 1);
 
 	ud_c->type = type;
-	ud_c->qp_name = qp_name;
 	ud_c->channel_id = channel_id;
 	ud_c->num_channels = num_channels; //num_channels include our own channel
 	ud_c->expl_crd_ctrl = expl_crd_ctrl;
@@ -87,6 +104,9 @@ wings_ud_channel_init(ud_channel_t *ud_c, char *qp_name, enum channel_type type,
 	ud_c->is_bcast_channel = is_bcast;
 	ud_c->num_crds_per_channel = crds_per_channel;
 	ud_c->channel_providing_crds = linked_channel;
+
+	ud_c->qp_name = malloc(sizeof(char) * (strlen(qp_name) + 1)); //TODO make sure to destroy this when destroing a ud_c
+	strcpy(ud_c->qp_name, qp_name);
 
 	ud_c->enable_stats = stats_on;
     ud_c->enable_prints = prints_on;
@@ -179,6 +199,7 @@ wings_ud_channel_init(ud_channel_t *ud_c, char *qp_name, enum channel_type type,
 
 	//The following are set by the *_init_recv function after the creation of control block and QPs
 	ud_c->qp = NULL;
+	ud_c->pd = NULL;
 	ud_c->qp_id = 0;
 	ud_c->send_cq = NULL; //set by init_recv
 	ud_c->recv_cq = NULL; //set by init_recv
@@ -187,7 +208,6 @@ wings_ud_channel_init(ud_channel_t *ud_c, char *qp_name, enum channel_type type,
 //	_wings_setup_send_wr_and_sgl(ud_c);
 //	_wings_setup_recv_wr_and_sgl(ud_c, cb);
 
-	assert(ud_c->is_header_only == 0); //TODO only for dbg
 	_wings_assert_binary(ud_c->is_header_only);
     assert(ud_c->max_pcie_bcast_batch <= crds_per_channel);
     assert(ud_c->is_header_only == 0 || ud_c->is_header_only);
@@ -217,6 +237,9 @@ wings_setup_channel_qps_and_recvs(ud_channel_t **ud_c_array, uint16_t ud_c_num,
 												BASE_SHM_KEY + worker_lid,     // key
 												recv_q_depths, send_q_depths); // Depth of the dgram RECV, SEND Q
 
+	for(uint8_t i = 0; i < ud_c_num; ++i)
+		ud_c_array[i]->pd = cb->pd;
+
 	_wings_share_qp_info_via_memcached(ud_c_array, ud_c_num, shared_rdy_var, worker_lid, cb);
 
 	volatile uint8_t *incoming_reqs_ptr = cb->dgram_buf;
@@ -226,6 +249,9 @@ wings_setup_channel_qps_and_recvs(ud_channel_t **ud_c_array, uint16_t ud_c_num,
 		incoming_reqs_ptr += ud_c_array[i]->type == CRD  || ud_c_array[i]->is_header_only == 1 ? 64 :
 							 _wings_ud_recv_max_pkt_size(ud_c_array[i]) * ud_c_array[i]->recv_q_depth;
 	}
+
+	free(send_q_depths);
+	free(recv_q_depths);
 
 	sleep(1); /// Give some leeway to post receives, before start bcasting!
 }
@@ -363,6 +389,7 @@ _wings_ud_channel_crd_init(ud_channel_t *ud_c, char *qp_name, ud_channel_t *link
 	ud_c->remote_qps = malloc(sizeof(qp_info_t) * ud_c->num_channels);
 	//The following are set by the *_init_recv function after the creation of control block and QPs
 	ud_c->qp = NULL;
+	ud_c->pd = NULL;
 	ud_c->qp_id = 0;
 	ud_c->send_cq = NULL;
 	ud_c->recv_cq = NULL;
@@ -593,57 +620,62 @@ _wings_simple_hash(unsigned char *str)
 }
 
 void
-_wings_get_remote_qps(struct hrd_ctrl_blk *cb, ud_channel_t **ud_c_array, uint16_t ud_c_num)
+_wings_get_remote_qp(ud_channel_t *ud_c, uint8_t endpoint_id)
 {
-    int ib_port_index = 0;
-    int local_port_i = ib_port_index;
-    char qp_global_name[HRD_QP_NAME_SIZE];
+	int ib_port_index = 0;
+	int local_port_i = ib_port_index;
+	char qp_global_name[HRD_QP_NAME_SIZE];
+	struct hrd_qp_attr *qp; //= malloc(sizeof(struct hrd_qp_attr*) * max_remote_channels);
+	sprintf(qp_global_name, "%lu-%d", _wings_simple_hash((unsigned char *) ud_c->qp_name), endpoint_id);
+	// Get the UD queue pair for the ith machine
+	qp = NULL;
+//	yellow_printf("Looking for %s\n", qp_global_name);
+	while(qp == NULL) {
+		qp = hrd_get_published_qp(qp_global_name);
 
+		if(qp == NULL) usleep(200000);
+	}
+//	green_printf("Found %s\n", qp_global_name);
+
+	struct ibv_ah_attr ah_attr = {
+			//-----INFINIBAND----------
+			.is_global = 0,
+			.dlid = (uint16_t) qp->lid,
+			.sl = (uint8_t) qp->sl,
+			.src_path_bits = 0,
+			/* port_num (> 1): device-local port for responses to this worker */
+			.port_num = (uint8_t) (local_port_i + 1),
+	};
+
+	if (is_roce == 1) {
+		//-----RoCE----------
+		ah_attr.is_global = 1;
+		ah_attr.dlid = 0;
+		ah_attr.grh.dgid.global.interface_id =  qp->gid_global_interface_id;
+		ah_attr.grh.dgid.global.subnet_prefix = qp->gid_global_subnet_prefix;
+		ah_attr.grh.sgid_index = 0;
+		ah_attr.grh.hop_limit = 1;
+	}
+
+
+	ud_c->remote_qps[endpoint_id].qpn = (uint32_t) qp->qpn;
+	ud_c->remote_qps[endpoint_id].ah = ibv_create_ah(ud_c->pd, &ah_attr);
+	assert(ud_c->remote_qps[endpoint_id].ah != NULL);
+}
+
+void
+_wings_get_remote_qps(ud_channel_t **ud_c_array, uint16_t ud_c_num)
+{
     uint16_t max_remote_channels = 0;
 	for(int i = 0; i < ud_c_num; ++i)
 		if(ud_c_array[i]->num_channels > max_remote_channels)
 			max_remote_channels = ud_c_array[i]->num_channels;
 
-	struct hrd_qp_attr **worker_qp = malloc(sizeof(struct hrd_qp_attr*) * max_remote_channels);
-
-    for(int i = 0; i < ud_c_num; ++i){
-    	for(int j = 0; j < ud_c_array[i]->num_channels; ++j){
+	for(int i = 0; i < ud_c_num; ++i)
+		for(int j = 0; j < ud_c_array[i]->num_channels; ++j){
 			if (j == ud_c_array[i]->channel_id) continue; // skip the local channel id
-			sprintf(qp_global_name, "%lu-%d", _wings_simple_hash((unsigned char *) ud_c_array[i]->qp_name), j);
-			// Get the UD queue pair for the ith machine
-			worker_qp[j] = NULL;
-//			printf("Looking for %s\n", qp_global_name);
-			while(worker_qp[j] == NULL) {
-				worker_qp[j] = hrd_get_published_qp(qp_global_name);
-
-				if(worker_qp[j] == NULL) usleep(200000);
-			}
-
-			struct ibv_ah_attr ah_attr = {
-					//-----INFINIBAND----------
-					.is_global = 0,
-					.dlid = (uint16_t) worker_qp[j]->lid,
-					.sl = (uint8_t) worker_qp[j]->sl,
-					.src_path_bits = 0,
-					/* port_num (> 1): device-local port for responses to this worker */
-					.port_num = (uint8_t) (local_port_i + 1),
-			};
-
-			if (is_roce == 1) {
-				//-----RoCE----------
-				ah_attr.is_global = 1;
-				ah_attr.dlid = 0;
-				ah_attr.grh.dgid.global.interface_id =  worker_qp[j]->gid_global_interface_id;
-				ah_attr.grh.dgid.global.subnet_prefix = worker_qp[j]->gid_global_subnet_prefix;
-				ah_attr.grh.sgid_index = 0;
-				ah_attr.grh.hop_limit = 1;
-			}
-
-			ud_c_array[i]->remote_qps[j].qpn = (uint32_t) worker_qp[j]->qpn;
-			ud_c_array[i]->remote_qps[j].ah = ibv_create_ah(cb->pd, &ah_attr);
-			assert(ud_c_array[i]->remote_qps[j].ah != NULL);
-    	}
-    }
+			_wings_get_remote_qp(ud_c_array[i], (uint8_t) j);
+		}
 }
 
 
@@ -658,10 +690,10 @@ _wings_share_qp_info_via_memcached(ud_channel_t **ud_c_array, uint16_t ud_c_num,
 				_wings_simple_hash((unsigned char *) ud_c_array[i]->qp_name),
         		ud_c_array[i]->channel_id);
         hrd_publish_dgram_qp(cb, i, qp_global_name, WORKER_SL);
-//		printf("Publishing: %s \n",  qp_global_name);
+//		yellow_printf("Publishing: %s (qpname: %s)\n",  qp_global_name, ud_c_array[i]->qp_name);
     }
 
-	_wings_get_remote_qps(cb, ud_c_array, ud_c_num);
+	_wings_get_remote_qps(ud_c_array, ud_c_num);
     if(shared_rdy_var == NULL) {
     	assert(worker_lid == 0);
     	return;
@@ -674,4 +706,32 @@ _wings_share_qp_info_via_memcached(ud_channel_t **ud_c_array, uint16_t ud_c_num,
 	while (!dbv_is_all_set(*shared_rdy_var)) usleep(20000);
 
     assert(dbv_is_all_set(*shared_rdy_var));
+}
+
+
+
+void
+wings_reconfigure_wrs_ah(ud_channel_t *ud_c, uint8_t endpoint_id)
+{
+
+	_wings_get_remote_qp(ud_c, endpoint_id);
+	if(!ud_c->disable_crd_ctrl)
+		_wings_get_remote_qp(ud_c->channel_providing_crds, endpoint_id);
+
+
+	/// TODO WARNING: this is untested and assumes that we always send to everyone
+	if(ud_c->is_bcast_channel) {
+		uint16_t remote_channels = (uint16_t) (ud_c->num_channels - 1);
+		uint16_t max_msgs_in_pcie_batch = (uint16_t) (ud_c->max_pcie_bcast_batch * remote_channels);
+		for (int i = 0; i < max_msgs_in_pcie_batch; ++i) {
+			int i_mod_bcast = i % remote_channels;
+
+			uint16_t rm_qp_id;
+			if (i_mod_bcast < ud_c->channel_id) rm_qp_id = (uint16_t) i_mod_bcast;
+			else rm_qp_id = (uint16_t) ((i_mod_bcast + 1) % ud_c->num_channels);
+
+			ud_c->send_wr[i].wr.ud.ah = ud_c->remote_qps[rm_qp_id].ah;
+			ud_c->send_wr[i].wr.ud.remote_qpn = ud_c->remote_qps[rm_qp_id].qpn;
+		}
+	}
 }

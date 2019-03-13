@@ -6,6 +6,8 @@
 #define HADES_H
 
 #include "../utils/bit_vector.h"
+#include "../utils/time_rdtsc.h"
+#include "../wings/wings_api.h"
 // Send heartbeats
 // Recv heartbeats
 // Change View
@@ -25,12 +27,11 @@
 
 // Epochs
 
-#define HADES_SEND_VIEW_EVERY_US 1000
-#define HADES_CHECK_VIEW_CHANGE_EVERY_MS 10
-static_assert(2 * 1000 * HADES_CHECK_VIEW_CHANGE_EVERY_MS > HADES_SEND_VIEW_EVERY_US, "");
+//#define HADES_SEND_VIEW_EVERY_US 1000
+//#define HADES_CHECK_VIEW_CHANGE_EVERY_MS 10
+//static_assert(2 * 1000 * HADES_CHECK_VIEW_CHANGE_EVERY_MS > HADES_SEND_VIEW_EVERY_US, "");
 
 #define DISABLE_INLINING 0
-#define MAX_HBS_TO_POLL 10
 #define ENABLE_HADES_INLINING ((DISABLE_INLINING || sizeof(hades_view_t) >= 188) ? 0 : 1)
 
 typedef struct
@@ -38,7 +39,6 @@ typedef struct
     uint8_t node_id;
     uint8_t epoch_id;
     uint8_t same_w_local_membership;
-//    uint16_t epoch_id;
     bit_vector_t view;
 }
 __attribute__((packed))
@@ -47,7 +47,8 @@ static_assert(sizeof(hades_view_t) <= 4, "Currently send using a 4B header only 
 
 typedef struct
 {
-    hades_view_t local_view;
+    hades_view_t last_local_view;
+    hades_view_t intermediate_local_view;
 
     bit_vector_t curr_g_membership;
     uint8_t nodes_in_membership;
@@ -55,21 +56,42 @@ typedef struct
     uint8_t max_num_nodes;
     uint8_t* recved_views_flag;
     hades_view_t* remote_recved_views;
+
+    // Polling
+    uint16_t max_views_to_poll;
+    hades_view_t *poll_buff; // used for polling remote views
+
+    // Timing
+    uint32_t send_view_every_us;
+    uint32_t update_local_view_every_ms;
+    struct timespec ts_last_send; // issues views to remotes iff have not send a view within the predefined timeout
+    struct timespec ts_last_view_change; // update views and possible changes membership iff pre-defined timeout is exceed
 }
-__attribute__((packed))
 hades_ctx_t;
 
+typedef struct
+{
+    hades_ctx_t ctx;
+    ud_channel_t* hviews_c;
+    ud_channel_t* hviews_crd_c;
+}
+hades_wings_ctx_t;
 
 inline static void
-hades_ctx_init(hades_ctx_t* ctx, uint8_t node_id, uint8_t max_nodes)
+hades_ctx_init(hades_ctx_t* ctx, uint8_t node_id, uint8_t max_nodes,
+               uint16_t max_views_to_poll,
+               uint32_t send_view_us, uint32_t update_local_view_ms)
 {
-   ctx->local_view.epoch_id = 0;
-   ctx->local_view.node_id = node_id;
+   assert(max_views_to_poll > 0);
+
+   ctx->intermediate_local_view.epoch_id = 0;
+   ctx->intermediate_local_view.node_id = node_id;
    ctx->nodes_in_membership = 1;
    bv_init(&ctx->curr_g_membership);
    bv_bit_set(&ctx->curr_g_membership, node_id);
-   bv_init(&ctx->local_view.view);
-   bv_bit_set(&ctx->local_view.view, node_id);
+   bv_init(&ctx->intermediate_local_view.view);
+   bv_bit_set(&ctx->intermediate_local_view.view, node_id);
+   ctx->last_local_view = ctx->intermediate_local_view;
 
    ctx->max_num_nodes = max_nodes;
    ctx->recved_views_flag = malloc(sizeof(uint8_t) * max_nodes);
@@ -78,6 +100,53 @@ hades_ctx_init(hades_ctx_t* ctx, uint8_t node_id, uint8_t max_nodes)
       ctx->recved_views_flag[i] = 0;
       bv_init(&ctx->remote_recved_views[i].view);
    }
+
+   ctx->max_views_to_poll = max_views_to_poll;
+   ctx->poll_buff = malloc(sizeof(hades_view_t) * max_views_to_poll);
+
+   // Setup timers
+   init_rdtsc(1, 0); ///WARNING: this is not thread safe!!
+   get_rdtsc_timespec(&ctx->ts_last_send);
+   get_rdtsc_timespec(&ctx->ts_last_view_change);
+
+   ctx->send_view_every_us = send_view_us;
+   ctx->update_local_view_every_ms = update_local_view_ms;
+   assert(2 * 1000 * update_local_view_ms > send_view_us);
+
+}
+
+
+// WARNING: hades wings_ctx_init initializes only the first part of the
+// required channels wings_setup_channel_qps_and_recvs must be called by
+// the application afterwards to finish the initialization of wings.
+inline static void
+hades_wings_ctx_init(hades_wings_ctx_t* wctx, uint8_t node_id, uint8_t max_nodes,
+                     uint16_t max_views_to_poll,
+                     uint32_t send_view_us, uint32_t update_local_view_ms,
+                     ud_channel_t* hviews_c, ud_channel_t* hviews_crd_c,
+                     uint16_t worker_lid)
+{
+   hades_ctx_init(&wctx->ctx, node_id, max_nodes, max_views_to_poll,
+                  send_view_us, update_local_view_ms);
+
+   wctx->hviews_c = hviews_c;
+   wctx->hviews_crd_c = hviews_crd_c;
+
+   const uint8_t is_bcast = 0;
+   const uint8_t stats_on = 1;
+   const uint8_t prints_on = 1;
+   const uint8_t is_hdr_only = 1;
+   const uint8_t expl_crd_ctrl = 1;
+   const uint8_t disable_crd_ctrl = 0;
+   const uint8_t credits = (const uint8_t) (2 * update_local_view_ms * 1000 / send_view_us);
+
+   char qp_name[200];
+   sprintf(qp_name, "%s%d", "\033[1m\033[32mHades\033[0m", worker_lid);
+
+   wings_ud_channel_init(wctx->hviews_c, qp_name, REQ, 1, sizeof(hades_view_t) - sizeof(uint8_t),
+                         ENABLE_HADES_INLINING, is_hdr_only, is_bcast,
+                         disable_crd_ctrl, expl_crd_ctrl, wctx->hviews_crd_c, credits,
+                         max_nodes, (uint8_t) machine_id, stats_on, prints_on);
 }
 
 // Guarantees Nodes in the same EPOCH id must have the same group view
