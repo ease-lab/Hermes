@@ -8,35 +8,27 @@
 
 
 
-const uint8_t credits = 10;
-const uint8_t machine_num = 3;
 
+typedef struct{
+    hades_view_t* ctx_last_local_view;
+    uint8_t dst_id;
+}hades_view_wrapper_w_dst_id_t;
 
 int
 hades_skip_or_get_dst_id(uint8_t *req)
 {
-    /// WARNING: this is not thread safe
-
-    ///  Get round robin remote dst_ids based on
-    ///  the number of times this function is called
-    static uint16_t dst_id;
-    WINGS_MOD_ADD(dst_id, machine_num);
-    if(dst_id == machine_id)
-        WINGS_MOD_ADD(dst_id, machine_num);
-	return dst_id;
-//    return 0;// always broadcast hbt
+	return ((hades_view_wrapper_w_dst_id_t*)req)->dst_id;
 }
 
 void
 hades_copy_and_modify_elem(uint8_t* msg_to_send, uint8_t* triggering_req)
 {
-	hades_view_t* last_local_view = (hades_view_t*) triggering_req;
+	hades_view_wrapper_w_dst_id_t* last_local_view =
+            (hades_view_wrapper_w_dst_id_t*) triggering_req;
 	hades_view_t* send_hbt = (hades_view_t*) (msg_to_send - 1);
 
-    *send_hbt = *last_local_view;
+    *send_hbt = *last_local_view->ctx_last_local_view;
 }
-
-
 
 int
 hades_crd_skip_or_get_sender_id(uint8_t *req)
@@ -95,26 +87,113 @@ check_if_majority_is_rechable(hades_ctx_t *h_ctx)
 }
 
 
-static inline void
-issue_heartbeats(hades_wings_ctx_t *hw_ctx)
-{
-    hades_ctx_t* h_ctx = &hw_ctx->ctx;
-    if(time_elapsed_in_us(h_ctx->ts_last_send) > h_ctx->send_view_every_us) {
-//        struct timespec ts_last_send_tmp; // TODO may Reset a tmp timer in case the send fails
-        get_rdtsc_timespec(&h_ctx->ts_last_send);
 
-        /// Send view
-        for (int i = 0; i < h_ctx->max_num_nodes; ++i)
-            wings_issue_pkts(hw_ctx->hviews_c, (uint8_t *) &h_ctx->last_local_view, 1, sizeof(hades_view_t),
-                             NULL, hades_skip_or_get_dst_id, wings_NOP_modify_elem_after_send,
-                             hades_copy_and_modify_elem);
-//            if(!send_failed){
-//                ts_last_send = ts_last_send_tmp;
-//                print_send_hbt(hbeat_c, &h_ctx);
-//            }
+static inline uint8_t
+skip_to_apply_fake_link_failure(uint8_t node_id)
+{
+    static uint8_t ts_is_inited = 0;
+    static uint8_t link_has_failed = 0;
+    static struct timespec ts_fake_link_failure;
+
+    if((machine_id == FAKE_LINK_FAILURE_NODE_A && node_id == FAKE_LINK_FAILURE_NODE_B) ||
+       (!FAKE_ONE_WAY_LINK_FAILURE &&
+        node_id == FAKE_LINK_FAILURE_NODE_A && machine_id == FAKE_LINK_FAILURE_NODE_B))
+    {
+        if(ts_is_inited == 0){
+            get_rdtsc_timespec(&ts_fake_link_failure);
+            ts_is_inited = 1;
+        }
+
+        if(time_elapsed_in_sec(ts_fake_link_failure) > FAKE_LINK_FAILURE_AFTER_SEC &&
+           time_elapsed_in_sec(ts_fake_link_failure) < STOP_FAKE_LINK_FAILURE_AFTER_SEC)
+        {
+            if(link_has_failed == 0){
+                red_printf("%sLink failure between node %d and %d\n",
+                           FAKE_ONE_WAY_LINK_FAILURE ? "One-way " : "",
+                           FAKE_LINK_FAILURE_NODE_A, FAKE_LINK_FAILURE_NODE_B);
+                link_has_failed = 1;
+            }
+            return 1;
+        }
+    }
+    return 0;
+}
+
+
+static inline uint8_t
+is_in_membership(hades_ctx_t *h_ctx, uint8_t node_id)
+{
+    return bv_bit_get(h_ctx->curr_g_membership, node_id);
+}
+
+//Skip iterations for arbitration:
+static inline uint8_t
+skip_arbitration(hades_ctx_t *h_ctx, uint8_t i)
+{
+    if(i == machine_id) return 1;               // 1. my local machine id
+    if(!h_ctx->recved_views_flag[i]) return 1;  // 2. machine ids that I have not received a view
+//    if(!is_in_membership(h_ctx, i)) return 1;   // 3. machine ids that are not currently in the group membership
+    if(h_ctx->remote_recved_views[i].have_ostracised_for_dst_node == 1) return 1; // 3. this node has not already ostracise someone for me
+    if(!bv_bit_get(h_ctx->remote_recved_views[i].view, // 4. If my node id does not exist in their view
+            machine_id))
+        return 1;
+    return 0;
+}
+
+// In case of a link failure (either both or one way) between nodes A and B. Rest of
+// nodes would be able to detect such a failure using its received views and resolve
+// this deterministically by choosing the one with the highest node id to be expelled
+// from the group membership.
+// Once a node is voted to be expelled by the majority of nodes it gets removed from the
+// membership, this method is inspired by the "ostracism" procedure under the Athenian
+// democracy in which any citizen could be expelled from the city of Athens for ten years.
+
+// If a node has ostracised somebody for me I cannot ostracised somebody for him
+static inline void
+view_arbitration_via_ostracism(hades_ctx_t *h_ctx)
+{
+    for(uint8_t i = 0; i < h_ctx->max_num_nodes; ++i)
+        h_ctx->have_ostracized_for[i] = 0;
+
+    for(uint8_t i = 0; i < h_ctx->max_num_nodes; ++i){
+        if(skip_arbitration(h_ctx, i)) continue;
+
+        for(uint8_t j = 0; j < h_ctx->max_num_nodes; ++j){
+            if(i >= j) continue; // for efficiency we do not need to check those
+            if(skip_arbitration(h_ctx, j)) continue;
+
+            uint8_t i_view_of_j = bv_bit_get(h_ctx->remote_recved_views[i].view, j);
+            uint8_t j_view_of_i = bv_bit_get(h_ctx->remote_recved_views[j].view, i);
+
+            if(i_view_of_j == 0 || j_view_of_i == 0){
+                // by default always ostracise this to the Max(i, j) --> j is always > i
+                // unless it's an one way failure from the opposite side where we have to ostracise i
+                uint8_t node_to_ostracise = i_view_of_j == 1 ? i : j;
+                uint8_t node_to_ostracised_for = i_view_of_j == 1 ? j : i;
+
+                h_ctx->recved_views_flag[node_to_ostracise] = 0;
+                h_ctx->have_ostracized_for[node_to_ostracised_for] = 1;
+                bv_bit_reset(&h_ctx->intermediate_local_view.view, node_to_ostracise);
+
+//                yellow_printf("Ostracism: between nodes %d-%d --> %d is ostracized\n", i, j, node_to_ostracise);
+//                printf("My view: (epoch %d)\n", h_ctx->intermediate_local_view.epoch_id);
+//                bv_print_enhanced(h_ctx->intermediate_local_view.view);
+            }
+
+        }
     }
 }
 
+static inline uint8_t
+get_max_received_epoch_id(hades_ctx_t *h_ctx)
+{
+    uint8_t max_epoch_id = 0;
+   for(int i = 0; i < h_ctx->max_num_nodes; ++i)
+       if(h_ctx->recved_views_flag[i] == 1 &&
+               h_ctx->remote_recved_views[i].epoch_id > max_epoch_id)
+           max_epoch_id = h_ctx->remote_recved_views[i].epoch_id;
+    return max_epoch_id;
+}
 
 static inline void
 update_view_n_membership(hades_ctx_t *h_ctx)
@@ -126,18 +205,23 @@ update_view_n_membership(hades_ctx_t *h_ctx)
         uint8_t same_w_local_membership = 0;
         uint16_t max_epoch_id = h_ctx->intermediate_local_view.epoch_id;
 
+        if(ENABLE_ARBITRATION)
+            view_arbitration_via_ostracism(h_ctx);
+
         //if view has changed update ctx
-        if (!bv_are_equal(h_ctx->intermediate_local_view.view, h_ctx->curr_g_membership)) {
+        if (!bv_are_equal(h_ctx->intermediate_local_view.view, h_ctx->curr_g_membership) ||
+            get_max_received_epoch_id(h_ctx) > h_ctx->intermediate_local_view.epoch_id)
+        {
             for (int i = 0; i < h_ctx->max_num_nodes; ++i) {
                 if (i == machine_id) continue;
                 if (h_ctx->recved_views_flag[i] == 0) continue;
 
                 if (bv_are_equal(h_ctx->intermediate_local_view.view, h_ctx->remote_recved_views[i].view)) {
                     views_aggreeing++;
-                    if (max_epoch_id < h_ctx->remote_recved_views[i].epoch_id)
+                    if (max_epoch_id < h_ctx->remote_recved_views[i].epoch_id){
                         max_epoch_id = h_ctx->remote_recved_views[i].epoch_id;
-                    if (h_ctx->remote_recved_views[i].same_w_local_membership != 0)
-                        same_w_local_membership = 1;
+                        same_w_local_membership = h_ctx->remote_recved_views[i].same_w_local_membership;
+                    }
                 }
                 h_ctx->recved_views_flag[i] = 0; //reset the received flag
             }
@@ -147,6 +231,8 @@ update_view_n_membership(hades_ctx_t *h_ctx)
                                                         (same_w_local_membership == 1 ? 0 : 1));
                 bv_copy(&h_ctx->curr_g_membership, h_ctx->intermediate_local_view.view);
 
+//                printf("Max epoch id: %d, same_w_local_membership: %d\n",
+//                        max_epoch_id, same_w_local_membership);
                 green_printf("GROUP MEMBERSHIP CHANGE: epoch(%d)\n", h_ctx->intermediate_local_view.epoch_id);
                 bv_print_enhanced(h_ctx->curr_g_membership);
             }
@@ -167,7 +253,36 @@ update_view_n_membership(hades_ctx_t *h_ctx)
 
 
 static inline void
-update_view_and_issue(hades_wings_ctx_t *hw_ctx) //hades_ctx_t *h_ctx) //, ud_channel_t *hbeat_c)
+issue_heartbeats(hades_wings_ctx_t *hw_ctx)
+{
+    hades_ctx_t* h_ctx = &hw_ctx->ctx;
+    hades_view_wrapper_w_dst_id_t last_local_view;
+
+    last_local_view.ctx_last_local_view = &h_ctx->last_local_view;
+
+    for (uint8_t i = 0; i < h_ctx->max_num_nodes; ++i){
+        h_ctx->last_local_view.have_ostracised_for_dst_node = h_ctx->have_ostracized_for[i];
+        if(i == machine_id) continue;
+        if(FAKE_LINK_FAILURE && skip_to_apply_fake_link_failure(i)) continue;
+
+        last_local_view.dst_id = i;
+        if(time_elapsed_in_us(h_ctx->ts_last_send[i]) > h_ctx->send_view_every_us) {
+            // Reset a tmp timer in case the send fails due to not enough crds
+            struct timespec ts_last_send_tmp;
+            get_rdtsc_timespec(&ts_last_send_tmp);
+            uint8_t send_failed = wings_issue_pkts(hw_ctx->hviews_c, (uint8_t *) &last_local_view, 1,
+                                                   sizeof(hades_view_wrapper_w_dst_id_t), NULL,
+                                                   hades_skip_or_get_dst_id, wings_NOP_modify_elem_after_send,
+                                                   hades_copy_and_modify_elem);
+            if(!send_failed)
+                h_ctx->ts_last_send[i] = ts_last_send_tmp;
+//                print_send_hbt(hbeat_c, &h_ctx);
+        }
+    }
+}
+
+static inline void
+update_view_and_issue(hades_wings_ctx_t *hw_ctx)
 {
     update_view_n_membership(&hw_ctx->ctx);
 
@@ -219,8 +334,18 @@ hades_loop_only_thread(void* hades_wings_ctx)
 {
     hades_wings_ctx_t *hw_ctx = hades_wings_ctx;
 
+    uint64_t no_iters = 0;
     while(true){
+        /// Print every X iteration (Mainly for dbging)
+        no_iters++;
+        if(no_iters % M_32 == 0){
+//            printf("My view: (epoch %d)\n", hw_ctx->ctx.intermediate_local_view.epoch_id);
+//            bv_print_enhanced(hw_ctx->ctx.intermediate_local_view.view);
+        }
+
+        /// Main loop
         update_view_and_issue(hw_ctx);
+
 
         poll_for_remote_views(hw_ctx);
     }
@@ -246,9 +371,10 @@ hades_full_thread(void *node_id)
     ud_channel_t* hviews_crd_c = ud_c_ptrs[1];
 
     // other Vars
+    uint8_t machine_num = 3;
     uint16_t worker_lid = 0;
     uint16_t max_views_to_poll = 10;
-    uint32_t send_view_every_us = 1000;
+    uint32_t send_view_every_us = 100;
     uint32_t update_local_view_ms = 10;
 
     hades_wings_ctx_t w_ctx;
@@ -295,4 +421,3 @@ main(int argc, char *argv[])
 
     hades_full_thread(&machine_id);
 }
-

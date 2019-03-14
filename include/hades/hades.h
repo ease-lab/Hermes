@@ -22,23 +22,33 @@
 // only as long as it differs with the current view
 // and agrees with a majority of other node views.
 
-// add leases to membership changes as well to
-// prevent sequentially consistent reads
+// The update granularity of local view works as a lease
+// to membership changes which prevents sequentially
+// consistent reads in the presence of network partitions
+//       I.E. a node in a minority partition is able to detect
+//       that cannot reach the majority of nodes and stops serving
+//       local reads, maintaining linearizability (instead of sequential consistency)
+//       For this
 
 // Epochs
 
-//#define HADES_SEND_VIEW_EVERY_US 1000
-//#define HADES_CHECK_VIEW_CHANGE_EVERY_MS 10
-//static_assert(2 * 1000 * HADES_CHECK_VIEW_CHANGE_EVERY_MS > HADES_SEND_VIEW_EVERY_US, "");
+// Guarantees Nodes in the same EPOCH id have the same group view
 
-#define DISABLE_INLINING 0
-#define ENABLE_HADES_INLINING ((DISABLE_INLINING || sizeof(hades_view_t) >= 188) ? 0 : 1)
+#define ENABLE_ARBITRATION 1
+#define FAKE_LINK_FAILURE 1
+#define FAKE_LINK_FAILURE_AFTER_SEC 15
+#define STOP_FAKE_LINK_FAILURE_AFTER_SEC 20
+#define FAKE_ONE_WAY_LINK_FAILURE 0
+#define FAKE_LINK_FAILURE_NODE_A 2
+#define FAKE_LINK_FAILURE_NODE_B 1
+static_assert(FAKE_LINK_FAILURE_NODE_A != FAKE_LINK_FAILURE_NODE_B, "");
 
 typedef struct
 {
-    uint8_t node_id;
-    uint8_t epoch_id;
-    uint8_t same_w_local_membership;
+    uint8_t node_id  : 8;
+    uint8_t epoch_id : 8;
+    uint8_t same_w_local_membership :1;
+    uint8_t have_ostracised_for_dst_node :7;
     bit_vector_t view;
 }
 __attribute__((packed))
@@ -64,8 +74,11 @@ typedef struct
     // Timing
     uint32_t send_view_every_us;
     uint32_t update_local_view_every_ms;
-    struct timespec ts_last_send; // issues views to remotes iff have not send a view within the predefined timeout
+    struct timespec *ts_last_send; // issues views to remotes iff have not send a view within the predefined timeout
     struct timespec ts_last_view_change; // update views and possible changes membership iff pre-defined timeout is exceed
+
+    // Ostracism
+    uint8_t *have_ostracized_for; //an array storing info whether or not in a view the sender ostracized someone for this node
 }
 hades_ctx_t;
 
@@ -106,12 +119,19 @@ hades_ctx_init(hades_ctx_t* ctx, uint8_t node_id, uint8_t max_nodes,
 
    // Setup timers
    init_rdtsc(1, 0); ///WARNING: this is not thread safe!!
-   get_rdtsc_timespec(&ctx->ts_last_send);
    get_rdtsc_timespec(&ctx->ts_last_view_change);
+   ctx->ts_last_send = malloc(sizeof(struct timespec) * max_nodes);
+   for(int i = 0; i < max_nodes; ++i)
+      get_rdtsc_timespec(&ctx->ts_last_send[i]);
 
    ctx->send_view_every_us = send_view_us;
    ctx->update_local_view_every_ms = update_local_view_ms;
    assert(2 * 1000 * update_local_view_ms > send_view_us);
+
+   //Ostracism
+   ctx->have_ostracized_for = malloc(sizeof(uint8_t) * max_nodes);
+   for(int i = 0; i < max_nodes; ++i)
+      ctx->have_ostracized_for[i] = 0;
 
 }
 
@@ -137,6 +157,7 @@ hades_wings_ctx_init(hades_wings_ctx_t* wctx, uint8_t node_id, uint8_t max_nodes
    const uint8_t prints_on = 1;
    const uint8_t is_hdr_only = 1;
    const uint8_t expl_crd_ctrl = 1;
+   const uint8_t enable_inlining = 1;
    const uint8_t disable_crd_ctrl = 0;
    const uint8_t credits = (const uint8_t) (2 * update_local_view_ms * 1000 / send_view_us);
 
@@ -144,12 +165,11 @@ hades_wings_ctx_init(hades_wings_ctx_t* wctx, uint8_t node_id, uint8_t max_nodes
    sprintf(qp_name, "%s%d", "\033[1m\033[32mHades\033[0m", worker_lid);
 
    wings_ud_channel_init(wctx->hviews_c, qp_name, REQ, 1, sizeof(hades_view_t) - sizeof(uint8_t),
-                         ENABLE_HADES_INLINING, is_hdr_only, is_bcast,
+                         enable_inlining, is_hdr_only, is_bcast,
                          disable_crd_ctrl, expl_crd_ctrl, wctx->hviews_crd_c, credits,
                          max_nodes, (uint8_t) machine_id, stats_on, prints_on);
 }
 
-// Guarantees Nodes in the same EPOCH id must have the same group view
 
 // How does somebody joins?
 // epoch id 0
