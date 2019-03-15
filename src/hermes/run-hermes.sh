@@ -24,7 +24,7 @@ for i in "${!allIPs[@]}"; do
 	if [  "${allIPs[i]}" ==  "$localIP" ]; then
 		machine_id=$i
 	else
-    remoteIPs+=( "${allIPs[i]}" )
+        remoteIPs+=( "${allIPs[i]}" )
 	fi
 done
 
@@ -35,12 +35,11 @@ echo Machine-Id "$machine_id"
 
 
 export HRD_REGISTRY_IP="129.215.165.8" # I.E. HOUSTON
-#export HRD_REGISTRY_IP="129.215.165.7" # I.E. SANANTONIO
 export MLX5_SINGLE_THREADED=1
 export MLX5_SCATTER_TO_CQE=1
 
 sudo killall memcached
-sudo killall spacetime
+sudo killall hermes
 # A function to echo in blue color
 function blue() {
 	es=`tput setaf 4`
@@ -48,13 +47,7 @@ function blue() {
 	echo "${es}$1${ee}"
 }
 
-#blue "Removing SHM keys used by the workers 24 -> 24 + Workers_per_machine (request regions hugepages)"
-#for i in `seq 0 32`; do
-#	key=`expr 24 + $i`
-#	sudo ipcrm -M $key 2>/dev/null
-#done
-
-# free the  pages workers use
+# free the pages workers use
 blue "Removing SHM keys used by Spacetime / MICA KV"
 for i in `seq 0 28`; do
 	key=`expr 3185 + $i`
@@ -75,7 +68,7 @@ sleep 1
 
 blue "Running hermes threads"
 
-sudo LD_LIBRARY_PATH=/usr/local/lib/ -E \
+sudo LD_LIBRARY_PATH=/usr/local/lib/ -E     \
 #	./hermes                            \
         #valgrind --leak-check=yes 	    \
         ./hermes-wings                      \

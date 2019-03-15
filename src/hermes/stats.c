@@ -1,6 +1,8 @@
 #include "util.h"
 
 
+void dump_xput_stats(double xput_in_miops);
+
 void *print_stats(void* no_arg){
     uint16_t i, print_count = 0;
     long long all_worker_xput = 0;
@@ -27,7 +29,7 @@ void *print_stats(void* no_arg){
             exit(0);
         }
         if (EXIT_ON_STATS_PRINT == 1 && print_count == PRINT_NUM_STATS_BEFORE_EXITING) {
-          if (MEASURE_LATENCY && machine_id == 0) dump_latency_stats();
+            if (MEASURE_LATENCY && machine_id == 0) dump_latency_stats();
             printf("---------------------------------------\n");
             printf("------------RUN TERMINATED-------------\n");
             printf("---------------------------------------\n");
@@ -85,6 +87,7 @@ void *print_stats(void* no_arg){
             printf("---------------------------------------\n");
         }
 
+        if(DUMP_XPUT_STATS_TO_FILE) dump_xput_stats(total_throughput);
     }
 }
 
@@ -124,10 +127,42 @@ init_stats(void) //TODO this is not required (global vars are always initialized
 
 //assuming microsecond latency
 void
+dump_xput_stats(double xput_in_miops)
+{
+    static uint8_t no_func_calls = 0; ///WARNING this is not thread safe.
+
+    assert(no_func_calls < 250);
+
+    FILE *xput_stats_fd;
+    char filename[128];
+    char* path = "../../results/xput/per-node";
+    const char* open_mode = no_func_calls == 0 ? "w" : "a";
+
+    sprintf(filename, "%s/%s_xPut_m_%d_wr_%.1f_wk_%d_b_%d_c_%d%s-%d.csv", path,
+            CR_IS_RUNNING == 1? "CR" : "Hermes",
+            MACHINE_NUM,
+            WRITE_RATIO/10.0,
+            WORKERS_PER_MACHINE,
+            MAX_BATCH_OPS_SIZE,
+            CREDITS_PER_REMOTE_WORKER,
+            FEED_FROM_TRACE == 1 ? "_a_0.99": "_uni",
+            machine_id);
+
+    xput_stats_fd = fopen(filename, open_mode);
+
+    fprintf(xput_stats_fd, "node%d_miops-%d: %.2f\n", machine_id, no_func_calls, xput_in_miops);
+
+    fclose(xput_stats_fd);
+    no_func_calls++;
+
+//    printf("xPut stats saved at %s\n", filename);
+}
+
+//assuming microsecond latency
+void
 dump_latency_stats(void)
 {
     FILE *latency_stats_fd;
-    int i = 0;
     char filename[128];
     char* path = "../../results/latency";
 
@@ -142,14 +177,14 @@ dump_latency_stats(void)
 
     latency_stats_fd = fopen(filename, "w");
     fprintf(latency_stats_fd, "#---------------- Read Reqs --------------\n");
-    for(i = 0; i < LATENCY_BUCKETS; ++i)
+    for(int i = 0; i < LATENCY_BUCKETS; ++i)
 //        if(latency_count.read_reqs[i] > 0)
             fprintf(latency_stats_fd, "reads: %d, %d\n",i * LATENCY_PRECISION, latency_count.read_reqs[i]);
     fprintf(latency_stats_fd, "reads: -1, %d\n", latency_count.read_reqs[LATENCY_BUCKETS]); //print outliers
     fprintf(latency_stats_fd, "reads-hl: %d\n", latency_count.max_read_latency); //print max read latency
 
     fprintf(latency_stats_fd, "#---------------- Write Reqs ---------------\n");
-    for(i = 0; i < LATENCY_BUCKETS; ++i)
+    for(int i = 0; i < LATENCY_BUCKETS; ++i)
 //        if(latency_count.write_reqs[i] > 0)
             fprintf(latency_stats_fd, "writes: %d, %d\n",i * LATENCY_PRECISION, latency_count.write_reqs[i]);
     fprintf(latency_stats_fd, "writes: -1, %d\n", latency_count.write_reqs[LATENCY_BUCKETS]); //print outliers

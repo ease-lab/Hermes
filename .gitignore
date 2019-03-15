@@ -39,9 +39,15 @@ src/Armonia/main
 /src/Armonia/throughput.txt
 /src/herd-UD/throughput.txt
 /bin/traces
-/results/*
+#/results/*
 /results/*.txt
+/results/xput/*.txt
+/results/xput/*.csv
+/results/xput/per-node/*.csv
+/results/xput/per-node/*.txt
+/results/xput/all-nodes/*.txt
 /results/latency/*.txt
+/results/latency/*.csv
 traces/trace-parts/*
 /results/scattered-results/*
 /results/aggregated-system-results/*.csv

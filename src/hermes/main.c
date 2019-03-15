@@ -27,15 +27,15 @@ int main(int argc, char *argv[])
 	is_roce = -1; machine_id = -1;
 	remote_IP = (char *) malloc(16 * sizeof(char));
 
-    assert(MICA_MAX_VALUE >= ST_VALUE_SIZE);
-    assert(MACHINE_NUM <= 8); //TODO haven't test bit vectors with more than 8 nodes
-    assert(MACHINE_NUM <= GROUP_MEMBERSHIP_ARRAY_SIZE * 8);//bit vector for acks / group membership
-    assert(sizeof(spacetime_crd_t) < sizeof(((struct ibv_send_wr*)0)->imm_data)); //for inlined credits
+	assert(MICA_MAX_VALUE >= ST_VALUE_SIZE);
+	assert(MACHINE_NUM <= 8); //TODO haven't test bit vectors with more than 8 nodes
+	assert(MACHINE_NUM <= GROUP_MEMBERSHIP_ARRAY_SIZE * 8);//bit vector for acks / group membership
+	assert(sizeof(spacetime_crd_t) < sizeof(((struct ibv_send_wr*)0)->imm_data)); //for inlined credits
 	assert(MACHINE_NUM <= 255);
 
 //    assert(CREDITS_PER_REMOTE_WORKER <= MAX_BATCH_OPS_SIZE);
 
-    assert(MAX_PCIE_BCAST_BATCH <= INV_CREDITS);
+	assert(MAX_PCIE_BCAST_BATCH <= INV_CREDITS);
 	assert(MAX_PCIE_BCAST_BATCH <= VAL_CREDITS);
 	assert(MAX_PCIE_BCAST_BATCH <= INV_SS_GRANULARITY);
 	assert(MAX_PCIE_BCAST_BATCH <= VAL_SS_GRANULARITY);
@@ -48,7 +48,7 @@ int main(int argc, char *argv[])
 
 	///Assertions for failures
 	assert(!(INCREASE_TAIL_LATENCY && FAKE_FAILURE));
-    assert(FAKE_FAILURE == 0 || NODES_WITH_FAILURE_DETECTOR >= 1);
+	assert(FAKE_FAILURE == 0 || NODES_WITH_FAILURE_DETECTOR >= 1);
 	assert(FAKE_FAILURE == 0 || NODE_TO_FAIL < MACHINE_NUM);
 	assert(FAKE_FAILURE == 0 || ROUNDS_BEFORE_FAILURE < PRINT_NUM_STATS_BEFORE_EXITING);
 	assert(FAKE_FAILURE == 0 || WORKER_EMULATING_FAILURE_DETECTOR < WORKERS_PER_MACHINE);
@@ -57,7 +57,7 @@ int main(int argc, char *argv[])
 	assert(MACHINE_NUM < LAST_WRITER_ID_EMPTY);
 	assert(MAX_BATCH_OPS_SIZE < ST_OP_BUFFER_INDEX_EMPTY); /// 1B write_buffer_index and 255 is used as "empty" value
 
-    ///Make sure that assigned numbers to States are monotonically increasing with the following order
+	///Make sure that assigned numbers to States are monotonically increasing with the following order
 	assert(VALID_STATE < INVALID_STATE);
 	assert(INVALID_STATE < INVALID_WRITE_STATE);
 	assert(INVALID_WRITE_STATE < WRITE_STATE);
@@ -77,15 +77,7 @@ int main(int argc, char *argv[])
 	else
 		g_share_qs_barrier = NULL;
 
-	printf("CREDITS %d\n",CREDITS_PER_REMOTE_WORKER);
-	printf("INV_SS_GRANULARITY %d \t\t SEND_INV_Q_DEPTH %d \t\t RECV_INV_Q_DEPTH %d\n",
-		   INV_SS_GRANULARITY, SEND_INV_Q_DEPTH, RECV_INV_Q_DEPTH);
-	printf("ACK_SS_GRANULARITY %d \t\t SEND_ACK_Q_DEPTH %d \t\t RECV_ACK_Q_DEPTH %d\n",
-		   ACK_SS_GRANULARITY, SEND_ACK_Q_DEPTH, RECV_ACK_Q_DEPTH);
-	printf("VAL_SS_GRANULARITY %d \t\t SEND_VAL_Q_DEPTH %d \t\t RECV_VAL_Q_DEPTH %d\n",
-		   VAL_SS_GRANULARITY, SEND_VAL_Q_DEPTH, RECV_VAL_Q_DEPTH);
-	printf("CRD_SS_GRANULARITY %d \t\t SEND_CRD_Q_DEPTH %d \t\t RECV_CRD_Q_DEPTH %d\n",
-		   CRD_SS_GRANULARITY, SEND_CRD_Q_DEPTH, RECV_CRD_Q_DEPTH);
+
 
 	struct thread_params *param_arr;
 	pthread_t *thread_arr;
@@ -93,17 +85,17 @@ int main(int argc, char *argv[])
 
 	static struct option opts[] = {
 			{ .name = "machine-id",			.has_arg = 1, .val = 'm' },
-            { .name = "is-roce",			.has_arg = 1, .val = 'r' },
+			{ .name = "is-roce",			.has_arg = 1, .val = 'r' },
 			{ .name = "dev-name",			.has_arg = 1, .val = 'd'},
+			{ .name = "human-readable-stats",			.has_arg = 1, .val = 'h' },
 			{ 0 }
 	};
 
 	/* Parse and check arguments */
 	while(1) {
 		c = getopt_long(argc, argv, "m:r:d:", opts, NULL);
-		if(c == -1) {
-			break;
-		}
+		if(c == -1) break;
+
 		switch (c) {
 			case 'm':
 				machine_id = atoi(optarg);
@@ -119,6 +111,16 @@ int main(int argc, char *argv[])
 				assert(false);
 		}
 	}
+
+	printf("CREDITS %d\n", CREDITS_PER_REMOTE_WORKER);
+	printf("INV_SS_GRANULARITY %d \t\t SEND_INV_Q_DEPTH %d \t\t RECV_INV_Q_DEPTH %d\n",
+		   INV_SS_GRANULARITY, SEND_INV_Q_DEPTH, RECV_INV_Q_DEPTH);
+	printf("ACK_SS_GRANULARITY %d \t\t SEND_ACK_Q_DEPTH %d \t\t RECV_ACK_Q_DEPTH %d\n",
+		   ACK_SS_GRANULARITY, SEND_ACK_Q_DEPTH, RECV_ACK_Q_DEPTH);
+	printf("VAL_SS_GRANULARITY %d \t\t SEND_VAL_Q_DEPTH %d \t\t RECV_VAL_Q_DEPTH %d\n",
+		   VAL_SS_GRANULARITY, SEND_VAL_Q_DEPTH, RECV_VAL_Q_DEPTH);
+	printf("CRD_SS_GRANULARITY %d \t\t SEND_CRD_Q_DEPTH %d \t\t RECV_CRD_Q_DEPTH %d\n",
+		   CRD_SS_GRANULARITY, SEND_CRD_Q_DEPTH, RECV_CRD_Q_DEPTH);
 
 	param_arr = malloc(WORKERS_PER_MACHINE * sizeof(struct thread_params));
 	thread_arr = malloc(WORKERS_PER_MACHINE * sizeof(pthread_t));
@@ -136,14 +138,14 @@ int main(int argc, char *argv[])
 //	signal(SIGINT, signal_callback_handler);
 
 	pthread_attr_init(&attr);
-    int w_core, init_core = SOCKET_TO_START_SPAWNING_THREADS;
+	int w_core, init_core = SOCKET_TO_START_SPAWNING_THREADS;
 	for(i = 0; i < WORKERS_PER_MACHINE; i++) {
 		if(USE_ALL_SOCKETS && ENABLE_HYPERTHREADING)
-            w_core = init_core + i;
+			w_core = init_core + i;
 		else
 			w_core = 2 * i + init_core;
 //        if(w_core > 19 ) w_core+=4;
-        assert(ENABLE_HYPERTHREADING || w_core < TOTAL_NUMBER_OF_SOCKETS * TOTAL_CORES_PER_SOCKET);
+		assert(ENABLE_HYPERTHREADING || w_core < TOTAL_NUMBER_OF_SOCKETS * TOTAL_CORES_PER_SOCKET);
 		assert(w_core < TOTAL_HW_CORES);
 		param_arr[i].id = i;
 
@@ -155,11 +157,12 @@ int main(int argc, char *argv[])
 	}
 
 	yellow_printf("Sizes: {Op: %d, Object Meta %d, Value %d},\n",
-				 sizeof(spacetime_op_t), sizeof(spacetime_object_meta), ST_VALUE_SIZE);
+				  sizeof(spacetime_op_t), sizeof(spacetime_object_meta), ST_VALUE_SIZE);
 	yellow_printf("Coherence msg Sizes: {Inv: %d, Ack: %d, Val: %d, Crd: %d}\n",
-				 sizeof(spacetime_inv_t), sizeof(spacetime_ack_t), sizeof(spacetime_val_t), sizeof(spacetime_crd_t));
+				  sizeof(spacetime_inv_t), sizeof(spacetime_ack_t), sizeof(spacetime_val_t),
+				  sizeof(spacetime_crd_t));
 	yellow_printf("Max Coalesce Packet Sizes: {Inv: %d, Ack: %d, Val: %d}\n",
-				 sizeof(spacetime_inv_packet_t), sizeof(spacetime_ack_packet_t), sizeof(spacetime_val_packet_t));
+				  sizeof(spacetime_inv_packet_t), sizeof(spacetime_ack_packet_t), sizeof(spacetime_val_packet_t));
 
 	for(i = 0; i < WORKERS_PER_MACHINE; i++)
 		pthread_join(thread_arr[i], NULL);
