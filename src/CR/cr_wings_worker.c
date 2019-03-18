@@ -575,6 +575,11 @@ run_worker(void *arg)
 	assert(ENABLE_COALESCE_OF_HOT_REQS == 0);
 	assert(CREDITS_PER_REMOTE_WORKER % MACHINE_NUM == 0); // CR ONLY
 
+	///WARNING: only defines (no dynamically passed cli arguments) work for cr worker
+	assert(max_coalesce == MAX_REQ_COALESCE);
+	assert(num_workers == WORKERS_PER_MACHINE);
+	assert(credits_num == CREDITS_PER_REMOTE_WORKER);
+
 	struct thread_params params = *(struct thread_params *) arg;
 	uint16_t worker_lid = (uint16_t) params.id;	// Local ID of this worker thread
 	uint16_t worker_gid = (uint16_t) (machine_id * WORKERS_PER_MACHINE + params.id);	// Global ID of this worker thread
@@ -750,7 +755,7 @@ run_worker(void *arg)
 			cr_batch_ops_to_KVS(Local_ops, (uint8_t *) ops, MAX_BATCH_OPS_SIZE, sizeof(spacetime_op_t), NULL);
 		}
 
-		if (WRITE_RATIO > 0) {
+		if (write_ratio > 0) {
 
 			if(machine_id == head_id()) {
 				//TODO: Still we might allow more invs than ACK recvs available

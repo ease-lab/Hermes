@@ -15,6 +15,11 @@
 ////
 
 void *run_worker(void *arg){
+	///WARNING: argument passed via run_hermes do not work in the deprecated worker
+	assert(max_coalesce == MAX_REQ_COALESCE);
+	assert(num_workers == WORKERS_PER_MACHINE);
+	assert(credits_num == CREDITS_PER_REMOTE_WORKER);
+
 	struct thread_params params = *(struct thread_params *) arg;
 	uint16_t worker_lid = (uint16_t) params.id;	/* Local ID of this worker thread*/
 	uint16_t worker_gid = (uint16_t) (machine_id * WORKERS_PER_MACHINE + params.id);	/* Global ID of this worker thread*/

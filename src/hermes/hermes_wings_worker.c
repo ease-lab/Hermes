@@ -157,6 +157,10 @@ void
 channel_assertions(ud_channel_t *inv_ud_c, ud_channel_t *ack_ud_c,
 				   ud_channel_t *val_ud_c, ud_channel_t *crd_ud_c)
 {
+	// Assertions hold only when the default max coalesce and credit num is used
+	if(max_coalesce != MAX_REQ_COALESCE) return;
+    if(credits_num != CREDITS_PER_REMOTE_WORKER) return;
+
 	assert(inv_ud_c->max_send_wrs == MAX_SEND_INV_WRS);
 	assert(inv_ud_c->max_recv_wrs == MAX_RECV_INV_WRS);
 	assert(inv_ud_c->send_q_depth == SEND_INV_Q_DEPTH);
@@ -208,7 +212,7 @@ run_worker(void *arg)
 	assert(CR_IS_RUNNING == 0);
 	struct thread_params params = *(struct thread_params *) arg;
 	uint16_t worker_lid = (uint16_t) params.id;	// Local ID of this worker thread
-	uint16_t worker_gid = (uint16_t) (machine_id * WORKERS_PER_MACHINE + params.id);	// Global ID of this worker thread
+	uint16_t worker_gid = (uint16_t) (machine_id * num_workers + params.id);	// Global ID of this worker thread
 
 
 
@@ -237,15 +241,15 @@ run_worker(void *arg)
 	sprintf(ack_qp_name, "%s%d", "\033[33mACK\033[0m", worker_lid);
 	sprintf(val_qp_name, "%s%d", "\033[1m\033[32mVAL\033[0m", worker_lid);
 
-	wings_ud_channel_init(inv_ud_c, inv_qp_name, REQ, INV_MAX_REQ_COALESCE, sizeof(spacetime_inv_t),
-						   DISABLE_INV_INLINING == 0 ? 1 : 0, is_hdr_only, is_bcast, disable_crd_ctrl, expl_crd_ctrl,
-						   ack_ud_c, INV_CREDITS, MACHINE_NUM, (uint8_t) machine_id, stats_on, prints_on);
-	wings_ud_channel_init(ack_ud_c, ack_qp_name, RESP, ACK_MAX_REQ_COALESCE, sizeof(spacetime_ack_t),
-						   DISABLE_ACK_INLINING == 0 ? 1 : 0, is_hdr_only,        0, disable_crd_ctrl, expl_crd_ctrl,
-						   inv_ud_c, ACK_CREDITS, MACHINE_NUM, (uint8_t) machine_id, stats_on, prints_on);
-	wings_ud_channel_init(val_ud_c, val_qp_name, REQ, VAL_MAX_REQ_COALESCE, sizeof(spacetime_val_t),
-						   DISABLE_VAL_INLINING == 0 ? 1 : 0, is_hdr_only, is_bcast, disable_crd_ctrl,             1,
-						   crd_ud_c, VAL_CREDITS, MACHINE_NUM, (uint8_t) machine_id, stats_on, prints_on);
+	wings_ud_channel_init(inv_ud_c, inv_qp_name, REQ, (uint8_t) max_coalesce, sizeof(spacetime_inv_t),
+						  DISABLE_INV_INLINING == 0 ? 1 : 0, is_hdr_only, is_bcast, disable_crd_ctrl, expl_crd_ctrl,
+						  ack_ud_c, (uint8_t) credits_num, MACHINE_NUM, (uint8_t) machine_id, stats_on, prints_on);
+	wings_ud_channel_init(ack_ud_c, ack_qp_name, RESP, (uint8_t) max_coalesce, sizeof(spacetime_ack_t),
+						  DISABLE_ACK_INLINING == 0 ? 1 : 0, is_hdr_only, 0, disable_crd_ctrl, expl_crd_ctrl,
+						  inv_ud_c, (uint8_t) credits_num, MACHINE_NUM, (uint8_t) machine_id, stats_on, prints_on);
+	wings_ud_channel_init(val_ud_c, val_qp_name, REQ, (uint8_t) max_coalesce, sizeof(spacetime_val_t),
+						  DISABLE_VAL_INLINING == 0 ? 1 : 0, is_hdr_only, is_bcast, disable_crd_ctrl, 1,
+						  crd_ud_c, (uint8_t) credits_num, MACHINE_NUM, (uint8_t) machine_id, stats_on, prints_on);
 
 	wings_setup_channel_qps_and_recvs(ud_channel_ptrs, TOTAL_WORKER_UD_QPs, g_share_qs_barrier, worker_lid);
 
@@ -316,7 +320,7 @@ run_worker(void *arg)
 
 	    stop_latency_of_completed_reads(ops, worker_lid, &stopwatch_for_req_latency);
 
-		if (WRITE_RATIO > 0) {
+		if (write_ratio > 0) {
 			///~~~~~~~~~~~~~~~~~~~~~~INVS~~~~~~~~~~~~~~~~~~~~~~~~~~~
 			wings_issue_pkts(inv_ud_c, (uint8_t *) ops,
 							  MAX_BATCH_OPS_SIZE, sizeof(spacetime_op_t), &rolling_inv_index,

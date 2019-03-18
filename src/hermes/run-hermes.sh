@@ -69,10 +69,13 @@ sleep 1
 blue "Running hermes threads"
 
 sudo LD_LIBRARY_PATH=/usr/local/lib/ -E     \
-#	./hermes                            \
-        #valgrind --leak-check=yes 	    \
-        ./hermes-wings                      \
+    ./hermes-wings                      \
 	--machine-id $machine_id            \
 	--is-roce 0                         \
 	--dev-name "mlx5_0"                 \
+	--num-workers  10                   \
+	--write-ratio  50                   \
+	--credits      5                    \
+	--max-coalesce 5                    \
 	2>&1
+    #Config

@@ -141,10 +141,10 @@ dump_xput_stats(double xput_in_miops)
     sprintf(filename, "%s/%s_xPut_m_%d_wr_%.1f_wk_%d_b_%d_c_%d%s-%d.csv", path,
             CR_IS_RUNNING == 1? "CR" : "Hermes",
             MACHINE_NUM,
-            WRITE_RATIO/10.0,
+            write_ratio/10.0,
             WORKERS_PER_MACHINE,
             MAX_BATCH_OPS_SIZE,
-            CREDITS_PER_REMOTE_WORKER,
+            credits_num,
             FEED_FROM_TRACE == 1 ? "_a_0.99": "_uni",
             machine_id);
 
@@ -171,22 +171,20 @@ dump_latency_stats(void)
             MACHINE_NUM,
             WORKERS_PER_MACHINE,
             MAX_BATCH_OPS_SIZE,
-            WRITE_RATIO,
-            CREDITS_PER_REMOTE_WORKER,
+            write_ratio,
+            credits_num,
             FEED_FROM_TRACE == 1 ? "_a_0.99": "");
 
     latency_stats_fd = fopen(filename, "w");
     fprintf(latency_stats_fd, "#---------------- Read Reqs --------------\n");
     for(int i = 0; i < LATENCY_BUCKETS; ++i)
-//        if(latency_count.read_reqs[i] > 0)
-            fprintf(latency_stats_fd, "reads: %d, %d\n",i * LATENCY_PRECISION, latency_count.read_reqs[i]);
+        fprintf(latency_stats_fd, "reads: %d, %d\n",i * LATENCY_PRECISION, latency_count.read_reqs[i]);
     fprintf(latency_stats_fd, "reads: -1, %d\n", latency_count.read_reqs[LATENCY_BUCKETS]); //print outliers
     fprintf(latency_stats_fd, "reads-hl: %d\n", latency_count.max_read_latency); //print max read latency
 
     fprintf(latency_stats_fd, "#---------------- Write Reqs ---------------\n");
     for(int i = 0; i < LATENCY_BUCKETS; ++i)
-//        if(latency_count.write_reqs[i] > 0)
-            fprintf(latency_stats_fd, "writes: %d, %d\n",i * LATENCY_PRECISION, latency_count.write_reqs[i]);
+        fprintf(latency_stats_fd, "writes: %d, %d\n",i * LATENCY_PRECISION, latency_count.write_reqs[i]);
     fprintf(latency_stats_fd, "writes: -1, %d\n", latency_count.write_reqs[LATENCY_BUCKETS]); //print outliers
     fprintf(latency_stats_fd, "writes-hl: %d\n", latency_count.max_write_latency); //print max write latency
 

@@ -21,7 +21,7 @@
 #define ENABLE_HYPERTHREADING 1
 #define BATCH_POST_RECVS_TO_NIC 1
 #define WRITE_RATIO 50
-#define MAX_BATCH_OPS_SIZE 10// up to 254
+#define MAX_BATCH_OPS_SIZE 10 // up to 254
 
 
 //LATENCY
@@ -275,4 +275,10 @@ extern struct latency_counters latency_count;
 extern volatile struct remote_qp remote_worker_qps[WORKER_NUM][TOTAL_WORKER_UD_QPs];
 extern volatile uint8_t node_suspicions[WORKERS_PER_MACHINE][MACHINE_NUM];
 extern volatile char worker_needed_ah_ready;
+
+// global config vars
+extern int write_ratio;
+extern int num_workers;
+extern int credits_num;
+extern int max_coalesce;
 #endif //SPACETIME_CONFIG_H

@@ -1350,7 +1350,7 @@ refill_ops_n_suspect_failed_nodes(uint32_t *trace_iter, uint16_t worker_lid,
 								  spacetime_op_t **n_hottest_keys_in_ops_put)
 {
 	static uint8_t first_iter_has_passed[WORKERS_PER_MACHINE] = { 0 };
-//	static struct timespec start;
+
 	int i = 0, refilled_ops = 0, node_suspected = -1;
 	for(i = 0; i < MAX_BATCH_OPS_SIZE; i++) {
 		if(ENABLE_ASSERTIONS)

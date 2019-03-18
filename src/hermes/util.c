@@ -307,7 +307,8 @@ void manufacture_trace(struct spacetime_trace_command **cmds, int worker_gid)
     //parse file line by line and insert trace to cmd.
     for (i = 0; i < NUM_OF_REP_REQS; i++) {
         //Before reading the request deside if it's gone be read or write
-        (*cmds)[i].opcode = (uint8_t) (WRITE_RATIO == 1000 || ((rand() % 1000 < WRITE_RATIO)) ? ST_OP_PUT :  ST_OP_GET);
+//        (*cmds)[i].opcode = (uint8_t) (WRITE_RATIO == 1000 || ((rand() % 1000 < WRITE_RATIO)) ? ST_OP_PUT :  ST_OP_GET);
+        (*cmds)[i].opcode = (uint8_t) (write_ratio == 1000 || ((rand() % 1000 < write_ratio)) ? ST_OP_PUT :  ST_OP_GET);
 
         //--- KEY ID----------
         uint32 key_id = KEY_NUM != 0 ? (uint32) rand() % KEY_NUM : (uint32) rand() % SPACETIME_NUM_KEYS;
@@ -382,7 +383,7 @@ parse_trace(char* path, struct spacetime_trace_command **cmds, int worker_gid)
         word = strtok_r(line, " ", &saveptr);
 
         //Before reading the request deside if it's gone be read or write
-        (*cmds)[i].opcode = (uint8_t) (WRITE_RATIO == 1000 || ((rand() % 1000 < WRITE_RATIO)) ? ST_OP_PUT :  ST_OP_GET);
+        (*cmds)[i].opcode = (uint8_t) (write_ratio == 1000 || ((rand() % 1000 < write_ratio)) ? ST_OP_PUT :  ST_OP_GET);
 
         if ((*cmds)[i].opcode == ST_OP_PUT) writes++;
 

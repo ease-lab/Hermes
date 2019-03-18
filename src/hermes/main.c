@@ -10,6 +10,7 @@
 #include "concur_ctrl.h"
 #include "../../include/utils/bit_vector.h"
 #include "hrd.h"
+#include "../../include/wings/wings_api.h"
 
 
 //Global vars
@@ -21,10 +22,22 @@ volatile struct remote_qp remote_worker_qps[WORKER_NUM][TOTAL_WORKER_UD_QPs];
 
 dbit_vector_t *g_share_qs_barrier;
 
+// Global config vars
+int num_workers;
+int write_ratio;
+int credits_num;
+int max_coalesce;
+
+
 int main(int argc, char *argv[])
 {
 	int i, c;
 	is_roce = -1; machine_id = -1;
+	// config vars
+	num_workers = -1;
+	write_ratio = -1;
+	credits_num = -1;
+	max_coalesce = -1;
 	remote_IP = (char *) malloc(16 * sizeof(char));
 
 	assert(MICA_MAX_VALUE >= ST_VALUE_SIZE);
@@ -67,11 +80,6 @@ int main(int argc, char *argv[])
 //	green_printf("UD size: %d ibv_grh + crd size: %d \n", sizeof(ud_req_crd_t), sizeof(struct ibv_grh) + sizeof(spacetime_crd_t));
 //	assert(sizeof(ud_req_crd_t) == sizeof(struct ibv_grh) + sizeof(spacetime_crd_t)); ///CRD --> 48 Bytes instead of 43
 
-//	//TODO only for testing
-//	aether_unit_test();
-//	bv_unit_test();
-//	return 0;
-
 	if(WORKERS_PER_MACHINE > 1)
 		dbv_init(&g_share_qs_barrier, WORKERS_PER_MACHINE);
 	else
@@ -86,14 +94,17 @@ int main(int argc, char *argv[])
 	static struct option opts[] = {
 			{ .name = "machine-id",			.has_arg = 1, .val = 'm' },
 			{ .name = "is-roce",			.has_arg = 1, .val = 'r' },
-			{ .name = "dev-name",			.has_arg = 1, .val = 'd'},
-			{ .name = "human-readable-stats",			.has_arg = 1, .val = 'h' },
+			{ .name = "dev-name",			.has_arg = 1, .val = 'd' },
+			{ .name = "write-ratio",		.has_arg = 1, .val = 'w' },
+			{ .name = "num-workers",		.has_arg = 1, .val = 'W' },
+			{ .name = "credits",		    .has_arg = 1, .val = 'c' },
+			{ .name = "max-coalesce",		.has_arg = 1, .val = 'C' },
 			{ 0 }
 	};
 
 	/* Parse and check arguments */
 	while(1) {
-		c = getopt_long(argc, argv, "m:r:d:", opts, NULL);
+		c = getopt_long(argc, argv, "m:r:d:w:c:C:W:", opts, NULL);
 		if(c == -1) break;
 
 		switch (c) {
@@ -106,21 +117,42 @@ int main(int argc, char *argv[])
 			case 'd':
 				memcpy(dev_name, optarg, strlen(optarg));
 				break;
+			// Config vars
+			case 'w':
+				write_ratio = atoi(optarg);
+				break;
+			case 'W':
+				num_workers = atoi(optarg);
+				break;
+			case 'c':
+				credits_num = atoi(optarg);
+				break;
+			case 'C':
+				max_coalesce = atoi(optarg);
+				break;
 			default:
 				printf("Invalid argument %d\n", c);
 				assert(false);
 		}
 	}
 
-	printf("CREDITS %d\n", CREDITS_PER_REMOTE_WORKER);
-	printf("INV_SS_GRANULARITY %d \t\t SEND_INV_Q_DEPTH %d \t\t RECV_INV_Q_DEPTH %d\n",
-		   INV_SS_GRANULARITY, SEND_INV_Q_DEPTH, RECV_INV_Q_DEPTH);
-	printf("ACK_SS_GRANULARITY %d \t\t SEND_ACK_Q_DEPTH %d \t\t RECV_ACK_Q_DEPTH %d\n",
-		   ACK_SS_GRANULARITY, SEND_ACK_Q_DEPTH, RECV_ACK_Q_DEPTH);
-	printf("VAL_SS_GRANULARITY %d \t\t SEND_VAL_Q_DEPTH %d \t\t RECV_VAL_Q_DEPTH %d\n",
-		   VAL_SS_GRANULARITY, SEND_VAL_Q_DEPTH, RECV_VAL_Q_DEPTH);
-	printf("CRD_SS_GRANULARITY %d \t\t SEND_CRD_Q_DEPTH %d \t\t RECV_CRD_Q_DEPTH %d\n",
-		   CRD_SS_GRANULARITY, SEND_CRD_Q_DEPTH, RECV_CRD_Q_DEPTH);
+	// If arguments not passed use the default values from header file
+	if(write_ratio == -1) write_ratio = WRITE_RATIO;
+	if(num_workers == -1) num_workers = WORKERS_PER_MACHINE;
+	if(credits_num == -1) credits_num = CREDITS_PER_REMOTE_WORKER;
+	if(max_coalesce == -1) max_coalesce = MAX_REQ_COALESCE;
+
+	printf("CREDITS %d\n", credits_num);
+	if(credits_num == CREDITS_PER_REMOTE_WORKER){
+		printf("INV_SS_GRANULARITY %d \t\t SEND_INV_Q_DEPTH %d \t\t RECV_INV_Q_DEPTH %d\n",
+			   INV_SS_GRANULARITY, SEND_INV_Q_DEPTH, RECV_INV_Q_DEPTH);
+		printf("ACK_SS_GRANULARITY %d \t\t SEND_ACK_Q_DEPTH %d \t\t RECV_ACK_Q_DEPTH %d\n",
+			   ACK_SS_GRANULARITY, SEND_ACK_Q_DEPTH, RECV_ACK_Q_DEPTH);
+		printf("VAL_SS_GRANULARITY %d \t\t SEND_VAL_Q_DEPTH %d \t\t RECV_VAL_Q_DEPTH %d\n",
+			   VAL_SS_GRANULARITY, SEND_VAL_Q_DEPTH, RECV_VAL_Q_DEPTH);
+		printf("CRD_SS_GRANULARITY %d \t\t SEND_CRD_Q_DEPTH %d \t\t RECV_CRD_Q_DEPTH %d\n",
+			   CRD_SS_GRANULARITY, SEND_CRD_Q_DEPTH, RECV_CRD_Q_DEPTH);
+	}
 
 	param_arr = malloc(WORKERS_PER_MACHINE * sizeof(struct thread_params));
 	thread_arr = malloc(WORKERS_PER_MACHINE * sizeof(pthread_t));
@@ -161,8 +193,15 @@ int main(int argc, char *argv[])
 	yellow_printf("Coherence msg Sizes: {Inv: %d, Ack: %d, Val: %d, Crd: %d}\n",
 				  sizeof(spacetime_inv_t), sizeof(spacetime_ack_t), sizeof(spacetime_val_t),
 				  sizeof(spacetime_crd_t));
-	yellow_printf("Max Coalesce Packet Sizes: {Inv: %d, Ack: %d, Val: %d}\n",
-				  sizeof(spacetime_inv_packet_t), sizeof(spacetime_ack_packet_t), sizeof(spacetime_val_packet_t));
+	if(max_coalesce == MAX_REQ_COALESCE)
+		yellow_printf("Max Coalesce Packet Sizes: {Inv: %d, Ack: %d, Val: %d}\n",
+					  sizeof(spacetime_inv_packet_t), sizeof(spacetime_ack_packet_t),
+					  sizeof(spacetime_val_packet_t));
+	else
+		yellow_printf("Max Coalesce Packet Sizes: {Inv: %d, Ack: %d, Val: %d}\n",
+					  sizeof(wings_ud_send_pkt_t) + max_coalesce * sizeof(spacetime_inv_t),
+					  sizeof(wings_ud_send_pkt_t) + max_coalesce * sizeof(spacetime_ack_t),
+					  sizeof(wings_ud_send_pkt_t) + max_coalesce * sizeof(spacetime_val_t));
 
 	for(i = 0; i < WORKERS_PER_MACHINE; i++)
 		pthread_join(thread_arr[i], NULL);
