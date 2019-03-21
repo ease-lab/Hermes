@@ -36,7 +36,7 @@ void *print_stats(void* no_arg){
             exit(0);
         }
         seconds *= MILLION; // compute only MIOPS
-        for (i = 0; i < WORKERS_PER_MACHINE; i++) {
+        for (i = 0; i < num_workers; i++) {
             all_worker_xput += curr_w_stats[i].completed_ops_per_worker - prev_w_stats[i].completed_ops_per_worker;
             all_stats.xput_per_worker[i] = (curr_w_stats[i].completed_ops_per_worker - prev_w_stats[i].completed_ops_per_worker) / seconds;
         }
@@ -47,7 +47,7 @@ void *print_stats(void* no_arg){
         printf("---------------PRINT %d time elapsed %.2f---------------\n", print_count, seconds / MILLION);
         green_printf("SYSTEM MIOPS: %.2f \n", total_throughput);
         if(PRINT_WORKER_STATS) {
-            for (i = 0; i < WORKERS_PER_MACHINE; i++) {
+            for (i = 0; i < num_workers; i++) {
 //            yellow_printf("W%d: %.2f MIOPS-Batch %.2f(%.2f) -H %.2f -W %llu -E %.2f -AC %.2f \n", i, all_stats.xput_per_worker[i], all_stats.batch_size_per_worker[i],
 //                          all_stats.stalled_time_per_worker[i], trace_ratio, curr_w_stats[i].wasted_loops, all_stats.empty_reqs_per_worker[i],
 //                          all_stats.average_coalescing_per_worker[i]);
@@ -142,8 +142,8 @@ dump_xput_stats(double xput_in_miops)
             CR_IS_RUNNING == 1? "CR" : "Hermes",
             MACHINE_NUM,
             write_ratio/10.0,
-            WORKERS_PER_MACHINE,
-            MAX_BATCH_OPS_SIZE,
+            num_workers,
+            max_batch_size,
             credits_num,
             FEED_FROM_TRACE == 1 ? "_a_0.99": "_uni",
             machine_id);
@@ -169,8 +169,8 @@ dump_latency_stats(void)
     sprintf(filename, "%s/%s_latency_m_%d_w_%d_b_%d_wr_%d_c_%d%s.csv", path,
             CR_IS_RUNNING == 1? "CR" : "Hermes",
             MACHINE_NUM,
-            WORKERS_PER_MACHINE,
-            MAX_BATCH_OPS_SIZE,
+            num_workers,
+            max_batch_size,
             write_ratio,
             credits_num,
             FEED_FROM_TRACE == 1 ? "_a_0.99": "");

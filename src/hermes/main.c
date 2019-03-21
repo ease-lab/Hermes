@@ -27,6 +27,7 @@ int num_workers;
 int write_ratio;
 int credits_num;
 int max_coalesce;
+int max_batch_size; //for batches to KVS
 
 
 int main(int argc, char *argv[])
@@ -38,6 +39,7 @@ int main(int argc, char *argv[])
 	write_ratio = -1;
 	credits_num = -1;
 	max_coalesce = -1;
+	max_batch_size = -1;
 	remote_IP = (char *) malloc(16 * sizeof(char));
 
 	assert(MICA_MAX_VALUE >= ST_VALUE_SIZE);
@@ -80,10 +82,7 @@ int main(int argc, char *argv[])
 //	green_printf("UD size: %d ibv_grh + crd size: %d \n", sizeof(ud_req_crd_t), sizeof(struct ibv_grh) + sizeof(spacetime_crd_t));
 //	assert(sizeof(ud_req_crd_t) == sizeof(struct ibv_grh) + sizeof(spacetime_crd_t)); ///CRD --> 48 Bytes instead of 43
 
-	if(WORKERS_PER_MACHINE > 1)
-		dbv_init(&g_share_qs_barrier, WORKERS_PER_MACHINE);
-	else
-		g_share_qs_barrier = NULL;
+//    if(WORKERS_PER_MACHINE > 1)
 
 
 
@@ -99,6 +98,7 @@ int main(int argc, char *argv[])
 			{ .name = "num-workers",		.has_arg = 1, .val = 'W' },
 			{ .name = "credits",		    .has_arg = 1, .val = 'c' },
 			{ .name = "max-coalesce",		.has_arg = 1, .val = 'C' },
+			{ .name = "max-batch-size",		.has_arg = 1, .val = 'b' },
 			{ 0 }
 	};
 
@@ -130,6 +130,9 @@ int main(int argc, char *argv[])
 			case 'C':
 				max_coalesce = atoi(optarg);
 				break;
+			case 'b':
+				max_batch_size = atoi(optarg);
+				break;
 			default:
 				printf("Invalid argument %d\n", c);
 				assert(false);
@@ -141,8 +144,20 @@ int main(int argc, char *argv[])
 	if(num_workers == -1) num_workers = WORKERS_PER_MACHINE;
 	if(credits_num == -1) credits_num = CREDITS_PER_REMOTE_WORKER;
 	if(max_coalesce == -1) max_coalesce = MAX_REQ_COALESCE;
+	if(max_batch_size == -1) max_batch_size = MAX_BATCH_OPS_SIZE;
+
+	// WARNING: Some structs are statically allocated using WORKERS_PER_MACHINE / MAX_BATCH_OPS_SIZE
+	assert(num_workers <= WORKERS_PER_MACHINE);
+	assert(max_batch_size <= MAX_BATCH_OPS_SIZE);
+
+	if(num_workers > 1)
+		dbv_init(&g_share_qs_barrier, (uint8_t) num_workers);
+	else
+		g_share_qs_barrier = NULL;
+
 
 	printf("CREDITS %d\n", credits_num);
+	printf("MAX KVS BATCH %d\n", max_batch_size);
 	if(credits_num == CREDITS_PER_REMOTE_WORKER){
 		printf("INV_SS_GRANULARITY %d \t\t SEND_INV_Q_DEPTH %d \t\t RECV_INV_Q_DEPTH %d\n",
 			   INV_SS_GRANULARITY, SEND_INV_Q_DEPTH, RECV_INV_Q_DEPTH);
@@ -154,24 +169,21 @@ int main(int argc, char *argv[])
 			   CRD_SS_GRANULARITY, SEND_CRD_Q_DEPTH, RECV_CRD_Q_DEPTH);
 	}
 
-	param_arr = malloc(WORKERS_PER_MACHINE * sizeof(struct thread_params));
-	thread_arr = malloc(WORKERS_PER_MACHINE * sizeof(pthread_t));
+	thread_arr = malloc(num_workers * sizeof(pthread_t));
+	param_arr  = malloc(num_workers * sizeof(struct thread_params));
 
 
 	pthread_attr_t attr;
 	cpu_set_t cpus_w;
 	worker_needed_ah_ready = 0;
 	group_membership_init();
-	spacetime_init(machine_id, WORKERS_PER_MACHINE);
+	spacetime_init(machine_id, num_workers);
 	init_stats();
 
 
-//	// Register signal and signal handler
-//	signal(SIGINT, signal_callback_handler);
-
 	pthread_attr_init(&attr);
 	int w_core, init_core = SOCKET_TO_START_SPAWNING_THREADS;
-	for(i = 0; i < WORKERS_PER_MACHINE; i++) {
+	for(i = 0; i < num_workers; i++) {
 		if(USE_ALL_SOCKETS && ENABLE_HYPERTHREADING)
 			w_core = init_core + i;
 		else
@@ -203,7 +215,7 @@ int main(int argc, char *argv[])
 					  sizeof(wings_ud_send_pkt_t) + max_coalesce * sizeof(spacetime_ack_t),
 					  sizeof(wings_ud_send_pkt_t) + max_coalesce * sizeof(spacetime_val_t));
 
-	for(i = 0; i < WORKERS_PER_MACHINE; i++)
+	for(i = 0; i < num_workers; i++)
 		pthread_join(thread_arr[i], NULL);
 
 	return 0;

@@ -18,6 +18,7 @@ void *run_worker(void *arg){
 	///WARNING: argument passed via run_hermes do not work in the deprecated worker
 	assert(max_coalesce == MAX_REQ_COALESCE);
 	assert(num_workers == WORKERS_PER_MACHINE);
+    assert(max_batch_size == MAX_BATCH_OPS_SIZE);
 	assert(credits_num == CREDITS_PER_REMOTE_WORKER);
 
 	struct thread_params params = *(struct thread_params *) arg;

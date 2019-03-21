@@ -320,7 +320,7 @@ void manufacture_trace(struct spacetime_trace_command **cmds, int worker_gid)
         (*cmds)[i].key_id = (uint8_t) (key_id < 255 ? key_id : ST_KEY_ID_255_OR_HIGHER);
     }
 
-    if (worker_gid % WORKERS_PER_MACHINE == 0)
+    if (worker_gid % num_workers == 0)
         printf("Write Ratio: %.2f%% \nTrace w_size %d \n", (double) (writes * 100) / NUM_OF_REP_REQS, NUM_OF_REP_REQS);
     (*cmds)[NUM_OF_REP_REQS].opcode = NOP;
     // printf("CLient %d Trace w_size: %d, debug counter %d hot keys %d, cold keys %d \n",l_id, cmd_count, debug_cnt,
@@ -416,7 +416,8 @@ parse_trace(char* path, struct spacetime_trace_command **cmds, int worker_gid)
         }
 
     }
-    if (worker_gid % WORKERS_PER_MACHINE == 0)
+
+    if (worker_gid % num_workers == 0)
         printf("Trace size: %d | Hottest key (10 | 20 keys): %.2f%% (%.2f | %.2f %%)|"
                " Write Ratio: %.2f%% \n", cmd_count,
                (100 * hottest_key_counter / (double) cmd_count),
@@ -441,7 +442,7 @@ void trace_init(struct spacetime_trace_command** trace, uint16_t worker_gid)
         char local_client_id[3];
         char machine_num[4];
         //get / create path for the trace
-        sprintf(local_client_id, "%d", worker_gid % WORKERS_PER_MACHINE);
+        sprintf(local_client_id, "%d", worker_gid % num_workers);
         sprintf(machine_num, "%d", machine_id);
         char path[2048];
         char cwd[1024];
@@ -513,29 +514,46 @@ void setup_kvs_buffs(spacetime_op_t **ops,
                      spacetime_ack_t **ack_recv_ops,
                      spacetime_val_t **val_recv_ops)
 {
+//    *ops = memalign(4096, max_batch_size* (sizeof(spacetime_op_t)));
+//    memset(*ops, 0, max_batch_size* (sizeof(spacetime_op_t)));
     *ops = memalign(4096, MAX_BATCH_OPS_SIZE * (sizeof(spacetime_op_t)));
     memset(*ops, 0, MAX_BATCH_OPS_SIZE * (sizeof(spacetime_op_t)));
     assert(ops != NULL);
 
     ///Network ops
 	///TODO should we memalign aswell?
-	*inv_recv_ops = (spacetime_inv_t*) malloc(INV_RECV_OPS_SIZE * sizeof(spacetime_inv_t));
-	*ack_recv_ops = (spacetime_ack_t*) malloc(ACK_RECV_OPS_SIZE * sizeof(spacetime_ack_t));
-    *val_recv_ops = (spacetime_val_t*) malloc(VAL_RECV_OPS_SIZE * sizeof(spacetime_val_t)); /* Batch of incoming broadcasts for the Cache*/
+//    *inv_recv_ops = (spacetime_inv_t*) malloc(INV_RECV_OPS_SIZE * sizeof(spacetime_inv_t));
+//    *ack_recv_ops = (spacetime_ack_t*) malloc(ACK_RECV_OPS_SIZE * sizeof(spacetime_ack_t));
+//    *val_recv_ops = (spacetime_val_t*) malloc(VAL_RECV_OPS_SIZE * sizeof(spacetime_val_t)); /* Batch of incoming broadcasts for the Cache*/
+
+//    memset(*inv_recv_ops, 0, INV_RECV_OPS_SIZE * sizeof(spacetime_inv_t));
+//    memset(*ack_recv_ops, 0, ACK_RECV_OPS_SIZE * sizeof(spacetime_ack_t));
+//    memset(*val_recv_ops, 0, VAL_RECV_OPS_SIZE * sizeof(spacetime_val_t));
+
+//    for(int i = 0; i < INV_RECV_OPS_SIZE; ++i)
+//        (*inv_recv_ops)[i].op_meta.opcode = ST_EMPTY;
+//
+//    for(int i = 0; i < ACK_RECV_OPS_SIZE; ++i)
+//        (*ack_recv_ops)[i].opcode = ST_EMPTY;
+//
+//    for(int i = 0; i < VAL_RECV_OPS_SIZE; ++i)
+//        (*val_recv_ops)[i].opcode = ST_EMPTY;
+
+    uint32_t no_ops = (uint32_t) (credits_num * REMOTE_MACHINES * max_coalesce); //credits * remote_machines * max_req_coalesce
+	*inv_recv_ops = (spacetime_inv_t*) malloc(no_ops * sizeof(spacetime_inv_t));
+	*ack_recv_ops = (spacetime_ack_t*) malloc(no_ops * sizeof(spacetime_ack_t));
+    *val_recv_ops = (spacetime_val_t*) malloc(no_ops * sizeof(spacetime_val_t)); /* Batch of incoming broadcasts for the Cache*/
 	assert(*inv_recv_ops!= NULL && *ack_recv_ops!= NULL && *val_recv_ops!= NULL);
 
-    memset(*inv_recv_ops, 0, INV_RECV_OPS_SIZE * sizeof(spacetime_inv_t));
-    memset(*ack_recv_ops, 0, ACK_RECV_OPS_SIZE * sizeof(spacetime_ack_t));
-    memset(*val_recv_ops, 0, VAL_RECV_OPS_SIZE * sizeof(spacetime_val_t));
+    memset(*inv_recv_ops, 0, no_ops * sizeof(spacetime_inv_t));
+    memset(*ack_recv_ops, 0, no_ops * sizeof(spacetime_ack_t));
+    memset(*val_recv_ops, 0, no_ops * sizeof(spacetime_val_t));
 
-    for(int i = 0; i < INV_RECV_OPS_SIZE; ++i)
-        (*inv_recv_ops)[i].op_meta.opcode = ST_EMPTY;
-
-    for(int i = 0; i < ACK_RECV_OPS_SIZE; ++i)
+    for(int i = 0; i < no_ops; ++i){
         (*ack_recv_ops)[i].opcode = ST_EMPTY;
-
-    for(int i = 0; i < VAL_RECV_OPS_SIZE; ++i)
         (*val_recv_ops)[i].opcode = ST_EMPTY;
+        (*inv_recv_ops)[i].op_meta.opcode = ST_EMPTY;
+    }
 
 	for(int i = 0; i < MAX_BATCH_OPS_SIZE; ++i){
 		(*ops)[i].op_meta.opcode = ST_EMPTY;

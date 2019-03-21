@@ -210,6 +210,7 @@ void*
 run_worker(void *arg)
 {
 	assert(CR_IS_RUNNING == 0);
+
 	struct thread_params params = *(struct thread_params *) arg;
 	uint16_t worker_lid = (uint16_t) params.id;	// Local ID of this worker thread
 	uint16_t worker_gid = (uint16_t) (machine_id * num_workers + params.id);	// Global ID of this worker thread
@@ -256,6 +257,8 @@ run_worker(void *arg)
 	channel_assertions(inv_ud_c, ack_ud_c, val_ud_c, crd_ud_c);
 
 
+	uint32_t no_ops = (uint32_t) (credits_num * REMOTE_MACHINES * max_coalesce); //credits * remote_machines * max_req_coalesce
+	assert(no_ops >= ack_ud_c->recv_pkt_buff_len);
 
 	/* -------------------------------------------------------
 	------------------- OTHER DECLARATIONS--------------------
@@ -286,8 +289,13 @@ run_worker(void *arg)
 	uint32_t trace_iter = 0;
 	uint16_t rolling_inv_index = 0;
 	uint16_t invs_polled = 0, acks_polled = 0, vals_polled = 0;
-	uint32_t num_of_iters_serving_op[MAX_BATCH_OPS_SIZE] = {0};
-	uint8_t has_outstanding_vals = 0, has_outstanding_vals_from_memb_change = 0;
+	uint8_t has_outstanding_vals = 0,
+	        has_outstanding_vals_from_memb_change = 0;
+//	uint32_t num_of_iters_serving_op[MAX_BATCH_OPS_SIZE] = {0};
+
+	uint32_t *num_of_iters_serving_op = malloc(max_batch_size * sizeof(uint32_t));
+	for(int i = 0; i < max_batch_size; ++i)
+		num_of_iters_serving_op[i] = 0;
 
 	/// Spawn stats thread
 	if (worker_lid == 0)
@@ -315,7 +323,8 @@ run_worker(void *arg)
 														   &stopwatch_for_req_latency,
 														   n_hottest_keys_in_ops_get, n_hottest_keys_in_ops_put);
 
-	    hermes_batch_ops_to_KVS(local_ops, (uint8_t *) ops, MAX_BATCH_OPS_SIZE, sizeof(spacetime_op_t),
+//		hermes_batch_ops_to_KVS(local_ops, (uint8_t *) ops, MAX_BATCH_OPS_SIZE, sizeof(spacetime_op_t),
+	    hermes_batch_ops_to_KVS(local_ops, (uint8_t *) ops, max_batch_size, sizeof(spacetime_op_t),
 								last_group_membership, NULL, NULL, (uint8_t) worker_lid);
 
 	    stop_latency_of_completed_reads(ops, worker_lid, &stopwatch_for_req_latency);
@@ -323,8 +332,9 @@ run_worker(void *arg)
 		if (write_ratio > 0) {
 			///~~~~~~~~~~~~~~~~~~~~~~INVS~~~~~~~~~~~~~~~~~~~~~~~~~~~
 			wings_issue_pkts(inv_ud_c, (uint8_t *) ops,
-							  MAX_BATCH_OPS_SIZE, sizeof(spacetime_op_t), &rolling_inv_index,
-							  inv_skip_or_get_sender_id, inv_modify_elem_after_send, inv_copy_and_modify_elem);
+//							 MAX_BATCH_OPS_SIZE, sizeof(spacetime_op_t), &rolling_inv_index,
+							 max_batch_size, sizeof(spacetime_op_t), &rolling_inv_index,
+							 inv_skip_or_get_sender_id, inv_modify_elem_after_send, inv_copy_and_modify_elem);
 
 			///Poll for INVs
 			invs_polled = wings_poll_buff_and_post_recvs(inv_ud_c, INV_RECV_OPS_SIZE, (uint8_t *) inv_recv_ops);
@@ -358,9 +368,9 @@ run_worker(void *arg)
 			if(!DISABLE_VALS_FOR_DEBUGGING) {
 				///~~~~~~~~~~~~~~~~~~~~~~ VALs ~~~~~~~~~~~~~~~~~~~~~~~~~~~
 				has_outstanding_vals = wings_issue_pkts(val_ud_c, (uint8_t *) ack_recv_ops,
-														 ack_ud_c->recv_pkt_buff_len, sizeof(spacetime_ack_t),
-														 NULL, val_skip_or_get_sender_id,
-														 val_modify_elem_after_send, val_copy_and_modify_elem);
+														ack_ud_c->recv_pkt_buff_len, sizeof(spacetime_ack_t),
+														NULL, val_skip_or_get_sender_id,
+														val_modify_elem_after_send, val_copy_and_modify_elem);
 
 				///Poll for Vals
 				vals_polled = wings_poll_buff_and_post_recvs(val_ud_c, VAL_RECV_OPS_SIZE, (uint8_t *) val_recv_ops);

@@ -53,15 +53,15 @@ hermes_assertions_begin_val(spacetime_val_t *val_ptr)
 static inline void
 hermes_assertions_end_read_write_ops(spacetime_op_t* read_write_op)
 {
-	for (int i = 0; i < MAX_BATCH_OPS_SIZE; ++i)
-			assert(read_write_op[i].op_meta.opcode == ST_OP_GET ||
-				   read_write_op[i].op_meta.state == ST_MISS ||
-				   read_write_op[i].op_meta.state == ST_PUT_STALL ||
-				   read_write_op[i].op_meta.state == ST_PUT_SUCCESS ||
-				   read_write_op[i].op_meta.state == ST_PUT_COMPLETE ||
-				   read_write_op[i].op_meta.state == ST_IN_PROGRESS_PUT ||
-				   read_write_op[i].op_meta.state == ST_OP_MEMBERSHIP_CHANGE || ///TODO check this
-				   read_write_op[i].op_meta.state == ST_IN_PROGRESS_REPLAY);
+	for (int i = 0; i < max_batch_size; ++i)
+		assert(read_write_op[i].op_meta.opcode == ST_OP_GET ||
+			   read_write_op[i].op_meta.state == ST_MISS ||
+			   read_write_op[i].op_meta.state == ST_PUT_STALL ||
+			   read_write_op[i].op_meta.state == ST_PUT_SUCCESS ||
+			   read_write_op[i].op_meta.state == ST_PUT_COMPLETE ||
+			   read_write_op[i].op_meta.state == ST_IN_PROGRESS_PUT ||
+			   read_write_op[i].op_meta.state == ST_OP_MEMBERSHIP_CHANGE || ///TODO check this
+			   read_write_op[i].op_meta.state == ST_IN_PROGRESS_REPLAY);
 }
 //////////// Exec functions
 

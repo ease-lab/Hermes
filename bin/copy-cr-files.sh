@@ -3,9 +3,9 @@ HOSTS=( ##### network  cluster #####
          "houston"
          "sanantonio"
          "austin"
-         "indianapolis"
-         "atlanta"
-         "philly"
+#         "indianapolis"
+#         "atlanta"
+#         "philly"
          ##### compute cluster #####
 #         "baltimore"
 #         "chicago"

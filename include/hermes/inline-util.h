@@ -1352,7 +1352,8 @@ refill_ops_n_suspect_failed_nodes(uint32_t *trace_iter, uint16_t worker_lid,
 	static uint8_t first_iter_has_passed[WORKERS_PER_MACHINE] = { 0 };
 
 	int i = 0, refilled_ops = 0, node_suspected = -1;
-	for(i = 0; i < MAX_BATCH_OPS_SIZE; i++) {
+//	for(i = 0; i < MAX_BATCH_OPS_SIZE; i++) {
+	for(i = 0; i < max_batch_size; i++) {
 		if(ENABLE_ASSERTIONS)
 			if(first_iter_has_passed[worker_lid] == 1){
 				assert(ops[i].op_meta.opcode == ST_OP_PUT || ops[i].op_meta.opcode == ST_OP_GET);
@@ -1461,7 +1462,8 @@ refill_ops_n_suspect_failed_nodes(uint32_t *trace_iter, uint16_t worker_lid,
 						ops[i].op_meta.state = ST_OP_MEMBERSHIP_CHANGE;
 						ops[i].value[0] = (uint8_t) node_suspected;
 						//reset counter for failure suspicion
-						memset(refilled_per_ops_debug_cnt, 0, sizeof(uint32_t) * MAX_BATCH_OPS_SIZE);
+						memset(refilled_per_ops_debug_cnt, 0, sizeof(uint32_t) * max_batch_size);
+//						memset(refilled_per_ops_debug_cnt, 0, sizeof(uint32_t) * MAX_BATCH_OPS_SIZE);
 					}
 				}
 		}
@@ -1474,7 +1476,8 @@ refill_ops_n_suspect_failed_nodes(uint32_t *trace_iter, uint16_t worker_lid,
 		first_iter_has_passed[worker_lid] = 1;
 
 	if(ENABLE_ASSERTIONS)
-		for(i = 0; i < MAX_BATCH_OPS_SIZE; i++)
+//		for(i = 0; i < MAX_BATCH_OPS_SIZE; i++)
+		for(i = 0; i < max_batch_size; i++)
 			assert(ops[i].op_meta.opcode == ST_OP_PUT || ops[i].op_meta.opcode == ST_OP_GET);
 
 	return node_suspected;

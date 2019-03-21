@@ -18,6 +18,19 @@ FILES=(
         "hermes-wings"
       )
 
+
+### Runs to make (WARNING this i
+#declare -a write_ratios=(0 10 50 200 500 1000)
+declare -a write_ratios=(200)
+#declare -a num_workers=(5 10 15 20 25 30 36)
+declare -a num_workers=(36)
+#declare -a credits=(5 10 15 20 25 30)
+declare -a credits=(30)
+#declare -a batch_sizes=(25 50 75 100 125 150 200 250)
+declare -a batch_sizes=(50 75)
+#declare -a coalesce=(1 5 10 15)
+declare -a coalesce=(5)
+
 USERNAME="s1671850" # "user"
 LOCAL_HOST=`hostname`
 MAKE_FOLDER="/home/${USERNAME}/hermes/src"
@@ -38,7 +51,6 @@ do
 	echo "${FILE} copied to {${HOSTS[@]/$LOCAL_HOST}}"
 done
 
-#REMOTE_COMMAND="uname -a"
 REMOTE_COMMAND="cd ${DEST_FOLDER}; bash run-hermes.sh"
 OUTP_FOLDER="/home/${USERNAME}/hermes/results/xput/per-node/"
 
@@ -57,12 +69,24 @@ else
 #      echo ${PASS} | ./run-hermes.sh > ${OUTP_FOLDER}/${LOCAL_HOST}.out
 
       # Execute locally and remotely
-      echo ${PASS} | ./run-hermes.sh &
-	  parallel "echo ${PASS} | ssh -tt {} $'${REMOTE_COMMAND}'" ::: $(echo ${HOSTS[@]/$LOCAL_HOST})
+      for WR in "${write_ratios[@]}"; do
+        for W in "${num_workers[@]}"; do
+          for BA in "${batch_sizes[@]}"; do
+            for CRD in "${credits[@]}"; do
+              for COAL in "${coalesce[@]}"; do
+                 args="-w ${WR} -W ${W} -b ${BA} -c ${CRD} -C ${COAL}"
+                 echo ${PASS} | ./run-hermes.sh ${args} &
+                 sleep 10
+	             parallel "echo ${PASS} | ssh -tt {} $'${REMOTE_COMMAND} ${args}'" ::: $(echo ${HOSTS[@]/$LOCAL_HOST})
+	          done
+	        done
+	      done
+	    done
+	  done
 
       # Gather remote files
 	  parallel "scp {}:${RESULT_FOLDER}* ${RESULT_OUT_FOLDER} " ::: $(echo ${HOSTS[@]/$LOCAL_HOST})
-	  echo "Files copied from: {${HOSTS[@]/$LOCAL_HOST}}"
+	  echo "xPut result files copied from: {${HOSTS[@]/$LOCAL_HOST}}"
 
 	  # group all files
       ls ${RESULT_OUT_FOLDER} | awk -F '-' '!x[$1]++{print $1}' | while read -r line; do

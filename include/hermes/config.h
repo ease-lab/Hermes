@@ -20,8 +20,8 @@
 #define USE_ALL_SOCKETS 1
 #define ENABLE_HYPERTHREADING 1
 #define BATCH_POST_RECVS_TO_NIC 1
-#define WRITE_RATIO 50
-#define MAX_BATCH_OPS_SIZE 10 // up to 254
+#define WRITE_RATIO 200
+#define MAX_BATCH_OPS_SIZE 250 // up to 254
 
 
 //LATENCY
@@ -109,8 +109,8 @@ static_assert(!ENABLE_VIRTUAL_NODE_IDS || MACHINE_NUM * VIRTUAL_NODE_IDS_PER_NOD
 /*-------------------------------------------------
 -----------------FLOW CONTROL---------------------
 --------------------------------------------------*/
-#define CREDITS_PER_REMOTE_WORKER (1 * MAX_REQ_COALESCE) // Hermes
-//#define CREDITS_PER_REMOTE_WORKER (MAX_BATCH_OPS_SIZE) // CR
+#define CREDITS_PER_REMOTE_WORKER 30 //(1 * MAX_REQ_COALESCE) // Hermes
+//#define CREDITS_PER_REMOTE_WORKER 3 //(MAX_BATCH_OPS_SIZE) // CR
 #define INV_CREDITS CREDITS_PER_REMOTE_WORKER
 #define ACK_CREDITS CREDITS_PER_REMOTE_WORKER
 #define VAL_CREDITS CREDITS_PER_REMOTE_WORKER
@@ -281,4 +281,5 @@ extern int write_ratio;
 extern int num_workers;
 extern int credits_num;
 extern int max_coalesce;
+extern int max_batch_size; //for batches to KVS
 #endif //SPACETIME_CONFIG_H
