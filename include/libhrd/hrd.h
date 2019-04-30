@@ -14,6 +14,7 @@
 #include <sys/shm.h>
 #include <numaif.h>
 
+
 #include <malloc.h>
 #include <time.h>
 #include <infiniband/verbs.h>
@@ -33,7 +34,7 @@
 #define HRD_Q_DEPTH 128
 
 #define USE_BIG_OBJECTS 0
-#define EXTRA_CACHE_LINES 0
+#define EXTRA_CACHE_LINES 16
 #define BASE_VALUE_SIZE 46 //max is --> 46
 #define SHIFT_BITS (USE_BIG_OBJECTS == 1 ? 3 : 0) // number of bits to shift left or right to calculate the value length
 #define HRD_DEFAULT_PSN 3185	/* PSN for all queues */ // starting Packet Sequence Number
@@ -342,7 +343,7 @@ static inline int hrd_is_power_of_2(uint32_t n)
 	return n && !(n & (n - 1));
 }
 
-void *hrd_malloc_socket(int shm_key, int size, int socket_id);
+void *hrd_malloc_socket(int shm_key, uint64_t size, int socket_id);
 int hrd_free(int shm_key, void *shm_buf);
 void red_printf(const char *format, ...);
 void yellow_printf(const char *format, ...);

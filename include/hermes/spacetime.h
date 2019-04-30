@@ -18,8 +18,9 @@
 #include "config.h"
 #include "../utils/bit_vector.h"
 
-#define SPACETIME_NUM_KEYS (1000 * 1000)
-#define SPACETIME_NUM_BKTS (2 * 1024 * 1024)
+#define SPACETIME_NUM_KEYS (60 * 1000 * 1000)
+#define SPACETIME_NUM_BKTS (64 * 1024 * 1024)
+#define SPACETIME_LOG_CAP  (4 * ((unsigned long long) M_1024)) //(1024 * 1024 * 1024)
 
 ///WARNING the monotonically increasing assigned numbers to States are used for comparisons (do not reorder / change numbers)
 //States
@@ -90,8 +91,9 @@
 typedef struct
 {
 //    uint64 __unused; // This should be 8B ////// Uncomment this for fixed-size 16 byte keys instead
-    unsigned int bkt			:32;
-    unsigned int server			:16;
+//    unsigned int bkt			:32;
+//    unsigned int server			:16;
+    uint64_t bkt			    :48;
     unsigned int tag			:16;
 }
 spacetime_key_t;
@@ -124,6 +126,8 @@ typedef struct
     timestamp_t ts;
 }
 spacetime_op_meta_t, spacetime_ack_t, spacetime_val_t;
+
+
 
 typedef struct
 {
@@ -330,5 +334,19 @@ is_last_ack(bit_vector_t gathered_acks,
 extern struct spacetime_kv kv;
 extern spacetime_group_membership group_membership;
 
+//TODO: adapt and use the following functions to re-enable variable length object support
+static inline uint8_t
+get_val_len(struct mica_op* op_t)
+{
+//	return op_t->val_len - sizeof(spacetime_object_meta);
+	return  (op_t->val_len >> SHIFT_BITS) - sizeof(spacetime_op_meta_t);
+}
+
+static inline uint8_t
+set_val_len(spacetime_op_meta_t* op_t)
+{
+//	return (op_t->val_len + sizeof(spacetime_object_meta));
+	return  (op_t->val_len >> SHIFT_BITS) + sizeof(spacetime_op_meta_t);
+}
 
 #endif //HERMES_SPACETIME_H

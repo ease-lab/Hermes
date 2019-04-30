@@ -11,17 +11,17 @@
 #define HERMES_CEILING(x,y) (((x) + (y) - 1) / (y))
 #define HERMES_MIN(x,y) (x < y ? x : y)
 
-#define MACHINE_NUM 3
+#define MACHINE_NUM 5
 #define REMOTE_MACHINES (MACHINE_NUM - 1)
 #define GROUP_MEMBERSHIP_ARRAY_SIZE HERMES_CEILING(MACHINE_NUM, 8) //assuming uint8_t
-#define WORKERS_PER_MACHINE 36
+#define WORKERS_PER_MACHINE 38
 #define KV_SOCKET 0
 #define SOCKET_TO_START_SPAWNING_THREADS 0
 #define USE_ALL_SOCKETS 1
 #define ENABLE_HYPERTHREADING 1
 #define BATCH_POST_RECVS_TO_NIC 1
-#define WRITE_RATIO 200
-#define MAX_BATCH_OPS_SIZE 250 // up to 254
+#define WRITE_RATIO 1000
+#define MAX_BATCH_OPS_SIZE 250 //250 // up to 254
 
 
 //LATENCY
@@ -43,7 +43,7 @@ static_assert(!ENABLE_VIRTUAL_NODE_IDS || VIRTUAL_NODE_IDS_PER_NODE > MACHINE_NU
 static_assert(!ENABLE_VIRTUAL_NODE_IDS || MACHINE_NUM * VIRTUAL_NODE_IDS_PER_NODE < 255, "");
 
 // SKEW
-#define ENABLE_COALESCE_OF_HOT_REQS 0 //WARNING!!! this must be disabled for cr
+#define ENABLE_COALESCE_OF_HOT_REQS 1 //WARNING!!! this must be disabled for cr
 #define COALESCE_N_HOTTEST_KEYS 100
 #define ENABLE_READ_COMPLETE_AFTER_VAL_RECV_OF_HOT_REQS 1
 #define ENABLE_WRITE_COALESCE_TO_THE_SAME_KEY_IN_SAME_NODE 1
@@ -109,7 +109,7 @@ static_assert(!ENABLE_VIRTUAL_NODE_IDS || MACHINE_NUM * VIRTUAL_NODE_IDS_PER_NOD
 /*-------------------------------------------------
 -----------------FLOW CONTROL---------------------
 --------------------------------------------------*/
-#define CREDITS_PER_REMOTE_WORKER 30 //(1 * MAX_REQ_COALESCE) // Hermes
+#define CREDITS_PER_REMOTE_WORKER 20 //(1 * MAX_REQ_COALESCE) // Hermes
 //#define CREDITS_PER_REMOTE_WORKER 3 //(MAX_BATCH_OPS_SIZE) // CR
 #define INV_CREDITS CREDITS_PER_REMOTE_WORKER
 #define ACK_CREDITS CREDITS_PER_REMOTE_WORKER
@@ -217,8 +217,8 @@ static_assert(!ENABLE_VIRTUAL_NODE_IDS || MACHINE_NUM * VIRTUAL_NODE_IDS_PER_NOD
 #define ENABLE_CRD_PRINTS 0
 
 //Stats prints
-#define PRINT_STATS_EVERY_MSECS 5000 //10000 //10
-#define PRINT_WORKER_STATS 1
+#define PRINT_STATS_EVERY_MSECS 4000 //5000 //10000 //10
+#define PRINT_WORKER_STATS 0
 
 //Stats
 #define EXIT_ON_STATS_PRINT 1

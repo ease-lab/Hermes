@@ -439,7 +439,7 @@ void trace_init(struct spacetime_trace_command** trace, uint16_t worker_gid)
 {
     //create the trace path path
     if (FEED_FROM_TRACE == 1) {
-        char local_client_id[3];
+        char local_client_id[6];
         char machine_num[4];
         //get / create path for the trace
         sprintf(local_client_id, "%d", worker_gid % num_workers);

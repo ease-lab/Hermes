@@ -3,8 +3,8 @@ HOSTS=( ##### network  cluster #####
          "houston"
          "sanantonio"
          "austin"
-#         "indianapolis"
-#         "philly"
+         "indianapolis"
+         "philly"
 #         "atlanta"
          ##### compute cluster #####
 #         "baltimore"
@@ -19,17 +19,19 @@ FILES=(
       )
 
 
-### Runs to make (WARNING this i
+### Runs to make
 #declare -a write_ratios=(0 10 50 200 500 1000)
+#declare -a write_ratios=(500 750 1000)
 declare -a write_ratios=(200)
+#declare -a write_ratios=(10 20 50)
 #declare -a num_workers=(5 10 15 20 25 30 36)
 declare -a num_workers=(36)
-#declare -a credits=(5 10 15 20 25 30)
-declare -a credits=(30)
 #declare -a batch_sizes=(25 50 75 100 125 150 200 250)
-declare -a batch_sizes=(50 75)
+declare -a batch_sizes=(50)
+declare -a credits=(15)
+#declare -a credits=(30)
 #declare -a coalesce=(1 5 10 15)
-declare -a coalesce=(5)
+declare -a coalesce=(15)
 
 USERNAME="s1671850" # "user"
 LOCAL_HOST=`hostname`
@@ -76,8 +78,8 @@ else
               for COAL in "${coalesce[@]}"; do
                  args="-w ${WR} -W ${W} -b ${BA} -c ${CRD} -C ${COAL}"
                  echo ${PASS} | ./run-hermes.sh ${args} &
-                 sleep 10
-	             parallel "echo ${PASS} | ssh -tt {} $'${REMOTE_COMMAND} ${args}'" ::: $(echo ${HOSTS[@]/$LOCAL_HOST})
+                 sleep 2
+	             parallel "echo ${PASS} | ssh -tt {} $'${REMOTE_COMMAND} ${args}'" ::: $(echo ${HOSTS[@]/$LOCAL_HOST}) >/dev/null
 	          done
 	        done
 	      done

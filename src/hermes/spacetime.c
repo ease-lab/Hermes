@@ -66,18 +66,18 @@ spacetime_init(int instance_id, int num_threads)
 	kv.meta = malloc(num_threads * sizeof(struct spacetime_meta_stats));
 	for(int i = 0; i < num_threads; i++)
 		meta_reset(&kv.meta[i]);
-	mica_init(&kv.hash_table, instance_id, KV_SOCKET, SPACETIME_NUM_BKTS, HERD_LOG_CAP);
+	mica_init(&kv.hash_table, instance_id, KV_SOCKET, SPACETIME_NUM_BKTS, SPACETIME_LOG_CAP);
 	spacetime_populate_fixed_len(&kv, SPACETIME_NUM_KEYS, KVS_VALUE_SIZE);
 }
 
 void
-spacetime_populate_fixed_len(struct spacetime_kv* kv, int n, int val_len)
+spacetime_populate_fixed_len(struct spacetime_kv* _kv, int n, int val_len)
 {
 	assert(n > 0);
 	assert(val_len > 0 && val_len <= KVS_VALUE_SIZE);
 
 	/* This is needed for the eviction message below to make sense */
-	assert(kv->hash_table.num_insert_op == 0 && kv->hash_table.num_index_evictions == 0);
+	assert(_kv->hash_table.num_insert_op == 0 && _kv->hash_table.num_index_evictions == 0);
 
 	struct mica_op op;
 	struct mica_resp resp;
@@ -98,15 +98,15 @@ spacetime_populate_fixed_len(struct spacetime_kv* kv, int n, int val_len)
 		/// op.key.meta.state, op.key.meta.version, op.key.meta.cid);
 		uint8_t val = (uint8_t) ('a' + (i % 20));
 
-		memset((void*) &value_ptr[1], val, (uint8_t) ST_VALUE_SIZE);
-		mica_insert_one(&kv->hash_table, &op, &resp);
+		memset((void*) &value_ptr[1], val, ST_VALUE_SIZE);
+		mica_insert_one(&_kv->hash_table, &op, &resp);
 	}
 
-	assert(kv->hash_table.num_insert_op == n);
+	assert(_kv->hash_table.num_insert_op == n);
 	yellow_printf("Spacetime: Populated instance %d with %d keys, length = %d. "
 				  "Index eviction fraction = %.4f.\n",
-				  kv->hash_table.instance_id, n, val_len,
-				  (double) kv->hash_table.num_index_evictions / kv->hash_table.num_insert_op);
+				  _kv->hash_table.instance_id, n, val_len,
+				  (double) _kv->hash_table.num_index_evictions / _kv->hash_table.num_insert_op);
 }
 
 

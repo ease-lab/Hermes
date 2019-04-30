@@ -257,8 +257,10 @@ run_worker(void *arg)
 	channel_assertions(inv_ud_c, ack_ud_c, val_ud_c, crd_ud_c);
 
 
-	uint32_t no_ops = (uint32_t) (credits_num * REMOTE_MACHINES * max_coalesce); //credits * remote_machines * max_req_coalesce
-	assert(no_ops >= ack_ud_c->recv_pkt_buff_len);
+	uint16_t ops_len = (uint16_t) (credits_num * REMOTE_MACHINES * max_coalesce); //credits * remote_machines * max_req_coalesce
+	assert(ops_len >= inv_ud_c->recv_pkt_buff_len);
+	assert(ops_len >= ack_ud_c->recv_pkt_buff_len);
+	assert(ops_len >= val_ud_c->recv_pkt_buff_len);
 
 	/* -------------------------------------------------------
 	------------------- OTHER DECLARATIONS--------------------
@@ -323,7 +325,6 @@ run_worker(void *arg)
 														   &stopwatch_for_req_latency,
 														   n_hottest_keys_in_ops_get, n_hottest_keys_in_ops_put);
 
-//		hermes_batch_ops_to_KVS(local_ops, (uint8_t *) ops, MAX_BATCH_OPS_SIZE, sizeof(spacetime_op_t),
 	    hermes_batch_ops_to_KVS(local_ops, (uint8_t *) ops, max_batch_size, sizeof(spacetime_op_t),
 								last_group_membership, NULL, NULL, (uint8_t) worker_lid);
 
@@ -332,12 +333,11 @@ run_worker(void *arg)
 		if (write_ratio > 0) {
 			///~~~~~~~~~~~~~~~~~~~~~~INVS~~~~~~~~~~~~~~~~~~~~~~~~~~~
 			wings_issue_pkts(inv_ud_c, (uint8_t *) ops,
-//							 MAX_BATCH_OPS_SIZE, sizeof(spacetime_op_t), &rolling_inv_index,
-							 max_batch_size, sizeof(spacetime_op_t), &rolling_inv_index,
+							 (uint16_t) max_batch_size, sizeof(spacetime_op_t), &rolling_inv_index,
 							 inv_skip_or_get_sender_id, inv_modify_elem_after_send, inv_copy_and_modify_elem);
 
 			///Poll for INVs
-			invs_polled = wings_poll_buff_and_post_recvs(inv_ud_c, INV_RECV_OPS_SIZE, (uint8_t *) inv_recv_ops);
+			invs_polled = wings_poll_buff_and_post_recvs(inv_ud_c, ops_len, (uint8_t *) inv_recv_ops);
 
 
 			if(invs_polled > 0) {
@@ -355,7 +355,7 @@ run_worker(void *arg)
 
 			if(has_outstanding_vals == 0 && has_outstanding_vals_from_memb_change == 0) {
 				///Poll for Acks
-				acks_polled = wings_poll_buff_and_post_recvs(ack_ud_c, ACK_RECV_OPS_SIZE, (uint8_t *) ack_recv_ops);
+				acks_polled = wings_poll_buff_and_post_recvs(ack_ud_c, ops_len, (uint8_t *) ack_recv_ops);
 
 				if (acks_polled > 0){
 					hermes_batch_ops_to_KVS(acks, (uint8_t *) ack_recv_ops, acks_polled, sizeof(spacetime_ack_t),
@@ -373,16 +373,15 @@ run_worker(void *arg)
 														val_modify_elem_after_send, val_copy_and_modify_elem);
 
 				///Poll for Vals
-				vals_polled = wings_poll_buff_and_post_recvs(val_ud_c, VAL_RECV_OPS_SIZE, (uint8_t *) val_recv_ops);
+				vals_polled = wings_poll_buff_and_post_recvs(val_ud_c, ops_len, (uint8_t *) val_recv_ops);
 
 				if (vals_polled > 0) {
 					hermes_batch_ops_to_KVS(vals, (uint8_t *) val_recv_ops, vals_polled, sizeof(spacetime_val_t),
 											last_group_membership, NULL, NULL, (uint8_t) worker_lid);
 
 					///~~~~~~~~~~~~~~~~~~~~~~CREDITS~~~~~~~~~~~~~~~~~~~~~~~~~~~
-					wings_issue_credits(crd_ud_c, (uint8_t *) val_recv_ops, VAL_RECV_OPS_SIZE,
-										 sizeof(spacetime_val_t), rem_write_crd_skip_or_get_sender_id,
-										 rem_write_crd_modify_elem_after_send);
+					wings_issue_credits(crd_ud_c, (uint8_t *) val_recv_ops, ops_len, sizeof(spacetime_val_t),
+										rem_write_crd_skip_or_get_sender_id, rem_write_crd_modify_elem_after_send);
 				}
 			}
 

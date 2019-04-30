@@ -15,7 +15,7 @@ int is_power_of_2(int x)
 }
 
 void mica_init(struct mica_kv *kv,
-	int instance_id, int node_id, int num_bkts, u_int64_t log_cap)
+	int instance_id, int node_id, int num_bkts, uint64_t log_cap)
 {
 	int i, j;
 
@@ -28,7 +28,7 @@ void mica_init(struct mica_kv *kv,
 	assert(node_id == 0 || node_id == 1);
 
 	/* 16 million buckets = a 1 GB index */
-	assert(is_power_of_2(num_bkts) == 1 && num_bkts <= M_16);
+	assert(is_power_of_2(num_bkts) == 1 && num_bkts <= M_128);
 	//assert(log_cap > 0 && log_cap <= M_1024 &&
 	//	log_cap % M_2 == 0 && is_power_of_2(log_cap));
 

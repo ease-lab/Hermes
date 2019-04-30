@@ -170,58 +170,60 @@ hrd_resolve_port_index(struct hrd_ctrl_blk *cb, int port_index)
 }
 
 /* Allocate SHM with @shm_key, and save the shmid into @shm_id_ret */
-void* hrd_malloc_socket(int shm_key, int size, int socket_id)
+void* hrd_malloc_socket(int shm_key, uint64_t size, int socket_id)
 {
-	int shmid;
-	if(USE_HUGE_PAGES == 1)
-		shmid = shmget(shm_key,
-			size, IPC_CREAT | IPC_EXCL | 0666 | SHM_HUGETLB);
-	else
-		shmid = shmget(shm_key,
-			size, IPC_CREAT | IPC_EXCL | 0666);
+    int shmid;
+    int shm_flag = IPC_CREAT | IPC_EXCL | 0666 |
+                   (USE_HUGE_PAGES == 1 ? SHM_HUGETLB : 0);
 
-	if(shmid == -1) {
-		switch(errno) {
-			case EACCES:
-        red_printf("HRD: SHM malloc error: Insufficient permissions."
-                       " (SHM key = %d)\n", shm_key);
-				break;
-			case EEXIST:
-        red_printf("HRD: SHM malloc error: Already exists."
-                       " (SHM key = %d)\n", shm_key);
-				break;
-			case EINVAL:
-        red_printf("HRD: SHM malloc error: SHMMAX/SHMIN mismatch."
-                       " (SHM key = %d, size = %d)\n", shm_key, size);
-				break;
-			case ENOMEM:
-        red_printf("HRD: SHM malloc error: Insufficient memory."
-                       " (SHM key = %d, size = %d)\n", shm_key, size);
-				break;
-			case ENOENT:
-        red_printf("HRD: SHM malloc error: No segment exists for the given key, and IPC_CREAT was not specified."
-                       " (SHM key = %d, size = %d)\n", shm_key, size);
-				break;
-			case ENOSPC:
-        red_printf(
-            "HRD: SHM malloc error: All possible shared memory IDs have been taken or the limit of shared memory is exceeded."
-                " (SHM key = %d, size = %d)\n", shm_key, size);
-				break;
-			case EPERM:
-        red_printf("HRD: SHM malloc error: The SHM_HUGETLB flag was specified, but the caller was not privileged"
-                       " (SHM key = %d, size = %d)\n", shm_key, size);
-				break;
-			case ENFILE:
-        red_printf("HRD: SHM malloc error: The system-wide limit on the total number of open files has been reached."
-                       " (SHM key = %d, size = %d)\n", shm_key, size);
-				break;
-			default:
-        red_printf("HRD: SHM malloc error: A wild SHM error: %s.\n",
-                   strerror(errno));
-				break;
-		}
-		assert(false);
-	}
+//    int shm_flag = USE_HUGE_PAGES == 1 ?
+//                   IPC_CREAT | IPC_EXCL | 0666 | SHM_HUGETLB :
+//                   IPC_CREAT | IPC_EXCL | 0666;
+
+    shmid = shmget(shm_key, size, shm_flag);
+
+    if(shmid == -1) {
+        switch(errno) {
+            case EACCES:
+                red_printf("HRD: SHM malloc error: Insufficient permissions."
+                           " (SHM key = %d)\n", shm_key);
+                break;
+            case EEXIST:
+                red_printf("HRD: SHM malloc error: Already exists."
+                           " (SHM key = %d)\n", shm_key);
+                break;
+            case EINVAL:
+                red_printf("HRD: SHM malloc error: SHMMAX/SHMIN mismatch."
+                           " (SHM key = %d, size = %lu)\n", shm_key, size);
+                break;
+            case ENOMEM:
+                red_printf("HRD: SHM malloc error: Insufficient memory."
+                           " (SHM key = %d, size = %lu)\n", shm_key, size);
+                break;
+            case ENOENT:
+                red_printf("HRD: SHM malloc error: No segment exists for the given key, and IPC_CREAT was not specified."
+                           " (SHM key = %d, size = %lu)\n", shm_key, size);
+                break;
+            case ENOSPC:
+                red_printf(
+                        "HRD: SHM malloc error: All possible shared memory IDs have been taken or the limit of shared memory is exceeded."
+                        " (SHM key = %d, size = %lu)\n", shm_key, size);
+                break;
+            case EPERM:
+                red_printf("HRD: SHM malloc error: The SHM_HUGETLB flag was specified, but the caller was not privileged"
+                           " (SHM key = %d, size = %lu)\n", shm_key, size);
+                break;
+            case ENFILE:
+                red_printf("HRD: SHM malloc error: The system-wide limit on the total number of open files has been reached."
+                           " (SHM key = %d, size = %lu)\n", shm_key, size);
+                break;
+            default:
+                red_printf("HRD: SHM malloc error: A wild SHM error: %s.\n",
+                           strerror(errno));
+                break;
+        }
+        assert(false);
+    }
 
 	void *buf = shmat(shmid, NULL, 0);
 	if(buf == NULL) {

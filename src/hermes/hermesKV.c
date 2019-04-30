@@ -17,7 +17,7 @@ hermes_assertions_begin_inv(spacetime_inv_t *inv_ptr)
 	assert(inv_ptr->op_meta.ts.version % 2 == 0);
 	assert(inv_ptr->op_meta.opcode == ST_OP_INV ||
 		   inv_ptr->op_meta.opcode == ST_OP_MEMBERSHIP_CHANGE);
-	assert(inv_ptr->op_meta.val_len == ST_VALUE_SIZE);
+	assert(inv_ptr->op_meta.val_len == (ST_VALUE_SIZE >> SHIFT_BITS));
 	assert(REMOTE_MACHINES != 1 ||
 		   inv_ptr->op_meta.sender == REMOTE_MACHINES - machine_id);
 	assert(REMOTE_MACHINES != 1 ||
@@ -87,7 +87,8 @@ hermes_exec_read(spacetime_op_t *op_ptr, struct mica_op *kv_ptr,
 			case VALID_STATE:
 				memcpy(op_ptr->value, kv_value_ptr, ST_VALUE_SIZE);
 				op_ptr->op_meta.state = ST_GET_COMPLETE;
-				op_ptr->op_meta.val_len = kv_ptr->val_len - sizeof(spacetime_object_meta);
+				op_ptr->op_meta.val_len = get_val_len(kv_ptr);
+//				op_ptr->op_meta.val_len = kv_ptr->val_len - sizeof(spacetime_object_meta);
 				break;
 			case INVALID_WRITE_STATE:
 			case WRITE_STATE:
@@ -101,7 +102,8 @@ hermes_exec_read(spacetime_op_t *op_ptr, struct mica_op *kv_ptr,
 					case VALID_STATE:
 						memcpy(op_ptr->value, kv_value_ptr, ST_VALUE_SIZE);
 						op_ptr->op_meta.state = ST_GET_COMPLETE;
-						op_ptr->op_meta.val_len = kv_ptr->val_len - sizeof(spacetime_object_meta);
+						op_ptr->op_meta.val_len = get_val_len(kv_ptr);
+//						op_ptr->op_meta.val_len = kv_ptr->val_len - sizeof(spacetime_object_meta);
 						break;
 					case INVALID_WRITE_STATE:
 					case WRITE_STATE:
@@ -130,7 +132,7 @@ hermes_exec_read(spacetime_op_t *op_ptr, struct mica_op *kv_ptr,
 							op_ptr->op_meta.state = ST_REPLAY_SUCCESS;
 							op_ptr->op_meta.ts.version = curr_meta->cctrl.ts.version - 1;
 							op_ptr->op_meta.ts.tie_breaker_id = curr_meta->cctrl.ts.tie_breaker_id;
-							op_ptr->op_meta.val_len = ST_VALUE_SIZE;
+							op_ptr->op_meta.val_len = ST_VALUE_SIZE >> SHIFT_BITS;
 							memcpy(op_ptr->value, kv_value_ptr, ST_VALUE_SIZE);
 							///update group membership mask for replay acks
 							bv_copy((bit_vector_t*) &curr_meta->ack_bv, curr_membership.w_ack_init);
@@ -170,7 +172,7 @@ hermes_exec_write(spacetime_op_t *op_ptr, struct mica_op *kv_ptr,
 
 	if(ENABLE_ASSERTIONS){
 		assert(op_ptr->op_meta.opcode == ST_OP_PUT);
-		assert(op_ptr->op_meta.val_len == ST_VALUE_SIZE);
+		assert(op_ptr->op_meta.val_len == (ST_VALUE_SIZE >> SHIFT_BITS));
 	}
 
 	///Warning: even if a write is in progress write we may need to update the value of write_buffer_index
@@ -193,7 +195,8 @@ hermes_exec_write(spacetime_op_t *op_ptr, struct mica_op *kv_ptr,
 			} else {
 				curr_meta->state = WRITE_STATE;
 				memcpy(kv_value_ptr, op_ptr->value, ST_VALUE_SIZE);
-				kv_ptr->val_len = op_ptr->op_meta.val_len + sizeof(spacetime_object_meta);
+//				kv_ptr->val_len = op_ptr->op_meta.val_len + sizeof(spacetime_object_meta);
+				kv_ptr->val_len = set_val_len(&op_ptr->op_meta);
 				///update group membership mask
 				bv_copy((bit_vector_t*) &curr_meta->ack_bv, curr_membership.w_ack_init);
 				if(ENABLE_ASSERTIONS)
@@ -275,10 +278,15 @@ hermes_exec_inv(spacetime_inv_t *inv_ptr, struct mica_op *kv_ptr)
 //			printf("Received an invalidation with >= timestamp\n");
 			///Update Value, TS and last_writer_id
 			curr_meta->last_writer_id = inv_ptr->op_meta.sender;
-			kv_ptr->val_len = inv_ptr->op_meta.val_len + sizeof(spacetime_object_meta);
+//			kv_ptr->val_len = set_val_len(&inv_ptr->op_meta);
+			kv_ptr->val_len = KVS_VALUE_SIZE;
+//			kv_ptr->val_len = inv_ptr->op_meta.val_len + sizeof(spacetime_object_meta);
 			if(ENABLE_ASSERTIONS){
-				assert(kv_ptr->val_len == KVS_VALUE_SIZE);
-				assert(inv_ptr->op_meta.val_len == ST_VALUE_SIZE);
+				assert(inv_ptr->op_meta.val_len == (ST_VALUE_SIZE >> SHIFT_BITS));
+//				if(kv_ptr->val_len != KVS_VALUE_SIZE >> SHIFT_BITS)
+//					printf("KVS VALUE: %d, val_len: %d, shifted: %d\n",KVS_VALUE_SIZE,
+//						   kv_ptr->val_len, KVS_VALUE_SIZE >> SHIFT_BITS);
+//				assert(kv_ptr->val_len == KVS_VALUE_SIZE >> SHIFT_BITS);
 			}
 			memcpy(kv_value_ptr, inv_ptr->value, ST_VALUE_SIZE);
 			///Update state
@@ -629,7 +637,8 @@ hermes_batch_ops_to_KVS(enum hermes_batch_type_t type, uint8_t *op_array, int op
 #endif
 	int key_in_store[HERMES_MAX_BATCH_SIZE];	    // Is this key in the datastore?
 	unsigned int tag[HERMES_MAX_BATCH_SIZE];
-	unsigned int bkt[HERMES_MAX_BATCH_SIZE];
+//	unsigned int bkt[HERMES_MAX_BATCH_SIZE];
+    uint64_t     bkt[HERMES_MAX_BATCH_SIZE];
 	struct mica_bkt *bkt_ptr[HERMES_MAX_BATCH_SIZE];
 	struct mica_op   *kv_ptr[HERMES_MAX_BATCH_SIZE];	// Ptr to KV item in log
 

@@ -253,6 +253,10 @@ wings_setup_channel_qps_and_recvs(ud_channel_t **ud_c_array, uint16_t ud_c_num,
 	free(send_q_depths);
 	free(recv_q_depths);
 
+	for(int i = 0; i < ud_c_num; ++i)
+        if(ud_c_array[i]->type != CRD)
+            _wings_assertions(ud_c_array[i]);
+
 	sleep(1); /// Give some leeway to post receives, before start bcasting!
 }
 
@@ -267,7 +271,7 @@ wings_print_ud_c_overview(ud_channel_t *ud_c)
 	_wings_print_on_off_toggle(ud_c->max_coalescing, "Coalescing");
 	_wings_print_on_off_toggle(ud_c->max_pcie_bcast_batch, "Max PCIe batch");
 
-	printf("\t\tMax msg size: %d\n", ud_c->max_msg_size);
+	printf("\t\tMax msg size: %dB\n", ud_c->max_msg_size);
 	if(ud_c->type != CRD && !ud_c->is_header_only)
 		printf("\t\tMax pkt size: send = %dB, recv = %dB\n",
 			   _wings_ud_send_max_pkt_size(ud_c), _wings_ud_recv_max_pkt_size(ud_c));

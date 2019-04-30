@@ -1441,7 +1441,7 @@ refill_ops_n_suspect_failed_nodes(uint32_t *trace_iter, uint16_t worker_lid,
 				ops[i].op_meta.ts.tie_breaker_id = 0;
 			}
 
-			ops[i].op_meta.val_len = (uint8) (ops[i].op_meta.opcode == ST_OP_PUT ? ST_VALUE_SIZE : 0);
+			ops[i].op_meta.val_len = (uint8) (ops[i].op_meta.opcode == ST_OP_PUT ? ST_VALUE_SIZE >> SHIFT_BITS : 0);
 
 			// instead of MOD add
 			*trace_iter = trace[*trace_iter + 1].opcode != NOP ? *trace_iter + 1 : 0;

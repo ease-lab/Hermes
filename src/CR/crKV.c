@@ -252,8 +252,8 @@ cr_exec_inv(spacetime_inv_t *inv_ptr, struct mica_op *kv_ptr,
 //				curr_meta->last_writer_id = inv_ptr->op_meta.sender;
 				kv_ptr->val_len = inv_ptr->op_meta.val_len + sizeof(spacetime_object_meta);
 				if(ENABLE_ASSERTIONS){
-					assert(kv_ptr->val_len == KVS_VALUE_SIZE);
-					assert(inv_ptr->op_meta.val_len == ST_VALUE_SIZE);
+//					assert(kv_ptr->val_len == KVS_VALUE_SIZE >> SHIFT_BITS);
+					assert(inv_ptr->op_meta.val_len == ST_VALUE_SIZE >> SHIFT_BITS);
 				}
 				memcpy(kv_value_ptr, inv_ptr->value, ST_VALUE_SIZE);
 				///Update state
@@ -431,7 +431,8 @@ cr_batch_ops_to_KVS(enum cr_type_t cr_type, uint8_t *op_array, int op_num,
 #endif
 	int key_in_store[CR_MAX_BATCH_SIZE];	    // Is this key in the datastore?
 	unsigned int tag[CR_MAX_BATCH_SIZE];
-	unsigned int bkt[CR_MAX_BATCH_SIZE];
+//	unsigned int bkt[CR_MAX_BATCH_SIZE];
+    uint64_t     bkt[CR_MAX_BATCH_SIZE];
 	struct mica_bkt *bkt_ptr[CR_MAX_BATCH_SIZE];
 	struct mica_op   *kv_ptr[CR_MAX_BATCH_SIZE];	// Ptr to KV item in log
 

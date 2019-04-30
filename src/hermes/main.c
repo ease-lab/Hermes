@@ -84,8 +84,6 @@ int main(int argc, char *argv[])
 
 //    if(WORKERS_PER_MACHINE > 1)
 
-
-
 	struct thread_params *param_arr;
 	pthread_t *thread_arr;
 //	char dev_name[50];
@@ -156,8 +154,8 @@ int main(int argc, char *argv[])
 		g_share_qs_barrier = NULL;
 
 
-	printf("CREDITS %d\n", credits_num);
-	printf("MAX KVS BATCH %d\n", max_batch_size);
+	printf("write rate: %d | workers %d | batch size %d| CREDITS %d | coalesce %d |\n",
+			write_ratio, num_workers, max_batch_size, credits_num, max_coalesce);
 	if(credits_num == CREDITS_PER_REMOTE_WORKER){
 		printf("INV_SS_GRANULARITY %d \t\t SEND_INV_Q_DEPTH %d \t\t RECV_INV_Q_DEPTH %d\n",
 			   INV_SS_GRANULARITY, SEND_INV_Q_DEPTH, RECV_INV_Q_DEPTH);
@@ -193,7 +191,7 @@ int main(int argc, char *argv[])
 		assert(w_core < TOTAL_HW_CORES);
 		param_arr[i].id = i;
 
-		green_printf("Creating worker thread %d at core %d \n", param_arr[i].id, w_core);
+//		green_printf("Creating worker thread %d at core %d \n", param_arr[i].id, w_core);
 		CPU_ZERO(&cpus_w);
 		CPU_SET(w_core, &cpus_w);
 		pthread_attr_setaffinity_np(&attr, sizeof(cpu_set_t), &cpus_w);

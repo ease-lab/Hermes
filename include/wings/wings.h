@@ -23,19 +23,7 @@ _wings_assert_binary(uint8_t var)
     assert(var == 0 || var == 1);
 }
 
-static inline void
-_wings_assertions(ud_channel_t *ud_channel)
-{
-	_wings_assert_binary(ud_channel->expl_crd_ctrl);
-	_wings_assert_binary(ud_channel->is_bcast_channel);
-	_wings_assert_binary(ud_channel->is_inlining_enabled);
 
-	assert(ud_channel->num_channels > 1);
-    assert(ud_channel->max_msg_size > 0);
-    assert(ud_channel->max_coalescing > 0);
-	assert(ud_channel->channel_providing_crds != NULL || ud_channel->disable_crd_ctrl);
-    assert(ud_channel->send_q_depth > 0 || ud_channel->recv_q_depth > 0);
-}
 
 static inline uint16_t
 _wings_ud_recv_max_pkt_size(ud_channel_t *ud_c)
@@ -55,6 +43,21 @@ _wings_ud_send_max_pkt_size(ud_channel_t *ud_c)
     //TODO add assertion that this must be smaller than max_MTU
     assert(ud_c->max_msg_size > 0 && ud_c->max_coalescing > 0);
     return sizeof(wings_ud_send_pkt_t) + ud_c->max_msg_size * ud_c->max_coalescing;
+}
+
+static inline void
+_wings_assertions(ud_channel_t *ud_channel)
+{
+	_wings_assert_binary(ud_channel->expl_crd_ctrl);
+	_wings_assert_binary(ud_channel->is_bcast_channel);
+	_wings_assert_binary(ud_channel->is_inlining_enabled);
+
+	assert(ud_channel->num_channels > 1);
+    assert(ud_channel->max_msg_size > 0);
+    assert(ud_channel->max_coalescing > 0);
+    assert(_wings_ud_send_max_pkt_size(ud_channel) < MAX_MTU_SIZE);
+    assert(ud_channel->send_q_depth > 0 || ud_channel->recv_q_depth > 0);
+    assert(ud_channel->channel_providing_crds != NULL || ud_channel->disable_crd_ctrl);
 }
 
 static inline uint8_t*

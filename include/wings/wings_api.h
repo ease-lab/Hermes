@@ -29,6 +29,7 @@
 
 
 #define WINGS_IS_ROCE 0
+#define MAX_MTU_SIZE 4096
 
 /* Useful when `x = (x + 1) % N` is done in a loop */
 #define WINGS_MOD_ADD(x, N) do { \
