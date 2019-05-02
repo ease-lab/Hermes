@@ -14,6 +14,9 @@
 
 struct worker_stats { // 2 cache lines
     long long completed_ops_per_worker;
+    long long completed_wrs_per_worker;
+    long long completed_rmws_per_worker;
+    long long aborted_rmws_per_worker;
     long long reqs_missed_in_kvs;
 
 	long long issued_invs_per_worker;
@@ -54,6 +57,8 @@ struct worker_stats { // 2 cache lines
 
 struct stats {
 	double xput_per_worker[WORKERS_PER_MACHINE];
+    double rmw_xput_per_worker[WORKERS_PER_MACHINE];
+    double rmw_abort_rate_per_worker[WORKERS_PER_MACHINE];
 
 	double issued_invs_avg_coalesing[WORKERS_PER_MACHINE];
 	double issued_acks_avg_coalesing[WORKERS_PER_MACHINE];

@@ -571,6 +571,7 @@ cr_move_stalled_writes_to_top_n_return_free_space(spacetime_op_t *remote_writes)
 void*
 run_worker(void *arg)
 {
+    assert(rmw_ratio == 0);
 	assert(CR_IS_RUNNING == 1);
 	assert(ENABLE_COALESCE_OF_HOT_REQS == 0);
 	assert(CREDITS_PER_REMOTE_WORKER % MACHINE_NUM == 0); // CR ONLY
@@ -756,7 +757,7 @@ run_worker(void *arg)
 			cr_batch_ops_to_KVS(Local_ops, (uint8_t *) ops, MAX_BATCH_OPS_SIZE, sizeof(spacetime_op_t), NULL);
 		}
 
-		if (write_ratio > 0) {
+		if (update_ratio > 0) {
 
 			if(machine_id == head_id()) {
 				//TODO: Still we might allow more invs than ACK recvs available

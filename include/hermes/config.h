@@ -14,15 +14,18 @@
 #define MACHINE_NUM 5
 #define REMOTE_MACHINES (MACHINE_NUM - 1)
 #define GROUP_MEMBERSHIP_ARRAY_SIZE HERMES_CEILING(MACHINE_NUM, 8) //assuming uint8_t
-#define WORKERS_PER_MACHINE 38
+#define WORKERS_PER_MACHINE 36 //38
 #define KV_SOCKET 0
 #define SOCKET_TO_START_SPAWNING_THREADS 0
 #define USE_ALL_SOCKETS 1
 #define ENABLE_HYPERTHREADING 1
 #define BATCH_POST_RECVS_TO_NIC 1
-#define WRITE_RATIO 1000
-#define MAX_BATCH_OPS_SIZE 250 //250 // up to 254
+#define UPDATE_RATIO 500
+#define RMW_RATIO 500 //percentage of writes to be RMWs
+#define MAX_BATCH_OPS_SIZE 50 //250 // up to 254
 
+#define ENABLE_RMWs 0
+static_assert(ENABLE_RMWs == 0 || ENABLE_RMWs == 1,"");
 
 //LATENCY
 #define MEASURE_LATENCY 0
@@ -46,10 +49,10 @@ static_assert(!ENABLE_VIRTUAL_NODE_IDS || MACHINE_NUM * VIRTUAL_NODE_IDS_PER_NOD
 #define ENABLE_COALESCE_OF_HOT_REQS 1 //WARNING!!! this must be disabled for cr
 #define COALESCE_N_HOTTEST_KEYS 100
 #define ENABLE_READ_COMPLETE_AFTER_VAL_RECV_OF_HOT_REQS 1
-#define ENABLE_WRITE_COALESCE_TO_THE_SAME_KEY_IN_SAME_NODE 1
+#define ENABLE_WRITE_COALESCE_TO_THE_SAME_KEY_IN_SAME_NODE 0
 
 //DEBUG
-#define ENABLE_ASSERTIONS 1
+#define ENABLE_ASSERTIONS 0
 #define DISABLE_VALS_FOR_DEBUGGING 0
 #define KEY_NUM 0 //use 0 to disable
 
@@ -101,7 +104,7 @@ static_assert(!ENABLE_VIRTUAL_NODE_IDS || MACHINE_NUM * VIRTUAL_NODE_IDS_PER_NOD
 ----------------- REQ COALESCING -------------------
 --------------------------------------------------*/
 //#define MAX_REQ_COALESCE MAX_BATCH_OPS_SIZE
-#define MAX_REQ_COALESCE 5
+#define MAX_REQ_COALESCE 20
 #define INV_MAX_REQ_COALESCE MAX_REQ_COALESCE
 #define ACK_MAX_REQ_COALESCE MAX_REQ_COALESCE
 #define VAL_MAX_REQ_COALESCE MAX_REQ_COALESCE
@@ -183,7 +186,8 @@ static_assert(!ENABLE_VIRTUAL_NODE_IDS || MACHINE_NUM * VIRTUAL_NODE_IDS_PER_NOD
 --------------------------------------------------*/
 #define DISABLE_INLINING 0
 #define DISABLE_INV_INLINING ((DISABLE_INLINING || sizeof(spacetime_inv_packet_t) >= 188) ? 1 : 0)
-#define DISABLE_ACK_INLINING ((DISABLE_INLINING || sizeof(spacetime_ack_packet_t) >= 188) ? 1 : 0)
+//#define DISABLE_ACK_INLINING ((DISABLE_INLINING || sizeof(spacetime_ack_packet_t) >= 188) ? 1 : 0)
+#define DISABLE_ACK_INLINING ((sizeof(spacetime_ack_packet_t) >= 188) || (ENABLE_RMWs && DISABLE_INV_INLINING) ? 1 : 0)
 #define DISABLE_VAL_INLINING ((DISABLE_INLINING || sizeof(spacetime_val_packet_t) >= 188) ? 1 : 0)
 
 /*-------------------------------------------------
@@ -277,7 +281,8 @@ extern volatile uint8_t node_suspicions[WORKERS_PER_MACHINE][MACHINE_NUM];
 extern volatile char worker_needed_ah_ready;
 
 // global config vars
-extern int write_ratio;
+extern int update_ratio;
+extern int rmw_ratio;
 extern int num_workers;
 extern int credits_num;
 extern int max_coalesce;

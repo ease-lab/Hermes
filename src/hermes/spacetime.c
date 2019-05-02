@@ -113,7 +113,6 @@ spacetime_populate_fixed_len(struct spacetime_kv* _kv, int n, int val_len)
 
 
 
-
 uint8_t
 node_of_missing_ack(spacetime_group_membership curr_membership, bit_vector_t write_acks)
 {

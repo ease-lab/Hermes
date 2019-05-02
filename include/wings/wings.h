@@ -553,7 +553,9 @@ _wings_forge_wr(ud_channel_t *ud_c, uint8_t dst_qp_id, uint8_t *req_to_copy,
 	uint8_t curr_req_num = 1;
 	uint8_t* next_req_ptr;
 
-	if(!ud_c->is_header_only){
+    if(ud_c->is_header_only)
+        next_req_ptr = ((wings_hdr_only_t*) &ud_c->send_wr[pkts_in_batch].imm_data)->inlined_payload;
+    else{
 		wings_ud_send_pkt_t* curr_pkt_ptr = _wings_curr_send_pkt_ptr(ud_c);
 		next_req_ptr = _wings_get_n_msg_ptr_from_send_pkt(ud_c, curr_pkt_ptr, curr_pkt_ptr->req_num);
 		curr_req_num = ++curr_pkt_ptr->req_num;
@@ -562,8 +564,7 @@ _wings_forge_wr(ud_channel_t *ud_c, uint8_t dst_qp_id, uint8_t *req_to_copy,
 											   ud_c->max_msg_size * curr_pkt_ptr->req_num;
 		if(curr_req_num == 1)
 			ud_c->send_sgl[pkts_in_batch].addr = (uint64_t) curr_pkt_ptr;
-	}else
-		next_req_ptr = ((wings_hdr_only_t*) &ud_c->send_wr[pkts_in_batch].imm_data)->inlined_payload;
+	}
 
 
 	//<Copy & modify elem!> --> callback func that copies and manipulated data from req_to_copy buff
@@ -578,11 +579,7 @@ _wings_forge_wr(ud_channel_t *ud_c, uint8_t dst_qp_id, uint8_t *req_to_copy,
 	if(ud_c->enable_stats)
 		ud_c->stats.send_total_msgs++;
 
-//	if(curr_pkt_ptr->req_num == 1) {
 	if(curr_req_num == 1) {
-
-//		if(!ud_c->is_header_only)
-//			ud_c->send_sgl[pkts_in_batch].addr = (uint64_t) curr_pkt_ptr;
 
 		if(!ud_c->is_bcast_channel){ // set the dst qp
 			ud_c->send_wr[pkts_in_batch].wr.ud.ah = ud_c->remote_qps[dst_qp_id].ah;
@@ -731,7 +728,6 @@ wings_issue_pkts(ud_channel_t *ud_c,
 		// Break if we do not have sufficient credits
 		if (!_wings_has_sufficient_crds(ud_c, curr_msg_dst)) {
 			has_outstanding_msgs = 1;
-
             if(ud_c->enable_stats)
             	ud_c->stats.no_stalls_due_to_credits++;
 

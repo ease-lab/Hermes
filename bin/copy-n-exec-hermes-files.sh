@@ -23,6 +23,7 @@ FILES=(
 #declare -a write_ratios=(0 10 50 200 500 1000)
 #declare -a write_ratios=(500 750 1000)
 declare -a write_ratios=(200)
+declare -a rmw_ratios=(0)
 #declare -a write_ratios=(10 20 50)
 #declare -a num_workers=(5 10 15 20 25 30 36)
 declare -a num_workers=(36)
@@ -71,12 +72,13 @@ else
 #      echo ${PASS} | ./run-hermes.sh > ${OUTP_FOLDER}/${LOCAL_HOST}.out
 
       # Execute locally and remotely
+    for RMW in "${write_ratios[@]}"; do
       for WR in "${write_ratios[@]}"; do
         for W in "${num_workers[@]}"; do
           for BA in "${batch_sizes[@]}"; do
             for CRD in "${credits[@]}"; do
               for COAL in "${coalesce[@]}"; do
-                 args="-w ${WR} -W ${W} -b ${BA} -c ${CRD} -C ${COAL}"
+                 args="-R ${RMW} -w ${WR} -W ${W} -b ${BA} -c ${CRD} -C ${COAL}"
                  echo ${PASS} | ./run-hermes.sh ${args} &
                  sleep 2
 	             parallel "echo ${PASS} | ssh -tt {} $'${REMOTE_COMMAND} ${args}'" ::: $(echo ${HOSTS[@]/$LOCAL_HOST}) >/dev/null
@@ -85,6 +87,7 @@ else
 	      done
 	    done
 	  done
+	done
 
       # Gather remote files
 	  parallel "scp {}:${RESULT_FOLDER}* ${RESULT_OUT_FOLDER} " ::: $(echo ${HOSTS[@]/$LOCAL_HOST})

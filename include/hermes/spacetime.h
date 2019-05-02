@@ -18,6 +18,10 @@
 #include "config.h"
 #include "../utils/bit_vector.h"
 
+//#define SPACETIME_NUM_KEYS (1000 * 1000)
+//#define SPACETIME_NUM_BKTS (2 * 1024 * 1024)
+//#define SPACETIME_LOG_CAP  (1024 * 1024 * 1024)
+//
 #define SPACETIME_NUM_KEYS (60 * 1000 * 1000)
 #define SPACETIME_NUM_BKTS (64 * 1024 * 1024)
 #define SPACETIME_LOG_CAP  (4 * ((unsigned long long) M_1024)) //(1024 * 1024 * 1024)
@@ -33,12 +37,13 @@
 //Input Opcodes
 #define ST_OP_GET 111
 #define ST_OP_PUT 112
-#define ST_OP_INV 113
-#define ST_OP_ACK 114
-#define ST_OP_VAL 115
-#define ST_OP_CRD 116
-#define ST_OP_MEMBERSHIP_CHANGE 117
-#define ST_OP_MEMBERSHIP_COMPLETE 118
+#define ST_OP_RMW 113
+#define ST_OP_INV 114
+#define ST_OP_ACK 115
+#define ST_OP_VAL 116
+#define ST_OP_CRD 117
+#define ST_OP_MEMBERSHIP_CHANGE 118
+#define ST_OP_MEMBERSHIP_COMPLETE 119
 
 
 //Response Opcodes
@@ -58,6 +63,14 @@
 #define ST_PUT_COMPLETE_SEND_VALS 133
 #define ST_SEND_CRD 134
 
+//RMW opcodes
+#define ST_RMW_SUCCESS  135
+#define ST_RMW_STALL    136
+#define ST_RMW_COMPLETE 137
+#define ST_RMW_ABORT 142
+#define ST_OP_INV_ABORT 138 //send inv instead of ACK
+#define ST_IN_PROGRESS_RMW 149
+
 //ops bucket states
 #define ST_EMPTY 140
 #define ST_NEW 141
@@ -68,7 +81,7 @@
 #define ST_IN_PROGRESS_GET 148 // Used only in Chain Replication
 
 // trace opcodes
-#define NOP 148
+#define NOP 150
 
 //others
 #define ST_OP_HEARTBEAT 151
@@ -83,16 +96,14 @@
 #define ST_VAL_BUFF 163
 #define ST_CRD_BUFF 164
 
+#define LAST_WRITER_ID_EMPTY 127 //255
 #define ST_OP_BUFFER_INDEX_EMPTY 255
-#define LAST_WRITER_ID_EMPTY 255
 
 
 // Fixed-size 8 (or 16) byte keys
 typedef struct
 {
 //    uint64 __unused; // This should be 8B ////// Uncomment this for fixed-size 16 byte keys instead
-//    unsigned int bkt			:32;
-//    unsigned int server			:16;
     uint64_t bkt			    :48;
     unsigned int tag			:16;
 }
@@ -102,7 +113,8 @@ typedef volatile struct
 {
     uint8_t state;
     bit_vector_t ack_bv;
-    uint8_t last_writer_id;
+    uint8_t RMW_flag       : 1;
+    uint8_t last_writer_id : 7;
     uint8_t op_buffer_index; //TODO change to uint16_t for a buffer >= 256
     conc_ctrl_t cctrl;
     timestamp_t last_local_write_ts;
@@ -131,13 +143,15 @@ spacetime_op_meta_t, spacetime_ack_t, spacetime_val_t;
 
 typedef struct
 {
-    ///May add    uint8_t session_id;
     spacetime_op_meta_t op_meta; // op_t/inv_t: uses the state/sender part of the op_meta union (not sender/state)
 	union {
-		uint16_t no_coales; //HERMES: used only for skew optimizations
-		struct {
-			uint8_t buff_idx;   //    CR: for spacetime_inv_t buffer index of write initiated this req
-			uint8_t initiator;  //    CR: for spacetime_inv_t buffer index of write initiated this req
+	    struct { //Hermes struct
+            uint8_t RMW_flag   : 1;  // 1 indicates RMWs while 0 normal writes
+            uint16_t no_coales : 15; // used only for skew optimizations
+	    };
+		struct { //CR struct
+			uint8_t buff_idx;   //    for spacetime_inv_t buffer index of write initiated this req
+			uint8_t initiator;  //    for spacetime_inv_t buffer index of write initiated this req
 		};
 	};
     uint8_t value[ST_VALUE_SIZE];

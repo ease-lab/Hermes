@@ -24,7 +24,8 @@ dbit_vector_t *g_share_qs_barrier;
 
 // Global config vars
 int num_workers;
-int write_ratio;
+int update_ratio;
+int rmw_ratio;
 int credits_num;
 int max_coalesce;
 int max_batch_size; //for batches to KVS
@@ -36,7 +37,8 @@ int main(int argc, char *argv[])
 	is_roce = -1; machine_id = -1;
 	// config vars
 	num_workers = -1;
-	write_ratio = -1;
+	update_ratio = -1;
+    rmw_ratio = -1;
 	credits_num = -1;
 	max_coalesce = -1;
 	max_batch_size = -1;
@@ -82,7 +84,6 @@ int main(int argc, char *argv[])
 //	green_printf("UD size: %d ibv_grh + crd size: %d \n", sizeof(ud_req_crd_t), sizeof(struct ibv_grh) + sizeof(spacetime_crd_t));
 //	assert(sizeof(ud_req_crd_t) == sizeof(struct ibv_grh) + sizeof(spacetime_crd_t)); ///CRD --> 48 Bytes instead of 43
 
-//    if(WORKERS_PER_MACHINE > 1)
 
 	struct thread_params *param_arr;
 	pthread_t *thread_arr;
@@ -91,6 +92,7 @@ int main(int argc, char *argv[])
 	static struct option opts[] = {
 			{ .name = "machine-id",			.has_arg = 1, .val = 'm' },
 			{ .name = "is-roce",			.has_arg = 1, .val = 'r' },
+            { .name = "rmw-ratio",			.has_arg = 1, .val = 'R' },
 			{ .name = "dev-name",			.has_arg = 1, .val = 'd' },
 			{ .name = "write-ratio",		.has_arg = 1, .val = 'w' },
 			{ .name = "num-workers",		.has_arg = 1, .val = 'W' },
@@ -102,7 +104,7 @@ int main(int argc, char *argv[])
 
 	/* Parse and check arguments */
 	while(1) {
-		c = getopt_long(argc, argv, "m:r:d:w:c:C:W:", opts, NULL);
+		c = getopt_long(argc, argv, "m:r:R:d:w:c:C:W:", opts, NULL);
 		if(c == -1) break;
 
 		switch (c) {
@@ -117,8 +119,11 @@ int main(int argc, char *argv[])
 				break;
 			// Config vars
 			case 'w':
-				write_ratio = atoi(optarg);
+				update_ratio = atoi(optarg);
 				break;
+            case 'R':
+                rmw_ratio = atoi(optarg);
+                break;
 			case 'W':
 				num_workers = atoi(optarg);
 				break;
@@ -138,7 +143,8 @@ int main(int argc, char *argv[])
 	}
 
 	// If arguments not passed use the default values from header file
-	if(write_ratio == -1) write_ratio = WRITE_RATIO;
+	if(update_ratio == -1) update_ratio = UPDATE_RATIO;
+    if(rmw_ratio == -1) rmw_ratio = ENABLE_RMWs ? RMW_RATIO : 0;
 	if(num_workers == -1) num_workers = WORKERS_PER_MACHINE;
 	if(credits_num == -1) credits_num = CREDITS_PER_REMOTE_WORKER;
 	if(max_coalesce == -1) max_coalesce = MAX_REQ_COALESCE;
@@ -154,8 +160,8 @@ int main(int argc, char *argv[])
 		g_share_qs_barrier = NULL;
 
 
-	printf("write rate: %d | workers %d | batch size %d| CREDITS %d | coalesce %d |\n",
-			write_ratio, num_workers, max_batch_size, credits_num, max_coalesce);
+	printf("update rate: %d (RMW rate %d) | workers %d | batch size %d| CREDITS %d | coalesce %d |\n",
+			update_ratio, rmw_ratio, num_workers, max_batch_size, credits_num, max_coalesce);
 	if(credits_num == CREDITS_PER_REMOTE_WORKER){
 		printf("INV_SS_GRANULARITY %d \t\t SEND_INV_Q_DEPTH %d \t\t RECV_INV_Q_DEPTH %d\n",
 			   INV_SS_GRANULARITY, SEND_INV_Q_DEPTH, RECV_INV_Q_DEPTH);

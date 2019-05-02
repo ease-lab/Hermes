@@ -11,7 +11,7 @@
 /// 	Accessible functions not defined below (in wings_api.h but exist only in wings.h) and starting with underscore
 ///		(i.e. "_wings_*") are internal and should not be called directly by the application
 
-#define WINGS_ENABLE_ASSERTIONS 1
+#define WINGS_ENABLE_ASSERTIONS 0
 #define WINGS_MAX_SUPPORTED_INLINING 187
 #define WINGS_ENABLE_BATCH_POST_RECVS_TO_NIC 1
 

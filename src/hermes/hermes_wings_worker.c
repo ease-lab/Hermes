@@ -20,6 +20,7 @@ inv_skip_or_get_sender_id(uint8_t *req)
 	}
 
 	if(op_req->op_meta.state != ST_PUT_SUCCESS &&
+	   op_req->op_meta.state != ST_RMW_SUCCESS &&
 	   op_req->op_meta.state != ST_REPLAY_SUCCESS &&
 	   op_req->op_meta.state != ST_OP_MEMBERSHIP_CHANGE)
 		return -1;
@@ -30,18 +31,24 @@ void
 inv_modify_elem_after_send(uint8_t* req)
 {
 	spacetime_op_t* op_req = (spacetime_op_t *) req;
-
-	if(op_req->op_meta.state == ST_PUT_SUCCESS)
-		op_req->op_meta.state = ST_IN_PROGRESS_PUT;
-	else if(op_req->op_meta.state == ST_REPLAY_SUCCESS)
-	    op_req->op_meta.state = ST_IN_PROGRESS_REPLAY;
-	else if(op_req->op_meta.state == ST_OP_MEMBERSHIP_CHANGE)
-	    op_req->op_meta.state = ST_OP_MEMBERSHIP_COMPLETE;
-	else{
-		printf("state: %d\n", op_req->op_meta.state);
-		printf("state: %s\n", code_to_str(op_req->op_meta.state));
-		assert(0);
-	}
+    switch (op_req->op_meta.state){
+        case ST_PUT_SUCCESS:
+            op_req->op_meta.state = ST_IN_PROGRESS_PUT;
+            break;
+        case ST_RMW_SUCCESS:
+            op_req->op_meta.state = ST_IN_PROGRESS_RMW;
+            break;
+        case ST_REPLAY_SUCCESS:
+            op_req->op_meta.state = ST_IN_PROGRESS_REPLAY;
+            break;
+        case ST_OP_MEMBERSHIP_CHANGE:
+            op_req->op_meta.state = ST_OP_MEMBERSHIP_COMPLETE;
+            break;
+        default:
+            printf("state: %d\n", op_req->op_meta.state);
+            printf("state: %s\n", code_to_str(op_req->op_meta.state));
+            assert(0);
+    }
 }
 
 void
@@ -66,7 +73,9 @@ ack_skip_or_get_sender_id(uint8_t *req)
 	spacetime_inv_t* inv_req = (spacetime_inv_t *) req;
 
 	if(ENABLE_ASSERTIONS)
-		assert(inv_req->op_meta.opcode == ST_INV_SUCCESS || inv_req->op_meta.opcode == ST_EMPTY);
+		assert(inv_req->op_meta.opcode == ST_INV_SUCCESS ||
+		       inv_req->op_meta.opcode == ST_OP_INV_ABORT ||
+		       inv_req->op_meta.opcode == ST_EMPTY);
 
 	return inv_req->op_meta.opcode == ST_EMPTY ? -1 : inv_req->op_meta.sender;
 }
@@ -78,6 +87,7 @@ ack_modify_elem_after_send(uint8_t* req)
 
 	//empty inv buffer
 	if(inv_req->op_meta.opcode == ST_INV_SUCCESS ||
+	   inv_req->op_meta.opcode == ST_OP_INV_ABORT ||
 	   inv_req->op_meta.opcode == ST_OP_MEMBERSHIP_CHANGE)
 		inv_req->op_meta.opcode = ST_EMPTY;
 	else assert(0);
@@ -87,10 +97,22 @@ ack_modify_elem_after_send(uint8_t* req)
 void
 ack_copy_and_modify_elem(uint8_t* msg_to_send, uint8_t* triggering_req)
 {
-	spacetime_ack_t* ack_to_send = (spacetime_ack_t *) msg_to_send;
-	memcpy(ack_to_send, triggering_req, sizeof(spacetime_ack_t)); // copy req to next_req_ptr
-	ack_to_send->sender = (uint8_t) machine_id;
-	ack_to_send->opcode = ST_OP_ACK;
+    spacetime_inv_t* inv_req = (spacetime_inv_t *) triggering_req;
+    spacetime_ack_t* ack_to_send = (spacetime_ack_t *) msg_to_send;
+    spacetime_inv_t* inv_to_send = (spacetime_inv_t *) msg_to_send;
+    switch (inv_req->op_meta.opcode){
+        case ST_INV_SUCCESS:
+            memcpy(ack_to_send, triggering_req, sizeof(spacetime_ack_t)); // copy req to next_req_ptr
+            ack_to_send->sender = (uint8_t) machine_id;
+            ack_to_send->opcode = ST_OP_ACK;
+            break;
+        case ST_OP_INV_ABORT:
+            memcpy(inv_to_send, triggering_req, sizeof(spacetime_inv_t));
+            inv_to_send->op_meta.sender = (uint8_t) machine_id;
+            inv_to_send->op_meta.opcode = ST_OP_INV_ABORT;
+            break;
+        default: assert(0);
+    }
 }
 
 
@@ -242,10 +264,13 @@ run_worker(void *arg)
 	sprintf(ack_qp_name, "%s%d", "\033[33mACK\033[0m", worker_lid);
 	sprintf(val_qp_name, "%s%d", "\033[1m\033[32mVAL\033[0m", worker_lid);
 
+    //WARNING: We use the ack channel to send/recv both acks and rmw-invs if RMWs are enabled
+    uint16_t ack_size = ENABLE_RMWs ? sizeof(spacetime_inv_t) : sizeof(spacetime_ack_t);
+
 	wings_ud_channel_init(inv_ud_c, inv_qp_name, REQ, (uint8_t) max_coalesce, sizeof(spacetime_inv_t),
 						  DISABLE_INV_INLINING == 0 ? 1 : 0, is_hdr_only, is_bcast, disable_crd_ctrl, expl_crd_ctrl,
 						  ack_ud_c, (uint8_t) credits_num, MACHINE_NUM, (uint8_t) machine_id, stats_on, prints_on);
-	wings_ud_channel_init(ack_ud_c, ack_qp_name, RESP, (uint8_t) max_coalesce, sizeof(spacetime_ack_t),
+	wings_ud_channel_init(ack_ud_c, ack_qp_name, RESP, (uint8_t) max_coalesce, ack_size,
 						  DISABLE_ACK_INLINING == 0 ? 1 : 0, is_hdr_only, 0, disable_crd_ctrl, expl_crd_ctrl,
 						  inv_ud_c, (uint8_t) credits_num, MACHINE_NUM, (uint8_t) machine_id, stats_on, prints_on);
 	wings_ud_channel_init(val_ud_c, val_qp_name, REQ, (uint8_t) max_coalesce, sizeof(spacetime_val_t),
@@ -268,7 +293,7 @@ run_worker(void *arg)
 	//Intermediate buffs where reqs are copied from incoming_* buffs in order to get passed to the KVS
 	spacetime_op_t  *ops;
 	spacetime_inv_t *inv_recv_ops;
-	spacetime_ack_t *ack_recv_ops;
+	spacetime_ack_t *ack_recv_ops; //WARNING!! This can be spacetime_ack_t / spacetime_inv_t * depends if RMWs are disabled or not
 	spacetime_val_t *val_recv_ops;
 
 	setup_kvs_buffs(&ops, &inv_recv_ops, &ack_recv_ops, &val_recv_ops);
@@ -330,7 +355,7 @@ run_worker(void *arg)
 
 	    stop_latency_of_completed_reads(ops, worker_lid, &stopwatch_for_req_latency);
 
-		if (write_ratio > 0) {
+		if (update_ratio > 0) {
 			///~~~~~~~~~~~~~~~~~~~~~~INVS~~~~~~~~~~~~~~~~~~~~~~~~~~~
 			wings_issue_pkts(inv_ud_c, (uint8_t *) ops,
 							 (uint16_t) max_batch_size, sizeof(spacetime_op_t), &rolling_inv_index,
@@ -342,7 +367,7 @@ run_worker(void *arg)
 
 			if(invs_polled > 0) {
 				hermes_batch_ops_to_KVS(invs, (uint8_t *) inv_recv_ops, invs_polled, sizeof(spacetime_inv_t),
-										last_group_membership, &node_suspected, NULL, (uint8_t) worker_lid);
+										last_group_membership, &node_suspected, ops, (uint8_t) worker_lid);
 
 				///~~~~~~~~~~~~~~~~~~~~~~ACKS~~~~~~~~~~~~~~~~~~~~~~~~~~~
 				wings_issue_pkts(ack_ud_c, (uint8_t *) inv_recv_ops,
@@ -351,6 +376,7 @@ run_worker(void *arg)
 
 				if(ENABLE_ASSERTIONS)
 					assert(inv_ud_c->stats.recv_total_msgs == ack_ud_c->stats.send_total_msgs);
+//                    assert(ENABLE_RMWs || inv_ud_c->stats.recv_total_msgs == ack_ud_c->stats.send_total_msgs);
 			}
 
 			if(has_outstanding_vals == 0 && has_outstanding_vals_from_memb_change == 0) {
@@ -358,7 +384,7 @@ run_worker(void *arg)
 				acks_polled = wings_poll_buff_and_post_recvs(ack_ud_c, ops_len, (uint8_t *) ack_recv_ops);
 
 				if (acks_polled > 0){
-					hermes_batch_ops_to_KVS(acks, (uint8_t *) ack_recv_ops, acks_polled, sizeof(spacetime_ack_t),
+					hermes_batch_ops_to_KVS(acks, (uint8_t *) ack_recv_ops, acks_polled,  ack_size, // sizeof(spacetime_ack_t),
 											last_group_membership, NULL, ops, (uint8_t) worker_lid);
 
 					stop_latency_of_completed_writes(ops, worker_lid, &stopwatch_for_req_latency);
@@ -368,7 +394,7 @@ run_worker(void *arg)
 			if(!DISABLE_VALS_FOR_DEBUGGING) {
 				///~~~~~~~~~~~~~~~~~~~~~~ VALs ~~~~~~~~~~~~~~~~~~~~~~~~~~~
 				has_outstanding_vals = wings_issue_pkts(val_ud_c, (uint8_t *) ack_recv_ops,
-														ack_ud_c->recv_pkt_buff_len, sizeof(spacetime_ack_t),
+														ack_ud_c->recv_pkt_buff_len, ack_size, //sizeof(spacetime_ack_t),
 														NULL, val_skip_or_get_sender_id,
 														val_modify_elem_after_send, val_copy_and_modify_elem);
 

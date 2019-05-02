@@ -1352,11 +1352,10 @@ refill_ops_n_suspect_failed_nodes(uint32_t *trace_iter, uint16_t worker_lid,
 	static uint8_t first_iter_has_passed[WORKERS_PER_MACHINE] = { 0 };
 
 	int i = 0, refilled_ops = 0, node_suspected = -1;
-//	for(i = 0; i < MAX_BATCH_OPS_SIZE; i++) {
 	for(i = 0; i < max_batch_size; i++) {
 		if(ENABLE_ASSERTIONS)
 			if(first_iter_has_passed[worker_lid] == 1){
-				assert(ops[i].op_meta.opcode == ST_OP_PUT || ops[i].op_meta.opcode == ST_OP_GET);
+				assert(ops[i].op_meta.opcode == ST_OP_PUT || ops[i].op_meta.opcode == ST_OP_GET || ops[i].op_meta.opcode == ST_OP_RMW);
 				assert(ops[i].op_meta.state == ST_PUT_COMPLETE ||
 					   ops[i].op_meta.state == ST_GET_COMPLETE ||
 					   ops[i].op_meta.state == ST_PUT_SUCCESS ||
@@ -1366,6 +1365,14 @@ refill_ops_n_suspect_failed_nodes(uint32_t *trace_iter, uint16_t worker_lid,
 					   ops[i].op_meta.state == ST_PUT_STALL ||
 					   ops[i].op_meta.state == ST_REPLAY_COMPLETE ||
 					   ops[i].op_meta.state == ST_IN_PROGRESS_PUT ||
+					   //<RMW>
+                       ops[i].op_meta.state == ST_RMW_STALL ||
+                       ops[i].op_meta.state == ST_RMW_ABORT ||
+                       ops[i].op_meta.state == ST_RMW_SUCCESS ||
+                       ops[i].op_meta.state == ST_RMW_COMPLETE ||
+					   ops[i].op_meta.state == ST_IN_PROGRESS_RMW ||
+//					   ops[i].op_meta.state == ST_IN_PROGRESS_PUT ||
+					   //<RMW>
 					   ops[i].op_meta.state == ST_IN_PROGRESS_GET ||
 					   ops[i].op_meta.state == ST_IN_PROGRESS_REPLAY ||
 					   ops[i].op_meta.state == ST_OP_MEMBERSHIP_CHANGE || ///TODO check this
@@ -1377,96 +1384,115 @@ refill_ops_n_suspect_failed_nodes(uint32_t *trace_iter, uint16_t worker_lid,
 		if (first_iter_has_passed[worker_lid] == 0 ||
 			ops[i].op_meta.state == ST_MISS ||
 			ops[i].op_meta.state == ST_PUT_COMPLETE ||
+			ops[i].op_meta.state == ST_RMW_ABORT ||
+			ops[i].op_meta.state == ST_RMW_COMPLETE ||
 			ops[i].op_meta.state == ST_OP_MEMBERSHIP_COMPLETE ||
 			ops[i].op_meta.state == ST_GET_COMPLETE) {
-			if(first_iter_has_passed[worker_lid] != 0) {
-				if (ENABLE_REQ_PRINTS && worker_lid < MAX_THREADS_TO_PRINT)
-					green_printf("W%d--> Key Hash:%" PRIu64 "\n\t\tType: %s, version %d, tie-b: %d, value(len-%d): %c\n",
-								 worker_lid, ((uint64_t *) &ops[i].op_meta.key)[0],
-								 code_to_str(ops[i].op_meta.state), ops[i].op_meta.ts.version,
-								 ops[i].op_meta.ts.tie_breaker_id, ops[i].op_meta.val_len, ops[i].value[0]);
+            if (first_iter_has_passed[worker_lid] != 0) {
+                if (ENABLE_REQ_PRINTS && worker_lid < MAX_THREADS_TO_PRINT)
+                    green_printf(
+                            "W%d--> Key Hash:%" PRIu64 "\n\t\tType: %s, version %d, tie-b: %d, value(len-%d): %c\n",
+                            worker_lid, ((uint64_t *) &ops[i].op_meta.key)[0],
+                            code_to_str(ops[i].op_meta.state), ops[i].op_meta.ts.version,
+                            ops[i].op_meta.ts.tie_breaker_id, ops[i].op_meta.val_len, ops[i].value[0]);
 
-                if(ops[i].op_meta.state != ST_MISS)
-					w_stats[worker_lid].completed_ops_per_worker += ENABLE_COALESCE_OF_HOT_REQS ? ops[i].no_coales : 1;
-                else
-					w_stats[worker_lid].reqs_missed_in_kvs++;
+                /// Stats
+                if (ops[i].op_meta.state != ST_MISS){
+                    if(ops[i].op_meta.state != ST_RMW_ABORT)
+                        w_stats[worker_lid].completed_ops_per_worker += ENABLE_COALESCE_OF_HOT_REQS ? ops[i].no_coales : 1;
+                } else
+                    w_stats[worker_lid].reqs_missed_in_kvs++;
 
-				ops[i].no_coales = 1;
-				ops[i].op_meta.state = ST_EMPTY;
-				ops[i].op_meta.opcode = ST_EMPTY;
-				refilled_per_ops_debug_cnt[i] = 0;
-				refilled_ops++;
-			}
+                if(ops[i].op_meta.state == ST_PUT_COMPLETE)
+                    w_stats[worker_lid].completed_wrs_per_worker++;
+                else if(ops[i].op_meta.state == ST_RMW_COMPLETE)
+                    w_stats[worker_lid].completed_rmws_per_worker++;
+                else if(ops[i].op_meta.state == ST_RMW_ABORT)
+                    w_stats[worker_lid].aborted_rmws_per_worker++;
 
-			if(ENABLE_ASSERTIONS)
-				assert(trace[*trace_iter].opcode == ST_OP_PUT || trace[*trace_iter].opcode == ST_OP_GET);
+                // reset op bucket
+                ops[i].no_coales = 1;
+                ops[i].op_meta.state = ST_EMPTY;
+                ops[i].op_meta.opcode = ST_EMPTY;
+                refilled_per_ops_debug_cnt[i] = 0;
+                refilled_ops++;
+            }
 
-            if(MEASURE_LATENCY && machine_id == 0 && worker_lid == THREAD_MEASURING_LATENCY && i == 0)
-				start_latency_measurement(start);
+            if (ENABLE_ASSERTIONS)
+                assert(trace[*trace_iter].opcode == ST_OP_PUT ||
+                       trace[*trace_iter].opcode == ST_OP_RMW ||
+                       trace[*trace_iter].opcode == ST_OP_GET);
 
-           /// INSERT new req(s) to ops
-			uint8_t key_id;
-			if(ENABLE_COALESCE_OF_HOT_REQS){
-			    // see if you could coalesce any requests
-			    spacetime_op_t** n_hottest_keys_in_ops;
-				do{
-					key_id = trace[*trace_iter].key_id;
-					n_hottest_keys_in_ops = trace[*trace_iter].opcode == ST_OP_GET ?
-											n_hottest_keys_in_ops_get : n_hottest_keys_in_ops_put;
-					// if we can coalesce (a hot) req
-					if(key_id < COALESCE_N_HOTTEST_KEYS && // is a hot key
-					   n_hottest_keys_in_ops[key_id] != NULL && // exists in the ops array
-					   n_hottest_keys_in_ops[key_id]->op_meta.opcode == trace[*trace_iter].opcode) // has the same code with the last inserted
-					{
-						n_hottest_keys_in_ops[key_id]->no_coales++;
-						*trace_iter = trace[*trace_iter + 1].opcode != NOP ? *trace_iter + 1 : 0;
-					}else
-						break;
-				} while(1);
+            if (MEASURE_LATENCY && machine_id == 0 && worker_lid == THREAD_MEASURING_LATENCY && i == 0)
+                start_latency_measurement(start);
 
-				if(key_id < COALESCE_N_HOTTEST_KEYS)
-					n_hottest_keys_in_ops[key_id] = &ops[i];
-			}
+            /// INSERT new req(s) to ops
+            uint8_t key_id;
+            if (ENABLE_COALESCE_OF_HOT_REQS && trace[*trace_iter].opcode != ST_OP_RMW) {
+                // see if you could coalesce any requests
+                spacetime_op_t **n_hottest_keys_in_ops;
+                do {
+                    key_id = trace[*trace_iter].key_id;
+                    n_hottest_keys_in_ops = trace[*trace_iter].opcode == ST_OP_GET ?
+                                            n_hottest_keys_in_ops_get : n_hottest_keys_in_ops_put;
+                    // if we can coalesce (a hot) req
+                    if (key_id < COALESCE_N_HOTTEST_KEYS && // is a hot key
+                        n_hottest_keys_in_ops[key_id] != NULL && // exists in the ops array
+                        n_hottest_keys_in_ops[key_id]->op_meta.opcode ==
+                        trace[*trace_iter].opcode) // has the same code with the last inserted
+                    {
+                        n_hottest_keys_in_ops[key_id]->no_coales++;
+                        *trace_iter = trace[*trace_iter + 1].opcode != NOP ? *trace_iter + 1 : 0;
+                    } else
+                        break;
+                } while (1);
 
-			ops[i].op_meta.state = ST_NEW;
-			ops[i].op_meta.opcode = (uint8_t) (CR_ENABLE_ALL_NODES_GETS_EXCEPT_HEAD && machine_id != 0 ?
-											   ST_OP_GET : trace[*trace_iter].opcode);
-			memcpy(&ops[i].op_meta.key, &trace[*trace_iter].key_hash, sizeof(spacetime_key_t));
+                if (key_id < COALESCE_N_HOTTEST_KEYS)
+                    n_hottest_keys_in_ops[key_id] = &ops[i];
+            }
 
-			if (ops[i].op_meta.opcode == ST_OP_PUT)
-				memset(ops[i].value, ((uint8_t) 'a' + machine_id), ST_VALUE_SIZE);
-			else if(ENABLE_READ_COMPLETE_AFTER_VAL_RECV_OF_HOT_REQS){
-				//if its a read reset the timestamp
-				ops[i].op_meta.ts.version = 0;
-				ops[i].op_meta.ts.tie_breaker_id = 0;
-			}
+            ops[i].op_meta.state = ST_NEW;
+            ops[i].op_meta.opcode = (uint8_t) (CR_ENABLE_ALL_NODES_GETS_EXCEPT_HEAD && machine_id != 0 ?
+                                               ST_OP_GET : trace[*trace_iter].opcode);
+            memcpy(&ops[i].op_meta.key, &trace[*trace_iter].key_hash, sizeof(spacetime_key_t));
 
-			ops[i].op_meta.val_len = (uint8) (ops[i].op_meta.opcode == ST_OP_PUT ? ST_VALUE_SIZE >> SHIFT_BITS : 0);
+            if (ops[i].op_meta.opcode == ST_OP_PUT || ops[i].op_meta.opcode == ST_OP_RMW)
+                memset(ops[i].value, ((uint8_t) 'a' + machine_id), ST_VALUE_SIZE);
 
-			// instead of MOD add
-			*trace_iter = trace[*trace_iter + 1].opcode != NOP ? *trace_iter + 1 : 0;
+            else if (ENABLE_READ_COMPLETE_AFTER_VAL_RECV_OF_HOT_REQS) {
+                //if its a read reset the timestamp
+                ops[i].op_meta.ts.version = 0;
+                ops[i].op_meta.ts.tie_breaker_id = 0;
+            }
+
+            ops[i].RMW_flag = ops[i].op_meta.opcode == ST_OP_RMW ? 1 : 0;
+
+            ops[i].op_meta.val_len = (uint8) (ops[i].op_meta.opcode == ST_OP_GET ? 0 : ST_VALUE_SIZE >> SHIFT_BITS);
+
+            // instead of MOD add
+            *trace_iter = trace[*trace_iter + 1].opcode != NOP ? *trace_iter + 1 : 0;
 
 
-			if(ENABLE_REQ_PRINTS &&  worker_lid < MAX_THREADS_TO_PRINT)
-				red_printf("W%d--> Op: %s, hash(1st 8B):%" PRIu64 "\n",
-						   worker_lid, code_to_str(ops[i].op_meta.opcode), ((uint64_t *) &ops[i].op_meta.key)[0]);
-
-		}else if(ops[i].op_meta.state == ST_IN_PROGRESS_PUT){
-			refilled_per_ops_debug_cnt[i]++;
-			///Failure suspicion
-			if(CR_IS_RUNNING == 0)
-				if(unlikely(refilled_per_ops_debug_cnt[i] > NUM_OF_IDLE_ITERS_FOR_SUSPICION)){
-					if(machine_id < NODES_WITH_FAILURE_DETECTOR && worker_lid == WORKER_EMULATING_FAILURE_DETECTOR){
-						node_suspected = find_suspected_node(&ops[i], worker_lid, last_group_membership);
-						cyan_printf("Worker: %d SUSPECTS node: %d (req %d)\n", worker_lid, node_suspected, i);
-						ops[i].op_meta.state = ST_OP_MEMBERSHIP_CHANGE;
-						ops[i].value[0] = (uint8_t) node_suspected;
-						//reset counter for failure suspicion
-						memset(refilled_per_ops_debug_cnt, 0, sizeof(uint32_t) * max_batch_size);
-//						memset(refilled_per_ops_debug_cnt, 0, sizeof(uint32_t) * MAX_BATCH_OPS_SIZE);
-					}
-				}
-		}
+            if (ENABLE_REQ_PRINTS && worker_lid < MAX_THREADS_TO_PRINT)
+                red_printf("W%d--> Op: %s, hash(1st 8B):%" PRIu64 "\n",
+                           worker_lid, code_to_str(ops[i].op_meta.opcode), ((uint64_t *) &ops[i].op_meta.key)[0]);
+        }
+/////FAILURE DETECTION
+//		else if(ops[i].op_meta.state == ST_IN_PROGRESS_PUT){
+//			refilled_per_ops_debug_cnt[i]++;
+//			///Failure suspicion
+//			if(CR_IS_RUNNING == 0)
+//				if(unlikely(refilled_per_ops_debug_cnt[i] > NUM_OF_IDLE_ITERS_FOR_SUSPICION)){
+//					if(machine_id < NODES_WITH_FAILURE_DETECTOR && worker_lid == WORKER_EMULATING_FAILURE_DETECTOR){
+//						node_suspected = find_suspected_node(&ops[i], worker_lid, last_group_membership);
+//						cyan_printf("Worker: %d SUSPECTS node: %d (req %d)\n", worker_lid, node_suspected, i);
+//						ops[i].op_meta.state = ST_OP_MEMBERSHIP_CHANGE;
+//						ops[i].value[0] = (uint8_t) node_suspected;
+//						//reset counter for failure suspicion
+//						memset(refilled_per_ops_debug_cnt, 0, sizeof(uint32_t) * max_batch_size);
+//					}
+//				}
+//		}
 	}
 
 	if(refilled_ops == 0)
@@ -1476,9 +1502,10 @@ refill_ops_n_suspect_failed_nodes(uint32_t *trace_iter, uint16_t worker_lid,
 		first_iter_has_passed[worker_lid] = 1;
 
 	if(ENABLE_ASSERTIONS)
-//		for(i = 0; i < MAX_BATCH_OPS_SIZE; i++)
 		for(i = 0; i < max_batch_size; i++)
-			assert(ops[i].op_meta.opcode == ST_OP_PUT || ops[i].op_meta.opcode == ST_OP_GET);
+			assert(ops[i].op_meta.opcode == ST_OP_PUT ||
+			       ops[i].op_meta.opcode == ST_OP_RMW ||
+			       ops[i].op_meta.opcode == ST_OP_GET  );
 
 	return node_suspected;
 }

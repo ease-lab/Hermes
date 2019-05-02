@@ -6,7 +6,13 @@ void dump_xput_stats(double xput_in_miops);
 void *print_stats(void* no_arg){
     uint16_t i, print_count = 0;
     long long all_worker_xput = 0;
+    long long all_worker_wrs = 0;
+    long long all_worker_rmws = 0;
+    long long all_worker_aborted_rmws = 0;
     double total_throughput = 0;
+    double total_rd_throughput = 0;
+    double total_wr_throughput = 0;
+    double total_rmw_throughput = 0;
 //    int sleep_time = 20;
     struct worker_stats curr_w_stats[WORKERS_PER_MACHINE], prev_w_stats[WORKERS_PER_MACHINE];
     struct stats all_stats;
@@ -21,6 +27,9 @@ void *print_stats(void* no_arg){
         start = end;
         memcpy(curr_w_stats, (void*) w_stats, WORKERS_PER_MACHINE * (sizeof(struct worker_stats)));
         all_worker_xput = 0;
+        all_worker_wrs = 0;
+        all_worker_rmws = 0;
+        all_worker_aborted_rmws = 0;
         print_count++;
         if(FAKE_FAILURE == 1 && machine_id == NODE_TO_FAIL && print_count == ROUNDS_BEFORE_FAILURE){
             red_printf("---------------------------------------\n");
@@ -38,14 +47,25 @@ void *print_stats(void* no_arg){
         seconds *= MILLION; // compute only MIOPS
         for (i = 0; i < num_workers; i++) {
             all_worker_xput += curr_w_stats[i].completed_ops_per_worker - prev_w_stats[i].completed_ops_per_worker;
+            all_worker_wrs += curr_w_stats[i].completed_wrs_per_worker - prev_w_stats[i].completed_wrs_per_worker;
+            all_worker_rmws += curr_w_stats[i].completed_rmws_per_worker - prev_w_stats[i].completed_rmws_per_worker;
+            all_worker_aborted_rmws += curr_w_stats[i].aborted_rmws_per_worker - prev_w_stats[i].aborted_rmws_per_worker;
             all_stats.xput_per_worker[i] = (curr_w_stats[i].completed_ops_per_worker - prev_w_stats[i].completed_ops_per_worker) / seconds;
+            all_stats.rmw_xput_per_worker[i] = (curr_w_stats[i].completed_rmws_per_worker - prev_w_stats[i].completed_rmws_per_worker) / seconds;
+            all_stats.rmw_abort_rate_per_worker[i] = (curr_w_stats[i].aborted_rmws_per_worker - prev_w_stats[i].aborted_rmws_per_worker) /
+                                                     (curr_w_stats[i].completed_rmws_per_worker - prev_w_stats[i].completed_rmws_per_worker);
         }
 
 
         memcpy(prev_w_stats, curr_w_stats, WORKERS_PER_MACHINE * (sizeof(struct worker_stats)));
         total_throughput = all_worker_xput / seconds;
+        total_wr_throughput = all_worker_wrs / seconds;
+        total_rmw_throughput = all_worker_rmws / seconds;
+        total_rd_throughput = total_throughput - total_wr_throughput - total_rmw_throughput;
         printf("---------------PRINT %d time elapsed %.2f---------------\n", print_count, seconds / MILLION);
-        green_printf("SYSTEM MIOPS: %.2f \n", total_throughput);
+        green_printf("SYSTEM MIOPS: %.2f \n(Rd|Wr|RMW: %.2f|%.2f|%.2f) | RMW aborts: %.2f%%)\n",
+                     total_throughput, total_rd_throughput, total_wr_throughput, total_rmw_throughput,
+                     100 * all_worker_aborted_rmws / (double) all_worker_rmws);
         if(PRINT_WORKER_STATS) {
             for (i = 0; i < num_workers; i++) {
 //            yellow_printf("W%d: %.2f MIOPS-Batch %.2f(%.2f) -H %.2f -W %llu -E %.2f -AC %.2f \n", i, all_stats.xput_per_worker[i], all_stats.batch_size_per_worker[i],
@@ -138,10 +158,11 @@ dump_xput_stats(double xput_in_miops)
     char* path = "../../results/xput/per-node";
     const char* open_mode = no_func_calls == 0 ? "w" : "a";
 
-    sprintf(filename, "%s/%s_xPut_m_%d_wr_%.1f_wk_%d_b_%d_c_%d%s-%d.csv", path,
+    sprintf(filename, "%s/%s_xPut_m_%d_wr_%.1f_rmw_%.1f_wk_%d_b_%d_c_%d%s-%d.csv", path,
             CR_IS_RUNNING == 1? "CR" : "Hermes",
             MACHINE_NUM,
-            write_ratio/10.0,
+            update_ratio/10.0,
+            rmw_ratio/10.0,
             num_workers,
             max_batch_size,
             credits_num,
@@ -166,12 +187,13 @@ dump_latency_stats(void)
     char filename[128];
     char* path = "../../results/latency";
 
-    sprintf(filename, "%s/%s_latency_m_%d_w_%d_b_%d_wr_%d_c_%d%s.csv", path,
+    sprintf(filename, "%s/%s_latency_m_%d_w_%d_b_%d_wr_%d_rmw_%d_c_%d%s.csv", path,
             CR_IS_RUNNING == 1? "CR" : "Hermes",
             MACHINE_NUM,
             num_workers,
             max_batch_size,
-            write_ratio,
+            update_ratio,
+            rmw_ratio,
             credits_num,
             FEED_FROM_TRACE == 1 ? "_a_0.99": "");
 

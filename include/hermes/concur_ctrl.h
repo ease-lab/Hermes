@@ -173,6 +173,20 @@ cctrl_unlock_custom_version(conc_ctrl_t *cctrl, uint8_t cid, uint32_t version)
 }
 
 static inline void
+cctrl_unlock_inc_version_by_three(conc_ctrl_t *cctrl, uint8_t cid, uint32_t *resp_version)
+{
+    if(ENABLE_LOCK_ASSERTS){
+        assert(cctrl->lock == SEQLOCK_LOCKED);
+        assert(cctrl->ts.version % 2 == 1);
+    }
+
+    cctrl->ts.tie_breaker_id = cid;
+    COMPILER_NO_REORDER(cctrl->ts.version += 3);
+    COMPILER_NO_REORDER(*resp_version = cctrl->ts.version);
+    COMPILER_NO_REORDER(cctrl->lock = SEQLOCK_FREE);
+}
+
+static inline void
 cctrl_unlock_inc_version(conc_ctrl_t *cctrl, uint8_t cid, uint32_t *resp_version)
 {
     if(ENABLE_LOCK_ASSERTS){

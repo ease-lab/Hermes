@@ -144,6 +144,7 @@ is_input_code(uint8_t code)
          //Input opcodes
         case ST_OP_GET:
         case ST_OP_PUT:
+        case ST_OP_RMW:
         case ST_OP_INV:
         case ST_OP_ACK:
         case ST_OP_VAL:
@@ -175,6 +176,11 @@ is_response_code(uint8_t code)
         case ST_PUT_STALL:
         case ST_PUT_COMPLETE_SEND_VALS:
         case ST_INV_OUT_OF_GROUP:
+        //RMW
+        case ST_RMW_ABORT:
+        case ST_RMW_STALL:
+        case ST_RMW_SUCCESS:
+        case ST_RMW_COMPLETE:
             return 1;
         default:
             return 0;
@@ -190,6 +196,7 @@ is_bucket_state_code(uint8_t code)
         case ST_COMPLETE:
         case ST_IN_PROGRESS_GET:
         case ST_IN_PROGRESS_PUT:
+        case ST_IN_PROGRESS_RMW:
         case ST_IN_PROGRESS_REPLAY:
             return 1;
         default:
@@ -217,8 +224,12 @@ char* code_to_str(uint8_t code)
             return "ST_OP_GET";
         case ST_OP_PUT:
             return "ST_OP_PUT";
+        case ST_OP_RMW:
+            return "ST_OP_RMW";
         case ST_OP_INV:
             return "ST_OP_INV";
+        case ST_OP_INV_ABORT:
+            return "ST_OP_INV_ABORT";
         case ST_OP_ACK:
             return "ST_OP_ACK";
         case ST_OP_VAL:
@@ -236,6 +247,10 @@ char* code_to_str(uint8_t code)
             return "ST_PUT_SUCCESS";
         case ST_PUT_COMPLETE:
             return "ST_PUT_COMPLETE";
+        case ST_RMW_SUCCESS:
+            return "ST_RMW_SUCCESS";
+        case ST_RMW_COMPLETE:
+            return "ST_RMW_COMPLETE";
         case ST_REPLAY_SUCCESS:
             return "ST_REPLAY_SUCCESS";
         case ST_REPLAY_COMPLETE:
@@ -256,6 +271,10 @@ char* code_to_str(uint8_t code)
             return "ST_GET_STALL";
         case ST_PUT_STALL:
             return "ST_PUT_STALL";
+        case ST_RMW_STALL:
+            return "ST_RMW_STALL";
+        case ST_RMW_ABORT:
+            return "ST_RMW_ABORT";
         case ST_PUT_COMPLETE_SEND_VALS:
             return "ST_PUT_COMPLETE_SEND_VALS";
         case ST_INV_OUT_OF_GROUP:
@@ -269,6 +288,8 @@ char* code_to_str(uint8_t code)
             return "ST_NEW";
         case ST_IN_PROGRESS_PUT:
             return "ST_IN_PROGRESS_PUT";
+        case ST_IN_PROGRESS_RMW:
+            return "ST_IN_PROGRESS_RMW";
         case ST_IN_PROGRESS_REPLAY:
             return "ST_IN_PROGRESS_REPLAY";
         case ST_COMPLETE:
@@ -302,13 +323,19 @@ void manufacture_trace(struct spacetime_trace_command **cmds, int worker_gid)
 {
     srand(time(NULL) + worker_gid * 7);
     *cmds = malloc((NUM_OF_REP_REQS + 1) * sizeof(struct spacetime_trace_command));
+    int rmws = 0;
 
     uint32_t i, writes = 0;
     //parse file line by line and insert trace to cmd.
     for (i = 0; i < NUM_OF_REP_REQS; i++) {
         //Before reading the request deside if it's gone be read or write
-//        (*cmds)[i].opcode = (uint8_t) (WRITE_RATIO == 1000 || ((rand() % 1000 < WRITE_RATIO)) ? ST_OP_PUT :  ST_OP_GET);
-        (*cmds)[i].opcode = (uint8_t) (write_ratio == 1000 || ((rand() % 1000 < write_ratio)) ? ST_OP_PUT :  ST_OP_GET);
+        (*cmds)[i].opcode = (uint8_t) (update_ratio == 1000 || ((rand() % 1000 < update_ratio)) ? ST_OP_PUT :  ST_OP_GET);
+
+        if(ENABLE_RMWs && (*cmds)[i].opcode == ST_OP_PUT)
+            (*cmds)[i].opcode = (uint8_t) (rmw_ratio == 1000 || ((rand() % 1000 < rmw_ratio)) ? ST_OP_RMW :  ST_OP_PUT);
+
+        if ((*cmds)[i].opcode == ST_OP_RMW) rmws++;
+        if ((*cmds)[i].opcode == ST_OP_PUT) writes++;
 
         //--- KEY ID----------
         uint32 key_id = KEY_NUM != 0 ? (uint32) rand() % KEY_NUM : (uint32) rand() % SPACETIME_NUM_KEYS;
@@ -316,12 +343,14 @@ void manufacture_trace(struct spacetime_trace_command **cmds, int worker_gid)
         uint128 key_hash = CityHash128((char *) &(key_id), 4);
 //        memcpy(&(*cmds)[i].key_hash, &key_hash, 16); // this is for 16B keys
         memcpy(&(*cmds)[i].key_hash, &((uint64_t*)&key_hash)[1], 8);
-        if ((*cmds)[i].opcode == ST_OP_PUT) writes++;
         (*cmds)[i].key_id = (uint8_t) (key_id < 255 ? key_id : ST_KEY_ID_255_OR_HIGHER);
     }
 
     if (worker_gid % num_workers == 0)
-        printf("Write Ratio: %.2f%% \nTrace w_size %d \n", (double) (writes * 100) / NUM_OF_REP_REQS, NUM_OF_REP_REQS);
+        printf("Update Ratio: %.2f%% (Writes|RMWs: %.2f%%|%.2f%%)\n" "Trace w_size %d \n",
+                (double) ((writes + rmws) * 100) / NUM_OF_REP_REQS,
+                (double) (writes * 100) / NUM_OF_REP_REQS,
+                (double) (rmws * 100) / NUM_OF_REP_REQS, NUM_OF_REP_REQS);
     (*cmds)[NUM_OF_REP_REQS].opcode = NOP;
     // printf("CLient %d Trace w_size: %d, debug counter %d hot keys %d, cold keys %d \n",l_id, cmd_count, debug_cnt,
     //         t_stats[l_id].hot_keys_per_trace, t_stats[l_id].cold_keys_per_trace );
@@ -338,8 +367,9 @@ parse_trace(char* path, struct spacetime_trace_command **cmds, int worker_gid)
     char* word;
     char *saveptr;
     char* line = NULL;
-    int cmd_count = 0;
+    int rmws = 0;
     int writes = 0;
+    int cmd_count = 0;
     uint32_t hottest_key_counter = 0;
     uint32_t ten_hottest_keys_counter = 0;
     uint32_t twenty_hottest_keys_counter = 0;
@@ -383,9 +413,13 @@ parse_trace(char* path, struct spacetime_trace_command **cmds, int worker_gid)
         word = strtok_r(line, " ", &saveptr);
 
         //Before reading the request deside if it's gone be read or write
-        (*cmds)[i].opcode = (uint8_t) (write_ratio == 1000 || ((rand() % 1000 < write_ratio)) ? ST_OP_PUT :  ST_OP_GET);
+        (*cmds)[i].opcode = (uint8_t) (update_ratio == 1000 || ((rand() % 1000 < update_ratio)) ? ST_OP_PUT :  ST_OP_GET);
+
+        if(ENABLE_RMWs && (*cmds)[i].opcode == ST_OP_PUT)
+            (*cmds)[i].opcode = (uint8_t) (rmw_ratio == 1000 || ((rand() % 1000 < rmw_ratio)) ? ST_OP_RMW :  ST_OP_PUT);
 
         if ((*cmds)[i].opcode == ST_OP_PUT) writes++;
+        if ((*cmds)[i].opcode == ST_OP_RMW) rmws++;
 
         while (word != NULL) {
             if (word[strlen(word) - 1] == '\n')
@@ -417,14 +451,16 @@ parse_trace(char* path, struct spacetime_trace_command **cmds, int worker_gid)
 
     }
 
-    if (worker_gid % num_workers == 0)
-        printf("Trace size: %d | Hottest key (10 | 20 keys): %.2f%% (%.2f | %.2f %%)|"
-               " Write Ratio: %.2f%% \n", cmd_count,
+    if (worker_gid % num_workers == 0){
+        printf("Trace size: %d | Hottest key (10 | 20 keys): %.2f%% (%.2f | %.2f %%)\n", cmd_count,
                (100 * hottest_key_counter / (double) cmd_count),
                (100 * ten_hottest_keys_counter / (double) cmd_count),
-               (100 * twenty_hottest_keys_counter / (double) cmd_count),
-               (double) (writes * 100) / cmd_count);
-
+               (100 * twenty_hottest_keys_counter / (double) cmd_count));
+        printf("Update Ratio: %.2f%% (Writes|RMWs: %.2f%%|%.2f%%)\n",
+               (double) ((writes + rmws) * 100) / cmd_count,
+               (double) (writes * 100) / cmd_count,
+               (double) (rmws * 100) / cmd_count);
+    }
     (*cmds)[cmd_count].opcode = NOP;
     // printf("Thread %d Trace w_size: %d, debug counter %d hot keys %d, cold keys %d \n",l_id, cmd_count, debug_cnt,
     //         t_stats[l_id].hot_keys_per_trace, t_stats[l_id].cold_keys_per_trace );
@@ -514,34 +550,19 @@ void setup_kvs_buffs(spacetime_op_t **ops,
                      spacetime_ack_t **ack_recv_ops,
                      spacetime_val_t **val_recv_ops)
 {
-//    *ops = memalign(4096, max_batch_size* (sizeof(spacetime_op_t)));
-//    memset(*ops, 0, max_batch_size* (sizeof(spacetime_op_t)));
     *ops = memalign(4096, MAX_BATCH_OPS_SIZE * (sizeof(spacetime_op_t)));
     memset(*ops, 0, MAX_BATCH_OPS_SIZE * (sizeof(spacetime_op_t)));
     assert(ops != NULL);
 
+    // Dirty way to support ACKs that might be as big as INVs
+    uint16_t ack_size = ENABLE_RMWs ? sizeof(spacetime_inv_t) : sizeof(spacetime_ack_t);
+    spacetime_inv_t** rmw_ack_r_ops = (spacetime_inv_t **) ack_recv_ops;
     ///Network ops
 	///TODO should we memalign aswell?
-//    *inv_recv_ops = (spacetime_inv_t*) malloc(INV_RECV_OPS_SIZE * sizeof(spacetime_inv_t));
-//    *ack_recv_ops = (spacetime_ack_t*) malloc(ACK_RECV_OPS_SIZE * sizeof(spacetime_ack_t));
-//    *val_recv_ops = (spacetime_val_t*) malloc(VAL_RECV_OPS_SIZE * sizeof(spacetime_val_t)); /* Batch of incoming broadcasts for the Cache*/
-
-//    memset(*inv_recv_ops, 0, INV_RECV_OPS_SIZE * sizeof(spacetime_inv_t));
-//    memset(*ack_recv_ops, 0, ACK_RECV_OPS_SIZE * sizeof(spacetime_ack_t));
-//    memset(*val_recv_ops, 0, VAL_RECV_OPS_SIZE * sizeof(spacetime_val_t));
-
-//    for(int i = 0; i < INV_RECV_OPS_SIZE; ++i)
-//        (*inv_recv_ops)[i].op_meta.opcode = ST_EMPTY;
-//
-//    for(int i = 0; i < ACK_RECV_OPS_SIZE; ++i)
-//        (*ack_recv_ops)[i].opcode = ST_EMPTY;
-//
-//    for(int i = 0; i < VAL_RECV_OPS_SIZE; ++i)
-//        (*val_recv_ops)[i].opcode = ST_EMPTY;
 
     uint32_t no_ops = (uint32_t) (credits_num * REMOTE_MACHINES * max_coalesce); //credits * remote_machines * max_req_coalesce
 	*inv_recv_ops = (spacetime_inv_t*) malloc(no_ops * sizeof(spacetime_inv_t));
-	*ack_recv_ops = (spacetime_ack_t*) malloc(no_ops * sizeof(spacetime_ack_t));
+	*ack_recv_ops = (spacetime_ack_t*) malloc(no_ops * ack_size);
     *val_recv_ops = (spacetime_val_t*) malloc(no_ops * sizeof(spacetime_val_t)); /* Batch of incoming broadcasts for the Cache*/
 	assert(*inv_recv_ops!= NULL && *ack_recv_ops!= NULL && *val_recv_ops!= NULL);
 
@@ -550,9 +571,12 @@ void setup_kvs_buffs(spacetime_op_t **ops,
     memset(*val_recv_ops, 0, no_ops * sizeof(spacetime_val_t));
 
     for(int i = 0; i < no_ops; ++i){
-        (*ack_recv_ops)[i].opcode = ST_EMPTY;
         (*val_recv_ops)[i].opcode = ST_EMPTY;
         (*inv_recv_ops)[i].op_meta.opcode = ST_EMPTY;
+        if(ENABLE_RMWs == 0)
+            (*ack_recv_ops)[i].opcode = ST_EMPTY;
+        else
+            (*rmw_ack_r_ops)[i].op_meta.opcode = ST_EMPTY;
     }
 
 	for(int i = 0; i < MAX_BATCH_OPS_SIZE; ++i){
