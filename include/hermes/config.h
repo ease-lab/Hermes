@@ -21,7 +21,7 @@
 #define ENABLE_HYPERTHREADING 1
 #define BATCH_POST_RECVS_TO_NIC 1
 #define UPDATE_RATIO 500
-#define RMW_RATIO 500 //percentage of writes to be RMWs
+#define RMW_RATIO 0 //percentage of writes to be RMWs
 #define MAX_BATCH_OPS_SIZE 50 //250 // up to 254
 
 #define ENABLE_RMWs 0

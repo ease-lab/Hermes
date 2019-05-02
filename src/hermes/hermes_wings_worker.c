@@ -77,7 +77,10 @@ ack_skip_or_get_sender_id(uint8_t *req)
 		       inv_req->op_meta.opcode == ST_OP_INV_ABORT ||
 		       inv_req->op_meta.opcode == ST_EMPTY);
 
-	return inv_req->op_meta.opcode == ST_EMPTY ? -1 : inv_req->op_meta.sender;
+	uint8_t is_small_msg = inv_req->op_meta.opcode == ST_INV_SUCCESS ? 1 : 0;
+
+	return inv_req->op_meta.opcode == ST_EMPTY ? -1 :
+           wings_set_sender_id_n_msg_type(inv_req->op_meta.sender, is_small_msg);
 }
 
 void
@@ -267,13 +270,13 @@ run_worker(void *arg)
     //WARNING: We use the ack channel to send/recv both acks and rmw-invs if RMWs are enabled
     uint16_t ack_size = ENABLE_RMWs ? sizeof(spacetime_inv_t) : sizeof(spacetime_ack_t);
 
-	wings_ud_channel_init(inv_ud_c, inv_qp_name, REQ, (uint8_t) max_coalesce, sizeof(spacetime_inv_t),
+	wings_ud_channel_init(inv_ud_c, inv_qp_name, REQ, (uint8_t) max_coalesce, sizeof(spacetime_inv_t), 0,
 						  DISABLE_INV_INLINING == 0 ? 1 : 0, is_hdr_only, is_bcast, disable_crd_ctrl, expl_crd_ctrl,
 						  ack_ud_c, (uint8_t) credits_num, MACHINE_NUM, (uint8_t) machine_id, stats_on, prints_on);
-	wings_ud_channel_init(ack_ud_c, ack_qp_name, RESP, (uint8_t) max_coalesce, ack_size,
+	wings_ud_channel_init(ack_ud_c, ack_qp_name, RESP, (uint8_t) max_coalesce, ack_size, sizeof(spacetime_ack_t),
 						  DISABLE_ACK_INLINING == 0 ? 1 : 0, is_hdr_only, 0, disable_crd_ctrl, expl_crd_ctrl,
 						  inv_ud_c, (uint8_t) credits_num, MACHINE_NUM, (uint8_t) machine_id, stats_on, prints_on);
-	wings_ud_channel_init(val_ud_c, val_qp_name, REQ, (uint8_t) max_coalesce, sizeof(spacetime_val_t),
+	wings_ud_channel_init(val_ud_c, val_qp_name, REQ, (uint8_t) max_coalesce, sizeof(spacetime_val_t), 0,
 						  DISABLE_VAL_INLINING == 0 ? 1 : 0, is_hdr_only, is_bcast, disable_crd_ctrl, 1,
 						  crd_ud_c, (uint8_t) credits_num, MACHINE_NUM, (uint8_t) machine_id, stats_on, prints_on);
 
@@ -318,7 +321,6 @@ run_worker(void *arg)
 	uint16_t invs_polled = 0, acks_polled = 0, vals_polled = 0;
 	uint8_t has_outstanding_vals = 0,
 	        has_outstanding_vals_from_memb_change = 0;
-//	uint32_t num_of_iters_serving_op[MAX_BATCH_OPS_SIZE] = {0};
 
 	uint32_t *num_of_iters_serving_op = malloc(max_batch_size * sizeof(uint32_t));
 	for(int i = 0; i < max_batch_size; ++i)
@@ -371,8 +373,8 @@ run_worker(void *arg)
 
 				///~~~~~~~~~~~~~~~~~~~~~~ACKS~~~~~~~~~~~~~~~~~~~~~~~~~~~
 				wings_issue_pkts(ack_ud_c, (uint8_t *) inv_recv_ops,
-								  invs_polled, sizeof(spacetime_inv_t), NULL,
-								  ack_skip_or_get_sender_id, ack_modify_elem_after_send, ack_copy_and_modify_elem);
+                                 invs_polled, sizeof(spacetime_inv_t), NULL,
+                                 ack_skip_or_get_sender_id, ack_modify_elem_after_send, ack_copy_and_modify_elem);
 
 				if(ENABLE_ASSERTIONS)
 					assert(inv_ud_c->stats.recv_total_msgs == ack_ud_c->stats.send_total_msgs);

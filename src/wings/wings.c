@@ -64,6 +64,7 @@ wings_ud_channel_destroy(ud_channel_t *ud_c)
 void
 wings_ud_channel_init(ud_channel_t *ud_c, char *qp_name, enum channel_type type,
 					  uint8_t max_coalescing, uint16_t max_req_size,
+                      uint16_t small_req_size,
 					  uint8_t enable_inlining, uint8_t is_header_only,
 				      // Broadcast
 					  uint8_t is_bcast,
@@ -81,6 +82,7 @@ wings_ud_channel_init(ud_channel_t *ud_c, char *qp_name, enum channel_type type,
 	assert(!(disable_crd_ctrl == 1 && expl_crd_ctrl == 1)); //cannot disable crd_ctrl and then set an explicit credit control
 	assert(disable_crd_ctrl == 1 || linked_channel != NULL); //cannot disable crd_ctrl and then set an crd control channel
 	assert(is_bcast == 0 || is_header_only == 0);
+	assert(small_req_size <= max_req_size);
 
 	_wings_assert_binary(stats_on);
 	_wings_assert_binary(is_bcast);
@@ -113,6 +115,7 @@ wings_ud_channel_init(ud_channel_t *ud_c, char *qp_name, enum channel_type type,
 
 
 	ud_c->max_msg_size = (uint16_t) (max_req_size + (ud_c->is_header_only == 1 ? 1 : 0)); // hdr_only msgs have an additional 1st B indicating sender_id
+    ud_c->small_msg_size = small_req_size == 0 ? ud_c->max_msg_size : small_req_size;
 	ud_c->max_coalescing = max_coalescing;
 
 
@@ -344,6 +347,7 @@ _wings_ud_channel_crd_init(ud_channel_t *ud_c, char *qp_name, ud_channel_t *link
 
 	static_assert(sizeof(wings_crd_t) <= 4, ""); // Credits are always send as inlined_payload <=4B
 	ud_c->max_msg_size = 0; //non inlined_payload size
+    ud_c->small_msg_size = 0; //non inlined_payload size
 	ud_c->max_coalescing = 1;
 
 

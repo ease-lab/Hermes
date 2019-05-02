@@ -164,7 +164,7 @@ hades_wings_ctx_init(hades_wings_ctx_t* wctx, uint8_t node_id, uint8_t max_nodes
    char qp_name[200];
    sprintf(qp_name, "%s%d", "\033[1m\033[32mHades\033[0m", worker_lid);
 
-   wings_ud_channel_init(wctx->hviews_c, qp_name, REQ, 1, sizeof(hades_view_t) - sizeof(uint8_t),
+   wings_ud_channel_init(wctx->hviews_c, qp_name, REQ, 1, sizeof(hades_view_t) - sizeof(uint8_t), 0,
                          enable_inlining, is_hdr_only, is_bcast,
                          disable_crd_ctrl, expl_crd_ctrl, wctx->hviews_crd_c, credits,
                          max_nodes, (uint8_t) machine_id, stats_on, prints_on);

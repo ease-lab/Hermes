@@ -66,7 +66,8 @@ _wings_get_n_msg_ptr_from_send_pkt(ud_channel_t *ud_c, wings_ud_send_pkt_t *pkt,
 	if(WINGS_ENABLE_ASSERTIONS)
 		assert(ud_c->type != CRD && ud_c->is_header_only == 0);
     assert(ud_c->max_coalescing > n && pkt->req_num >= n);
-    return &pkt->reqs[n * ud_c->max_msg_size];
+//    return &pkt->reqs[n * ud_c->max_msg_size];
+    return &pkt->reqs[n * ud_c->small_msg_size];
 }
 
 static inline uint8_t*
@@ -357,14 +358,19 @@ wings_poll_buff_and_post_recvs(ud_channel_t *ud_c, uint16_t max_msgs_to_poll,
 
 			//TODO add membership and functionality
 //        if(node_is_in_membership(last_group_membership, sender))
+
+            uint16_t msg_size = next_packet->pkt.only_small_msgs == 1 ?
+                                ud_c->small_msg_size : ud_c->max_msg_size;
 			for (int j = 0; j < next_packet->pkt.req_num; ++j) {
-				next_req = &next_packet_reqs[j * ud_c->max_msg_size];
+//                next_req = &next_packet_reqs[j * ud_c->max_msg_size];
+				next_req = &next_packet_reqs[j * msg_size];
 
 				if (msgs_polled >= remaining_msgs_to_poll)
 					_wings_enque_to_overflown_msgs(ud_c, next_req);
 				else {
 					recv_op_ptr = &recv_ops[msgs_polled * ud_c->max_msg_size];
-					memcpy(recv_op_ptr, next_req, ud_c->max_msg_size);
+                    memcpy(recv_op_ptr, next_req, msg_size);
+//					memcpy(recv_op_ptr, next_req, ud_c->max_msg_size);
 				}
 
 				msgs_polled++;
@@ -545,7 +551,7 @@ _wings_forge_crd_wr(ud_channel_t *ud_c, uint16_t dst_qp_id,
 static inline void
 _wings_forge_wr(ud_channel_t *ud_c, uint8_t dst_qp_id, uint8_t *req_to_copy,
 				uint16_t pkts_in_batch, uint16_t *msgs_in_batch,
-				copy_and_modify_input_elem_t copy_and_modify_elem)
+				copy_and_modify_input_elem_t copy_and_modify_elem, uint8_t is_small_msg)
 // dst_qp_id is ignored if its a bcast channel
 {
 	struct ibv_wc signal_send_wc;
@@ -560,10 +566,17 @@ _wings_forge_wr(ud_channel_t *ud_c, uint8_t dst_qp_id, uint8_t *req_to_copy,
 		next_req_ptr = _wings_get_n_msg_ptr_from_send_pkt(ud_c, curr_pkt_ptr, curr_pkt_ptr->req_num);
 		curr_req_num = ++curr_pkt_ptr->req_num;
 		curr_pkt_ptr->sender_id = ud_c->channel_id;
+		uint16_t msg_size = is_small_msg == 1 ? ud_c->small_msg_size : ud_c->max_msg_size;
 		ud_c->send_sgl[pkts_in_batch].length = sizeof(wings_ud_send_pkt_t) +
-											   ud_c->max_msg_size * curr_pkt_ptr->req_num;
-		if(curr_req_num == 1)
-			ud_c->send_sgl[pkts_in_batch].addr = (uint64_t) curr_pkt_ptr;
+//                                               ud_c->max_msg_size * curr_pkt_ptr->req_num;
+                                               msg_size * curr_pkt_ptr->req_num;
+        if(WINGS_ENABLE_ASSERTIONS)
+            assert(is_small_msg == 1 || curr_req_num == 1); //we only do coalescing for small msgs
+
+		if(curr_req_num == 1){
+            ud_c->send_sgl[pkts_in_batch].addr = (uint64_t) curr_pkt_ptr;
+		    curr_pkt_ptr->only_small_msgs = is_small_msg == 1 ? 1 : 0;
+		}
 	}
 
 
@@ -697,6 +710,25 @@ _wings_check_if_batch_n_inc_pkt_ptr(ud_channel_t *ud_c,
 
 
 static inline uint8_t
+wings_set_sender_id_n_msg_type(uint8_t sender_id, uint8_t is_small_msg)
+{
+    if(WINGS_ENABLE_ASSERTIONS){
+        assert(sender_id < 128);
+        assert(is_small_msg == 0 || is_small_msg == 1);
+    }
+    return (is_small_msg == 0) ? sender_id + 128 : sender_id;
+}
+
+static inline uint8_t
+_wings_get_sender_id_n_msg_type(uint8_t skip_or_sender_id, uint8_t *is_small_msg)
+{
+    if(WINGS_ENABLE_ASSERTIONS)
+        assert(skip_or_sender_id < 258);
+    *is_small_msg = (skip_or_sender_id >= 128) ? 0 : 1;
+    return (skip_or_sender_id >= 128) ? skip_or_sender_id - 128 : skip_or_sender_id;
+}
+
+static inline uint8_t
 wings_issue_pkts(ud_channel_t *ud_c,
 				 uint8_t *input_array_of_elems, uint16_t input_array_len,
 				 uint16_t size_of_input_elems, uint16_t *input_array_rolling_idx,
@@ -705,6 +737,7 @@ wings_issue_pkts(ud_channel_t *ud_c,
 				 copy_and_modify_input_elem_t copy_and_modify_elem)
 {
 	uint8_t curr_msg_dst;
+    uint8_t is_small_msg = 0;
 	uint8_t last_msg_dst = 255;
 	uint8_t has_outstanding_msgs = 0;
 	uint16_t msgs_in_batch = 0, pkts_in_batch = 0, idx = 0;
@@ -721,9 +754,14 @@ wings_issue_pkts(ud_channel_t *ud_c,
 		int skip_or_sender_id = skip_or_get_sender_id_func_ptr(curr_elem);
 		if(skip_or_sender_id < 0) continue;
 
-		if(WINGS_ENABLE_ASSERTIONS) assert(skip_or_sender_id < 255);
+        if(WINGS_ENABLE_ASSERTIONS)
+            assert(skip_or_sender_id < 258);
 
-		curr_msg_dst = (uint8_t) skip_or_sender_id;
+
+//		curr_msg_dst = (uint8_t) skip_or_sender_id;
+        curr_msg_dst = _wings_get_sender_id_n_msg_type(skip_or_sender_id, &is_small_msg);
+        if(ud_c->is_header_only)
+            is_small_msg = 1;
 
 		// Break if we do not have sufficient credits
 		if (!_wings_has_sufficient_crds(ud_c, curr_msg_dst)) {
@@ -738,27 +776,35 @@ wings_issue_pkts(ud_channel_t *ud_c,
 
 		_wings_dec_crds(ud_c, curr_msg_dst);
 
-		if(!ud_c->is_bcast_channel && !ud_c->is_header_only)
-			// Send unicasts because if we might cannot coalesce pkts, due to different endpoints
-			if(_wings_curr_send_pkt_ptr(ud_c)->req_num > 0 && curr_msg_dst != last_msg_dst)
+//        if(!ud_c->is_bcast_channel && !ud_c->is_header_only)
+		if((!ud_c->is_bcast_channel && !ud_c->is_header_only) || is_small_msg == 0)
+			// Send unicasts because if we cannot coalesce pkts, due to different endpoints
+			if(_wings_curr_send_pkt_ptr(ud_c)->req_num > 0 &&
+			   (is_small_msg == 0 || curr_msg_dst != last_msg_dst))
 				_wings_check_if_batch_n_inc_pkt_ptr(ud_c, &pkts_in_batch, &msgs_in_batch);
 
 		last_msg_dst = curr_msg_dst;
 
 		// Create the messages
 		_wings_forge_wr(ud_c, curr_msg_dst, curr_elem, pkts_in_batch,
-						&msgs_in_batch, copy_and_modify_elem);
+						&msgs_in_batch, copy_and_modify_elem, is_small_msg);
 
 		modify_elem_after_send(curr_elem); // E.g. Change the state of the element which triggered a send
 
 		// Check if we should send a batch since we might have reached the max batch size
-		if(ud_c->is_header_only || _wings_curr_send_pkt_ptr(ud_c)->req_num == ud_c->max_coalescing)
-			_wings_check_if_batch_n_inc_pkt_ptr(ud_c, &pkts_in_batch, &msgs_in_batch);
+//        if(ud_c->is_header_only || _wings_curr_send_pkt_ptr(ud_c)->req_num == ud_c->max_coalescing)
+		if(is_small_msg == 0 || ud_c->is_header_only ||
+		   _wings_curr_send_pkt_ptr(ud_c)->req_num == ud_c->max_coalescing)
+        {
+            _wings_check_if_batch_n_inc_pkt_ptr(ud_c, &pkts_in_batch, &msgs_in_batch);
+        }
 	}
 
 	// Even if the last pkt is not full do the appropriate actions and incl to NIC batch
 	wings_ud_send_pkt_t* curr_pkt_ptr = NULL;
-	if(!ud_c->is_header_only){
+
+//    if(!ud_c->is_header_only){
+	if(!ud_c->is_header_only && is_small_msg == 1){
 		 curr_pkt_ptr = _wings_curr_send_pkt_ptr(ud_c);
 		if(curr_pkt_ptr->req_num > 0 && curr_pkt_ptr->req_num < ud_c->max_coalescing)
 			pkts_in_batch++;
@@ -768,7 +814,8 @@ wings_issue_pkts(ud_channel_t *ud_c,
 	if (pkts_in_batch > 0)
 		_wings_batch_pkts_2_NIC(ud_c, pkts_in_batch, msgs_in_batch);
 
-	if(!ud_c->is_header_only)
+//    if(!ud_c->is_header_only)
+	if(!ud_c->is_header_only && is_small_msg == 1)
 		// Move to next packet and reset data left from previous bcasts/unicasts
 		if(curr_pkt_ptr->req_num > 0 && curr_pkt_ptr->req_num < ud_c->max_coalescing)
 			_wings_inc_send_push_ptr(ud_c);

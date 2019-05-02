@@ -51,7 +51,8 @@ qp_info_t;
 
 typedef struct
 {
-    uint8_t sender_id;  // support for up to 256 unique senders per instance (e.g. thread)
+    uint8_t only_small_msgs:1;  // support for up to 256 unique senders per instance (e.g. thread)
+    uint8_t sender_id:7;  // support for up to 128 unique senders per instance (e.g. thread)
     uint8_t req_num;    // <= max_coalescing of a channel
     uint8_t reqs[];     // sizeof(req_num * req_size)
 }
@@ -112,6 +113,7 @@ typedef struct _ud_channel_t
     char* qp_name;
     uint16_t qp_id; //id of qp in cb
     uint16_t max_msg_size;
+    uint16_t small_msg_size;
 
 	uint8_t channel_id; //id of the curr channel (e.g. local node id)
     uint16_t num_channels; // e.g. remote nodes + local node
@@ -205,6 +207,7 @@ void wings_ud_channel_destroy(ud_channel_t *ud_c); // This must be used to destr
 // This is used to int only non-CRDs channels (CRDs are initialized internally)
 void wings_ud_channel_init(ud_channel_t *ud_c, char *qp_name, enum channel_type type,
 						   uint8_t max_coalescing, uint16_t max_req_size,
+                           uint16_t small_req_size,
 						   uint8_t enable_inlining,uint8_t is_header_only,
 						   uint8_t is_bcast,
 						   // Credits
