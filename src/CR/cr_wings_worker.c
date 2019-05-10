@@ -415,12 +415,14 @@ remote_read_resp_copy_and_modify_elem(uint8_t* msg_to_send, uint8_t* triggering_
 void
 print_ops_and_remote_write_ops(spacetime_op_t* ops, spacetime_op_t* remote_writes)
 {
-	for(int i = 0; i < MAX_BATCH_OPS_SIZE; ++i)
+//	for(int i = 0; i < MAX_BATCH_OPS_SIZE; ++i)
+    for(int i = 0; i < max_batch_size; ++i)
 		printf("ops[%d]: state-> %s, key-> %lu \n", i,
 			   code_to_str(ops[i].op_meta.state), *((uint64_t*) &ops[i].op_meta.key));
 
 	if(machine_id == head_id())
-		for(int i = 0; i < MAX_BATCH_OPS_SIZE; ++i)
+//		for(int i = 0; i < MAX_BATCH_OPS_SIZE; ++i)
+        for(int i = 0; i < max_batch_size; ++i)
 			printf("remote_writes[%d]: state-> %s, key-> %lu \n", i,
 				   code_to_str(remote_writes[i].op_meta.state), *((uint64_t*) &remote_writes[i].op_meta.key));
 }
@@ -525,7 +527,7 @@ cr_move_stalled_writes_to_top_n_return_free_space(spacetime_op_t *remote_writes)
 	uint8_t free_slot_array[MAX_BATCH_OPS_SIZE] = {0};
 	uint16_t free_slots = 0;
 	uint16_t last_free_slot = 0; //used to avoid re-iterating already non-empty slots
-	for(int i = 0; i < MAX_BATCH_OPS_SIZE; ++i){
+	for(int i = 0; i < max_batch_size; ++i){
 		if(ENABLE_ASSERTIONS)
 			assert(remote_writes[i].op_meta.state == ST_EMPTY      ||
 				   remote_writes[i].op_meta.state == ST_PUT_STALL  ||
@@ -557,8 +559,8 @@ cr_move_stalled_writes_to_top_n_return_free_space(spacetime_op_t *remote_writes)
 	}
 
 	if(ENABLE_ASSERTIONS)
-		for(int i = 0; i < MAX_BATCH_OPS_SIZE; ++i){
-			if(i < MAX_BATCH_OPS_SIZE - free_slots)
+		for(int i = 0; i < max_batch_size; ++i){
+			if(i < max_batch_size - free_slots)
 				assert(remote_writes[i].op_meta.state == ST_PUT_STALL   ||
 					   remote_writes[i].op_meta.state == ST_PUT_SUCCESS );
 			else
@@ -568,19 +570,31 @@ cr_move_stalled_writes_to_top_n_return_free_space(spacetime_op_t *remote_writes)
 	return free_slots;
 }
 
+static inline void
+debugg(spacetime_op_t  *ops, uint16_t worker_lid, int line_no)
+{
+    if(w_stats[worker_lid].total_loops > 0)
+        for(int i = 0; i < max_batch_size; ++i){
+            if(!(ops[i].op_meta.opcode == ST_OP_PUT || ops[i].op_meta.opcode == ST_OP_GET))
+                printf("Line[%d]--> Op[%d]: %s, loop iter: %llu\n", line_no,
+                       i, code_to_str(ops[i].op_meta.opcode), w_stats[worker_lid].total_loops);
+            assert(ops[i].op_meta.opcode == ST_OP_PUT || ops[i].op_meta.opcode == ST_OP_GET);
+        }
+}
+
 void*
 run_worker(void *arg)
 {
     assert(rmw_ratio == 0);
 	assert(CR_IS_RUNNING == 1);
+    assert(credits_num % MACHINE_NUM == 0); // CR ONLY
 	assert(ENABLE_COALESCE_OF_HOT_REQS == 0);
-	assert(CREDITS_PER_REMOTE_WORKER % MACHINE_NUM == 0); // CR ONLY
 
 	///WARNING: only defines (no dynamically passed cli arguments) work for cr worker
-	assert(max_coalesce == MAX_REQ_COALESCE);
-	assert(num_workers == WORKERS_PER_MACHINE);
-	assert(max_batch_size == MAX_BATCH_OPS_SIZE);
-	assert(credits_num == CREDITS_PER_REMOTE_WORKER);
+	assert(max_coalesce <= MAX_REQ_COALESCE);
+	assert(num_workers <= WORKERS_PER_MACHINE);
+	assert(max_batch_size <= MAX_BATCH_OPS_SIZE);
+	assert(credits_num <= CREDITS_PER_REMOTE_WORKER);
 
 	struct thread_params params = *(struct thread_params *) arg;
 	uint16_t worker_lid = (uint16_t) params.id;	// Local ID of this worker thread
@@ -672,13 +686,14 @@ run_worker(void *arg)
 	spacetime_inv_t *inv_recv_ops;
 	spacetime_ack_t *ack_recv_ops;
 	spacetime_val_t *val_recv_ops; // UNUSED!
+    uint32_t coh_ops_len = (uint32_t) (credits_num * REMOTE_MACHINES * max_coalesce); //credits * remote_machines * max_req_coalesce
 
 	setup_kvs_buffs(&ops, &inv_recv_ops, &ack_recv_ops, &val_recv_ops);
 
 	//Remote writes init
-	spacetime_op_t *remote_writes = memalign(4096, MAX_BATCH_OPS_SIZE * (sizeof(spacetime_op_t)));
-	memset(remote_writes, 0, MAX_BATCH_OPS_SIZE * (sizeof(spacetime_op_t)));
-	for(int i = 0; i < MAX_BATCH_OPS_SIZE; ++i){
+	spacetime_op_t *remote_writes = memalign(4096, max_batch_size * (sizeof(spacetime_op_t)));
+	memset(remote_writes, 0, max_batch_size * (sizeof(spacetime_op_t)));
+	for(int i = 0; i < max_batch_size; ++i){
 		remote_writes[i].op_meta.state = ST_EMPTY;
 		remote_writes[i].op_meta.opcode = ST_EMPTY;
 	}
@@ -686,9 +701,9 @@ run_worker(void *arg)
 	///////////////
 	///<4th stage>
 	//Remote reads buffer: used for polling remote reads on tail & remote read responses on the rest nodes
-	spacetime_op_t *remote_reads = memalign(4096, MAX_BATCH_OPS_SIZE * (sizeof(spacetime_op_t)));
-	memset(remote_reads, 0, MAX_BATCH_OPS_SIZE * (sizeof(spacetime_op_t)));
-	for(int i = 0; i < MAX_BATCH_OPS_SIZE; ++i){
+	spacetime_op_t *remote_reads = memalign(4096, max_batch_size * (sizeof(spacetime_op_t)));
+	memset(remote_reads, 0, max_batch_size * (sizeof(spacetime_op_t)));
+	for(int i = 0; i < max_batch_size; ++i){
 		remote_reads[i].op_meta.state = ST_EMPTY;
 		remote_reads[i].op_meta.opcode = ST_EMPTY;
 	}
@@ -713,9 +728,9 @@ run_worker(void *arg)
 	uint32_t trace_iter = 0;
 	uint16_t rolling_idx = 0, remote_reads_rolling_idx = 0;
 	uint16_t invs_polled = 0, acks_polled = 0, remote_writes_polled = 0;
-	uint32_t num_of_iters_serving_op[MAX_BATCH_OPS_SIZE] = {0};
+    uint32_t num_of_iters_serving_op[MAX_BATCH_OPS_SIZE] = {0};
 
-	uint16_t free_rem_write_slots = MAX_BATCH_OPS_SIZE;
+	uint16_t free_rem_write_slots = max_batch_size;
 	/// Spawn stats thread
 	if (worker_lid == 0)
 		if (spawn_stats_thread() != 0)
@@ -749,12 +764,14 @@ run_worker(void *arg)
 		//              and buffer additional packets                    [DONE]
 		// 8th stage: + Do not stall writes that found Invalid on head   [DONE]
 
+
 		if(!CR_ENABLE_ONLY_HEAD_REQS || machine_id == head_id()){
 			refill_ops_n_suspect_failed_nodes(&trace_iter, worker_lid, trace, ops,
 											  num_of_iters_serving_op, NULL,
 											  &stopwatch_for_req_latency,
 											  n_hottest_keys_in_ops_get, n_hottest_keys_in_ops_put);
-			cr_batch_ops_to_KVS(Local_ops, (uint8_t *) ops, MAX_BATCH_OPS_SIZE, sizeof(spacetime_op_t), NULL);
+            w_stats[worker_lid].total_loops++; //todo only for dbg
+            cr_batch_ops_to_KVS(Local_ops, (uint8_t *) ops, max_batch_size, sizeof(spacetime_op_t), NULL);
 		}
 
 		if (update_ratio > 0) {
@@ -766,7 +783,7 @@ run_worker(void *arg)
 				{
 					/// Initiate INVs for head writes
 					wings_issue_pkts(inv_ud_c, (uint8_t *) ops,
-									 MAX_BATCH_OPS_SIZE, sizeof(spacetime_op_t), &rolling_idx,
+									 max_batch_size, sizeof(spacetime_op_t), &rolling_idx,
 									 inv_skip_or_get_sender_id, inv_modify_elem_after_send,
 									 inv_copy_and_modify_elem);
 				}
@@ -774,10 +791,10 @@ run_worker(void *arg)
 				///////////////
 				///<3rd stage>
 				wings_poll_buff_and_post_recvs(rem_writes_ud_c, free_rem_write_slots,
-											   (uint8_t *) &remote_writes[MAX_BATCH_OPS_SIZE - free_rem_write_slots]);
+											   (uint8_t *) &remote_writes[max_batch_size - free_rem_write_slots]);
 
 				cr_batch_ops_to_KVS(Remote_writes, (uint8_t *) remote_writes,
-									MAX_BATCH_OPS_SIZE, sizeof(spacetime_op_t), NULL);
+									max_batch_size, sizeof(spacetime_op_t), NULL);
 
 				stop_latency_of_completed_reads(ops, worker_lid, &stopwatch_for_req_latency);
 
@@ -788,7 +805,7 @@ run_worker(void *arg)
 				{
 					/// Initiate INVs for remotes writes
 					wings_issue_pkts(inv_ud_c, (uint8_t *) remote_writes,
-									 MAX_BATCH_OPS_SIZE, sizeof(spacetime_op_t), NULL,
+									 max_batch_size, sizeof(spacetime_op_t), NULL,
 									 remote_write_head_skip_or_get_sender_id,
 									 remote_write_head_modify_elem_after_send,
 									 remote_write_head_copy_and_modify_elem);
@@ -796,7 +813,7 @@ run_worker(void *arg)
 
 				/// Issue credits for remotes writes
 				wings_issue_credits(rem_writes_crd_ud_c, (uint8_t *) remote_writes,
-									MAX_BATCH_OPS_SIZE, sizeof(spacetime_op_t),
+									max_batch_size, sizeof(spacetime_op_t),
 									rem_write_crd_skip_or_get_sender_id,
 									rem_write_crd_modify_elem_after_send);
 
@@ -807,14 +824,15 @@ run_worker(void *arg)
 
 			}
 
-				///////////////
-				///</3rd stage>
+			///////////////
+			///</3rd stage>
 			else
 				/// Initiate Remote writes
 				wings_issue_pkts(rem_writes_ud_c, (uint8_t *) ops,
-								 MAX_BATCH_OPS_SIZE, sizeof(spacetime_op_t), &rolling_idx,
+                                 max_batch_size, sizeof(spacetime_op_t), &rolling_idx,
 								 remote_write_skip_or_get_sender_id, inv_modify_elem_after_send,
 								 remote_write_copy_and_modify_elem);
+
 			///</3rd stage>
 			///////////////
 
@@ -823,8 +841,8 @@ run_worker(void *arg)
 			if(CR_ENABLE_REMOTE_READS) {
 				if(machine_id == tail_id()){
 					/// Poll Remote reads
-					uint16_t remote_reads_polled = wings_poll_buff_and_post_recvs(rem_reads_ud_c, MAX_BATCH_OPS_SIZE,
-																				  (uint8_t *) remote_reads);
+					uint16_t remote_reads_polled = wings_poll_buff_and_post_recvs(rem_reads_ud_c,
+                                                                                  max_batch_size, (uint8_t *) remote_reads);
 
 					/// Batch Remote reads to KVS
 					cr_batch_ops_to_KVS(Remote_reads, (uint8_t *) remote_reads,
@@ -840,16 +858,22 @@ run_worker(void *arg)
 				} else {
 					/// Initiate Remote reads
 					wings_issue_pkts(rem_reads_ud_c, (uint8_t *) ops,
-									 MAX_BATCH_OPS_SIZE, sizeof(spacetime_op_t), &remote_reads_rolling_idx,
+									 max_batch_size, sizeof(spacetime_op_t), &remote_reads_rolling_idx,
 									 remote_read_skip_or_get_sender_id, remote_read_modify_elem_after_send,
 									 remote_read_copy_and_modify_elem);
 
+                    for(int i = 0; i < max_batch_size; i++)
+                        assert(ops[i].op_meta.opcode == ST_OP_PUT || ops[i].op_meta.opcode == ST_OP_GET);
+
 					/// Poll respsonses of Remote reads
-					uint16_t remote_read_resps_polled = wings_poll_buff_and_post_recvs(rem_read_resp_ud_c, MAX_BATCH_OPS_SIZE,
+					uint16_t remote_read_resps_polled = wings_poll_buff_and_post_recvs(rem_read_resp_ud_c, max_batch_size,
 																					   (uint8_t *) remote_reads);
 					/// Complete Remote reads
 					cr_complete_local_reads(remote_reads, remote_read_resps_polled, ops);
 					stop_latency_of_completed_reads(ops, worker_lid, &stopwatch_for_req_latency);
+
+                    for(int i = 0; i < max_batch_size; i++)
+                        assert(ops[i].op_meta.opcode == ST_OP_PUT || ops[i].op_meta.opcode == ST_OP_GET);
 				}
 			}
 			///</4th stage>
@@ -858,7 +882,7 @@ run_worker(void *arg)
 			if(machine_id != head_id()) {
 				///Poll for INVs
 				if(has_outstanding_invs == 0){
-					invs_polled = wings_poll_buff_and_post_recvs(inv_ud_c, INV_RECV_OPS_SIZE, (uint8_t *) inv_recv_ops);
+                    invs_polled = wings_poll_buff_and_post_recvs(inv_ud_c, coh_ops_len, (uint8_t *) inv_recv_ops);
 
 					if (invs_polled > 0) {
 						/// Batch INVs to KVS
@@ -896,7 +920,7 @@ run_worker(void *arg)
 
 			if(machine_id != tail_id()){
 				///Poll for Acks
-				acks_polled = wings_poll_buff_and_post_recvs(ack_ud_c, ACK_RECV_OPS_SIZE, (uint8_t *) ack_recv_ops);
+				acks_polled = wings_poll_buff_and_post_recvs(ack_ud_c, coh_ops_len, (uint8_t *) ack_recv_ops);
 
 				if (acks_polled > 0){
 					/// Batch ACKs to KVS
@@ -915,15 +939,15 @@ run_worker(void *arg)
 						assert(ack_ud_c->stats.send_total_msgs == ack_ud_c->stats.recv_total_msgs - ack_ud_c->num_overflow_msgs);
 				}
 
-
 				else
-					///empty ack_rcv_ops in head node
-					for(int i = 0; i < ACK_RECV_OPS_SIZE; ++i)
-						ack_recv_ops[i].opcode = ST_EMPTY;
+                    ///empty ack_rcv_ops in head node
+                    for(int i = 0; i < coh_ops_len; ++i)
+                        ack_recv_ops[i].opcode = ST_EMPTY;
 			}
 		}
 		w_stats[worker_lid].total_loops++;
 	}
+
 	return NULL;
 }
 

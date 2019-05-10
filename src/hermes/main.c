@@ -150,6 +150,9 @@ int main(int argc, char *argv[])
 	if(max_coalesce == -1) max_coalesce = MAX_REQ_COALESCE;
 	if(max_batch_size == -1) max_batch_size = MAX_BATCH_OPS_SIZE;
 
+
+	assert(ENABLE_RMWs || rmw_ratio == 0);
+    assert(rmw_ratio != 0 || ENABLE_RMWs == 0);
 	// WARNING: Some structs are statically allocated using WORKERS_PER_MACHINE / MAX_BATCH_OPS_SIZE
 	assert(num_workers <= WORKERS_PER_MACHINE);
 	assert(max_batch_size <= MAX_BATCH_OPS_SIZE);

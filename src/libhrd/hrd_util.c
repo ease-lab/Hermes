@@ -176,10 +176,6 @@ void* hrd_malloc_socket(int shm_key, uint64_t size, int socket_id)
     int shm_flag = IPC_CREAT | IPC_EXCL | 0666 |
                    (USE_HUGE_PAGES == 1 ? SHM_HUGETLB : 0);
 
-//    int shm_flag = USE_HUGE_PAGES == 1 ?
-//                   IPC_CREAT | IPC_EXCL | 0666 | SHM_HUGETLB :
-//                   IPC_CREAT | IPC_EXCL | 0666;
-
     shmid = shmget(shm_key, size, shm_flag);
 
     if(shmid == -1) {
@@ -241,10 +237,11 @@ void* hrd_malloc_socket(int shm_key, uint64_t size, int socket_id)
 
 	// vasilis- try to take advantage of TLB coalescing, if it is there
 	if (LEVERAGE_TLB_COALESCING) {
-		int page_no = CEILING(size, HUGE_PAGE_SIZE);
-		int i;
-		for (i = 0; i < page_no; i++)
-			memset(buf + i * HUGE_PAGE_SIZE, 0, 1);
+		uint64_t page_no = CEILING(size, HUGE_PAGE_SIZE) - 1;
+		for (uint64_t i = 0; i < page_no; i++){
+            uint8_t *buf_ptr = ((uint8_t*) buf) + (i * HUGE_PAGE_SIZE);
+            memset(buf_ptr, 0, 1);
+		}
 	}
 
 	return buf;

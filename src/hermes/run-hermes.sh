@@ -28,9 +28,6 @@ for i in "${!allIPs[@]}"; do
 	fi
 done
 
-
-
-
 #echo AllIps: "${allIPs[@]}"
 #echo RemoteIPs: "${remoteIPs[@]}"
 echo Machine-Id "$machine_id"
@@ -41,6 +38,7 @@ export MLX5_SINGLE_THREADED=1
 export MLX5_SCATTER_TO_CQE=1
 
 sudo killall memcached
+sudo killall cr
 sudo killall hermes-wings
 # A function to echo in blue color
 function blue() {
@@ -57,17 +55,21 @@ NUM_WORKERS="-1"
 WRITE_RATIO="-1"
 MAX_COALESCE="-1"
 MAX_BATCH_SIZE="-1"
+RMW_RATIO="-1"
 
 # Each letter is an option argument, if it's followed by a collum
 # it requires an argument. The first colum indicates the '\?'
 # help/error command when no arguments are given
-while getopts ":W:w:C:c:b:h" opt; do
+while getopts ":W:w:R:C:c:b:h" opt; do
   case $opt in
      W)
        NUM_WORKERS=$OPTARG
        ;;
      w)
        WRITE_RATIO=$OPTARG
+       ;;
+     R)
+       RMW_RATIO=$OPTARG
        ;;
      C)
        MAX_COALESCE=$OPTARG
@@ -122,6 +124,7 @@ sudo LD_LIBRARY_PATH=/usr/local/lib/ -E \
 	--is-roce 0                         \
 	--dev-name "mlx5_0"                 \
 	--num-workers  ${NUM_WORKERS}       \
+	--rmw-ratio    ${RMW_RATIO}         \
 	--write-ratio  ${WRITE_RATIO}       \
 	--credits      ${CREDITS}           \
 	--max-coalesce ${MAX_COALESCE}      \

@@ -3,7 +3,15 @@
 
 void dump_xput_stats(double xput_in_miops);
 
-void *print_stats(void* no_arg){
+double static inline
+safe_division(double a, double b)
+{
+    return b == 0 ? 0 : a / b;
+}
+
+void *
+print_stats(void* no_arg)
+{
     uint16_t i, print_count = 0;
     long long all_worker_xput = 0;
     long long all_worker_wrs = 0;
@@ -11,6 +19,8 @@ void *print_stats(void* no_arg){
     long long all_worker_aborted_rmws = 0;
     double total_throughput = 0;
     double total_rd_throughput = 0;
+    double total_rmw_aborts = 0;
+
     double total_wr_throughput = 0;
     double total_rmw_throughput = 0;
 //    int sleep_time = 20;
@@ -52,8 +62,9 @@ void *print_stats(void* no_arg){
             all_worker_aborted_rmws += curr_w_stats[i].aborted_rmws_per_worker - prev_w_stats[i].aborted_rmws_per_worker;
             all_stats.xput_per_worker[i] = (curr_w_stats[i].completed_ops_per_worker - prev_w_stats[i].completed_ops_per_worker) / seconds;
             all_stats.rmw_xput_per_worker[i] = (curr_w_stats[i].completed_rmws_per_worker - prev_w_stats[i].completed_rmws_per_worker) / seconds;
-            all_stats.rmw_abort_rate_per_worker[i] = (curr_w_stats[i].aborted_rmws_per_worker - prev_w_stats[i].aborted_rmws_per_worker) /
-                                                     (curr_w_stats[i].completed_rmws_per_worker - prev_w_stats[i].completed_rmws_per_worker);
+            all_stats.rmw_abort_rate_per_worker[i] = safe_division(
+                      (curr_w_stats[i].aborted_rmws_per_worker - prev_w_stats[i].aborted_rmws_per_worker),
+                      (curr_w_stats[i].completed_rmws_per_worker - prev_w_stats[i].completed_rmws_per_worker));
         }
 
 
@@ -61,11 +72,12 @@ void *print_stats(void* no_arg){
         total_throughput = all_worker_xput / seconds;
         total_wr_throughput = all_worker_wrs / seconds;
         total_rmw_throughput = all_worker_rmws / seconds;
+        total_rmw_aborts =  safe_division(all_worker_aborted_rmws, all_worker_rmws);
         total_rd_throughput = total_throughput - total_wr_throughput - total_rmw_throughput;
         printf("---------------PRINT %d time elapsed %.2f---------------\n", print_count, seconds / MILLION);
         green_printf("SYSTEM MIOPS: %.2f \n(Rd|Wr|RMW: %.2f|%.2f|%.2f) | RMW aborts: %.2f%%)\n",
                      total_throughput, total_rd_throughput, total_wr_throughput, total_rmw_throughput,
-                     100 * all_worker_aborted_rmws / (double) all_worker_rmws);
+                     100 * total_rmw_aborts);
         if(PRINT_WORKER_STATS) {
             for (i = 0; i < num_workers; i++) {
 //            yellow_printf("W%d: %.2f MIOPS-Batch %.2f(%.2f) -H %.2f -W %llu -E %.2f -AC %.2f \n", i, all_stats.xput_per_worker[i], all_stats.batch_size_per_worker[i],

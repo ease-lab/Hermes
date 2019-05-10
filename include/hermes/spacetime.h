@@ -18,13 +18,13 @@
 #include "config.h"
 #include "../utils/bit_vector.h"
 
-//#define SPACETIME_NUM_KEYS (1000 * 1000)
-//#define SPACETIME_NUM_BKTS (2 * 1024 * 1024)
-//#define SPACETIME_LOG_CAP  (1024 * 1024 * 1024)
-//
-#define SPACETIME_NUM_KEYS (60 * 1000 * 1000)
-#define SPACETIME_NUM_BKTS (64 * 1024 * 1024)
-#define SPACETIME_LOG_CAP  (4 * ((unsigned long long) M_1024)) //(1024 * 1024 * 1024)
+#define SPACETIME_NUM_KEYS (1000 * 1000)
+#define SPACETIME_NUM_BKTS (2 * 1024 * 1024)
+#define SPACETIME_LOG_CAP  (1024 * 1024 * 1024)
+
+//#define SPACETIME_NUM_KEYS (60 * 1000 * 1000)
+//#define SPACETIME_NUM_BKTS (64 * 1024 * 1024)
+//#define SPACETIME_LOG_CAP  (4 * ((unsigned long long) M_1024)) //(1024 * 1024 * 1024)
 
 ///WARNING the monotonically increasing assigned numbers to States are used for comparisons (do not reorder / change numbers)
 //States

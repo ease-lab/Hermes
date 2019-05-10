@@ -3,6 +3,7 @@
 //
 
 #include <spacetime.h>
+#include <util.h>
 
 
 //////////////////////////////////////////////////
@@ -34,10 +35,6 @@ cr_assertions_inv(spacetime_inv_t* inv_ptr)
 	assert(inv_ptr->op_meta.opcode == ST_OP_INV ||
 		   inv_ptr->op_meta.opcode == ST_OP_MEMBERSHIP_CHANGE);
 	assert(inv_ptr->op_meta.val_len == ST_VALUE_SIZE);
-	assert(REMOTE_MACHINES != 1 ||
-		   inv_ptr->op_meta.sender == REMOTE_MACHINES - machine_id);
-	assert(REMOTE_MACHINES != 1 ||
-		   inv_ptr->op_meta.ts.tie_breaker_id == REMOTE_MACHINES - machine_id);
 }
 
 
@@ -151,6 +148,8 @@ cr_exec_remote_reads(spacetime_op_t *op_ptr, struct mica_op *kv_ptr)
 static inline void
 cr_exec_op(spacetime_op_t *op_ptr, struct mica_op *kv_ptr, uint8_t idx)
 {
+    if(ENABLE_ASSERTIONS)
+        assert(idx < max_batch_size);
 
 	// the following variables used to validate atomicity between a lock-free read of an object
 	spacetime_object_meta prev_meta;
@@ -208,7 +207,11 @@ cr_complete_local_write(spacetime_op_t *read_write_op, uint8_t idx, const uint64
 
 	if(read_write_op[idx].op_meta.opcode == ST_OP_PUT)
 		read_write_op[idx].op_meta.state = ST_PUT_COMPLETE;
-	else assert(0);
+	else {
+        printf("Opcode: %d\n", read_write_op[idx].op_meta.opcode);
+	    printf("Opcode: %s\n", code_to_str(read_write_op[idx].op_meta.opcode));
+	    assert(0);
+	}
 }
 
 static inline void
@@ -386,6 +389,7 @@ static inline void
 cr_exec_dispatcher(enum cr_type_t cr_type, void* op_ptr, struct mica_op *kv_ptr,
 				   uint8_t idx, spacetime_op_t *read_write_op)
 {
+
 	switch (cr_type){
 		case Invs:
 			cr_exec_inv(op_ptr, kv_ptr, read_write_op);
@@ -412,7 +416,6 @@ cr_exec_dispatcher(enum cr_type_t cr_type, void* op_ptr, struct mica_op *kv_ptr,
 
 //////////////////////////////////////////////////
 //////////// Batch function //////////////////////
-
 #define CR_MAX_BATCH_SIZE MAX(MAX(MAX_BATCH_OPS_SIZE, ACK_RECV_OPS_SIZE), INV_RECV_OPS_SIZE)
 void
 cr_batch_ops_to_KVS(enum cr_type_t cr_type, uint8_t *op_array, int op_num,
@@ -502,10 +505,10 @@ cr_batch_ops_to_KVS(enum cr_type_t cr_type, uint8_t *op_array, int op_num,
 
 	if(ENABLE_ASSERTIONS)
 		if(cr_type == Acks)
-			for (int I = 0; I < MAX_BATCH_OPS_SIZE; I++)
+			for (int I = 0; I < max_batch_size; I++)
 				assert(read_write_op[I].op_meta.opcode == ST_OP_GET ||
 					   read_write_op[I].op_meta.state == ST_MISS ||
-					   read_write_op[I].op_meta.state == ST_EMPTY || //TODO check this
+					   read_write_op[I].op_meta.state == ST_EMPTY ||
 					   read_write_op[I].op_meta.state == ST_PUT_STALL ||
 					   read_write_op[I].op_meta.state == ST_PUT_SUCCESS ||
 					   read_write_op[I].op_meta.state == ST_PUT_COMPLETE ||

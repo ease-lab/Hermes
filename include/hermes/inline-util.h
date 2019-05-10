@@ -23,7 +23,6 @@ node_is_in_membership(spacetime_group_membership last_group_membership, int node
 /* ---------------------------------------------------------------------------
 ------------------------------------GENERIC-----------------------------------
 ---------------------------------------------------------------------------*/
-
 static inline void
 post_receives(struct hrd_ctrl_blk *cb, uint16_t num_of_receives,
 			  uint8_t buff_type, void *recv_buff, int *push_ptr,
@@ -1351,11 +1350,12 @@ refill_ops_n_suspect_failed_nodes(uint32_t *trace_iter, uint16_t worker_lid,
 {
 	static uint8_t first_iter_has_passed[WORKERS_PER_MACHINE] = { 0 };
 
-	int i = 0, refilled_ops = 0, node_suspected = -1;
-	for(i = 0; i < max_batch_size; i++) {
-		if(ENABLE_ASSERTIONS)
-			if(first_iter_has_passed[worker_lid] == 1){
-				assert(ops[i].op_meta.opcode == ST_OP_PUT || ops[i].op_meta.opcode == ST_OP_GET || ops[i].op_meta.opcode == ST_OP_RMW);
+	int refilled_ops = 0, node_suspected = -1;
+	for(int i = 0; i < max_batch_size; i++) {
+		if(ENABLE_ASSERTIONS && first_iter_has_passed[worker_lid] == 1){
+				assert(ops[i].op_meta.opcode == ST_OP_PUT ||
+				       ops[i].op_meta.opcode == ST_OP_GET ||
+				       (CR_IS_RUNNING == 0 && ops[i].op_meta.opcode == ST_OP_RMW));
 				assert(ops[i].op_meta.state == ST_PUT_COMPLETE ||
 					   ops[i].op_meta.state == ST_GET_COMPLETE ||
 					   ops[i].op_meta.state == ST_PUT_SUCCESS ||
@@ -1379,7 +1379,7 @@ refill_ops_n_suspect_failed_nodes(uint32_t *trace_iter, uint16_t worker_lid,
 					   ops[i].op_meta.state == ST_OP_MEMBERSHIP_COMPLETE || ///TODO check this
 					   ops[i].op_meta.state == ST_PUT_COMPLETE_SEND_VALS ||
 					   ops[i].op_meta.state == ST_GET_STALL);
-			}
+        }
 
 		if (first_iter_has_passed[worker_lid] == 0 ||
 			ops[i].op_meta.state == ST_MISS ||
@@ -1387,7 +1387,8 @@ refill_ops_n_suspect_failed_nodes(uint32_t *trace_iter, uint16_t worker_lid,
 			ops[i].op_meta.state == ST_RMW_ABORT ||
 			ops[i].op_meta.state == ST_RMW_COMPLETE ||
 			ops[i].op_meta.state == ST_OP_MEMBERSHIP_COMPLETE ||
-			ops[i].op_meta.state == ST_GET_COMPLETE) {
+			ops[i].op_meta.state == ST_GET_COMPLETE)
+		{
             if (first_iter_has_passed[worker_lid] != 0) {
                 if (ENABLE_REQ_PRINTS && worker_lid < MAX_THREADS_TO_PRINT)
                     green_printf(
@@ -1502,10 +1503,10 @@ refill_ops_n_suspect_failed_nodes(uint32_t *trace_iter, uint16_t worker_lid,
 		first_iter_has_passed[worker_lid] = 1;
 
 	if(ENABLE_ASSERTIONS)
-		for(i = 0; i < max_batch_size; i++)
+		for(int i = 0; i < max_batch_size; i++)
 			assert(ops[i].op_meta.opcode == ST_OP_PUT ||
-			       ops[i].op_meta.opcode == ST_OP_RMW ||
-			       ops[i].op_meta.opcode == ST_OP_GET  );
+			       ops[i].op_meta.opcode == ST_OP_GET ||
+			       (ops[i].op_meta.opcode == ST_OP_RMW && CR_IS_RUNNING == 0));
 
 	return node_suspected;
 }

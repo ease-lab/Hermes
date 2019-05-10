@@ -13,33 +13,32 @@ HOSTS=( ##### network  cluster #####
         )
 
 FILES=(
-#        "hermes"
-        "run-hermes.sh"
-        "hermes-wings"
+        "run-cr.sh"
+        "cr"
       )
 
 
 ### Runs to make
 #declare -a write_ratios=(0 10 50 200 500 1000)
 #declare -a write_ratios=(500 750 1000)
-declare -a write_ratios=(1000)
-#declare -a write_ratios=(10 20 50)
 #declare -a write_ratios=(200)
-declare -a rmw_ratios=(0)
+declare -a write_ratios=(10)
+#declare -a write_ratios=(200)
 #declare -a num_workers=(5 10 15 20 25 30 36)
 declare -a num_workers=(38)
 #declare -a batch_sizes=(25 50 75 100 125 150 200 250)
-declare -a batch_sizes=(15)
-declare -a credits=(15)
+declare -a batch_sizes=(50)
+#declare -a credits=(250) # make sure credits % NUM_NODES == 0
+declare -a credits=(250) # make sure credits % NUM_NODES == 0
 #declare -a credits=(30)
 #declare -a coalesce=(1 5 10 15)
-declare -a coalesce=(15)
+declare -a coalesce=(10)
 
 USERNAME="s1671850" # "user"
 LOCAL_HOST=`hostname`
 MAKE_FOLDER="/home/${USERNAME}/hermes/src"
-HOME_FOLDER="/home/${USERNAME}/hermes/src/hermes"
-DEST_FOLDER="/home/${USERNAME}/hermes-exec/src/hermes"
+HOME_FOLDER="/home/${USERNAME}/hermes/src/CR"
+DEST_FOLDER="/home/${USERNAME}/hermes-exec/src/CR"
 RESULT_FOLDER="/home/${USERNAME}/hermes-exec/results/xput/per-node/"
 RESULT_OUT_FOLDER="/home/${USERNAME}/hermes/results/xput/per-node/"
 RESULT_OUT_FOLDER_MERGE="/home/${USERNAME}/hermes/results/xput/all-nodes/"
@@ -55,7 +54,7 @@ do
 	echo "${FILE} copied to {${HOSTS[@]/$LOCAL_HOST}}"
 done
 
-REMOTE_COMMAND="cd ${DEST_FOLDER}; bash run-hermes.sh"
+REMOTE_COMMAND="cd ${DEST_FOLDER}; bash run-cr.sh"
 OUTP_FOLDER="/home/${USERNAME}/hermes/results/xput/per-node/"
 
 PASS="${1}"
@@ -73,14 +72,13 @@ else
 #      echo ${PASS} | ./run-hermes.sh > ${OUTP_FOLDER}/${LOCAL_HOST}.out
 
       # Execute locally and remotely
-    for RMW in "${rmw_ratios[@]}"; do
       for WR in "${write_ratios[@]}"; do
         for W in "${num_workers[@]}"; do
           for BA in "${batch_sizes[@]}"; do
             for CRD in "${credits[@]}"; do
               for COAL in "${coalesce[@]}"; do
-                 args=" -R ${RMW} -w ${WR} -W ${W} -b ${BA} -c ${CRD} -C ${COAL}"
-                 echo ${PASS} | ./run-hermes.sh ${args} &
+                 args=" -w ${WR} -W ${W} -b ${BA} -c ${CRD} -C ${COAL}"
+                 echo ${PASS} | ./run-cr.sh ${args} &
                  sleep 2
 	             parallel "echo ${PASS} | ssh -tt {} $'${REMOTE_COMMAND} ${args}'" ::: $(echo ${HOSTS[@]/$LOCAL_HOST}) >/dev/null
 	          done
@@ -88,7 +86,6 @@ else
 	      done
 	    done
 	  done
-	done
 
       # Gather remote files
 	  parallel "scp {}:${RESULT_FOLDER}* ${RESULT_OUT_FOLDER} " ::: $(echo ${HOSTS[@]/$LOCAL_HOST})
