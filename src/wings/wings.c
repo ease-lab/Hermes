@@ -114,9 +114,9 @@ wings_ud_channel_init(ud_channel_t *ud_c, char *qp_name, enum channel_type type,
     ud_c->enable_prints = prints_on;
 
 
+    ud_c->max_coalescing = max_coalescing;
 	ud_c->max_msg_size = (uint16_t) (max_req_size + (ud_c->is_header_only == 1 ? 1 : 0)); // hdr_only msgs have an additional 1st B indicating sender_id
     ud_c->small_msg_size = small_req_size == 0 ? ud_c->max_msg_size : small_req_size;
-	ud_c->max_coalescing = max_coalescing;
 
 
 	ud_c->no_crds_to_send_per_endpoint = NULL; // unused for type != CRD

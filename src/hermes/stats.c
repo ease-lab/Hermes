@@ -171,7 +171,7 @@ dump_xput_stats(double xput_in_miops)
     const char* open_mode = no_func_calls == 0 ? "w" : "a";
 
     sprintf(filename, "%s/%s_xPut_m_%d_wr_%.1f_rmw_%.1f_wk_%d_b_%d_c_%d%s-%d.csv", path,
-            CR_IS_RUNNING == 1? "CR" : "Hermes",
+            is_CR == 1? "CR" : "Hermes",
             MACHINE_NUM,
             update_ratio/10.0,
             rmw_ratio/10.0,
@@ -200,7 +200,7 @@ dump_latency_stats(void)
     char* path = "../../results/latency";
 
     sprintf(filename, "%s/%s_latency_m_%d_w_%d_b_%d_wr_%d_rmw_%d_c_%d%s.csv", path,
-            CR_IS_RUNNING == 1? "CR" : "Hermes",
+            is_CR == 1? "CR" : "Hermes",
             MACHINE_NUM,
             num_workers,
             max_batch_size,

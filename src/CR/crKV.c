@@ -207,11 +207,7 @@ cr_complete_local_write(spacetime_op_t *read_write_op, uint8_t idx, const uint64
 
 	if(read_write_op[idx].op_meta.opcode == ST_OP_PUT)
 		read_write_op[idx].op_meta.state = ST_PUT_COMPLETE;
-	else {
-        printf("Opcode: %d\n", read_write_op[idx].op_meta.opcode);
-	    printf("Opcode: %s\n", code_to_str(read_write_op[idx].op_meta.opcode));
-	    assert(0);
-	}
+	else assert(0);
 }
 
 static inline void
@@ -222,65 +218,65 @@ cr_exec_inv(spacetime_inv_t *inv_ptr, struct mica_op *kv_ptr,
 	spacetime_object_meta lock_free_meta;
 	spacetime_object_meta *curr_meta = (spacetime_object_meta *) kv_ptr->value;
 	uint8_t* kv_value_ptr = (uint8_t*) &curr_meta[1] ;
-	if (inv_ptr->op_meta.opcode != ST_OP_INV) assert(0);
-	else{
-		uint32_t debug_cntr = 0;
-		do { //Lock free read of keys meta
-			if (ENABLE_ASSERTIONS) {
-				debug_cntr++;
-				if (debug_cntr == M_4) {
-					printf("Worker stuck on a lock-free read (for INV)\n");
-					debug_cntr = 0;
-				}
-			}
-			lock_free_meta = *curr_meta;
-		} while (!cctrl_timestamp_is_same_and_valid(&lock_free_meta.cctrl, &curr_meta->cctrl));
+    if (ENABLE_ASSERTIONS)
+        assert(inv_ptr->op_meta.opcode == ST_OP_INV);
 
-		//lock and proceed iff remote.TS >= local.TS
-		//inv TS >= local timestamp
-		if(!timestamp_is_smaller(inv_ptr->op_meta.ts.version,  inv_ptr->op_meta.ts.tie_breaker_id,
-								 lock_free_meta.cctrl.ts.version,
-								 lock_free_meta.cctrl.ts.tie_breaker_id))
-		{
-			//Lock and check again if inv TS > local timestamp
-			cctrl_lock(&curr_meta->cctrl);
-			///Warning: use op.version + 1 bellow since optik_lock() increases curr_meta->version by 1
-			if(timestamp_is_smaller(curr_meta->cctrl.ts.version - 1,
-									curr_meta->cctrl.ts.tie_breaker_id,
-									inv_ptr->op_meta.ts.version,
-									inv_ptr->op_meta.ts.tie_breaker_id))
-			{
+    uint32_t debug_cntr = 0;
+    do { //Lock free read of keys meta
+        if (ENABLE_ASSERTIONS) {
+            debug_cntr++;
+            if (debug_cntr == M_4) {
+                printf("Worker stuck on a lock-free read (for INV)\n");
+                debug_cntr = 0;
+            }
+        }
+        lock_free_meta = *curr_meta;
+    } while (!cctrl_timestamp_is_same_and_valid(&lock_free_meta.cctrl, &curr_meta->cctrl));
+
+    //lock and proceed iff remote.TS >= local.TS
+    //inv TS >= local timestamp
+    if(!timestamp_is_smaller(inv_ptr->op_meta.ts.version,  inv_ptr->op_meta.ts.tie_breaker_id,
+                             lock_free_meta.cctrl.ts.version,
+                             lock_free_meta.cctrl.ts.tie_breaker_id))
+    {
+        //Lock and check again if inv TS > local timestamp
+        cctrl_lock(&curr_meta->cctrl);
+        ///Warning: use op.version + 1 bellow since optik_lock() increases curr_meta->version by 1
+        if(timestamp_is_smaller(curr_meta->cctrl.ts.version - 1,
+                                curr_meta->cctrl.ts.tie_breaker_id,
+                                inv_ptr->op_meta.ts.version,
+                                inv_ptr->op_meta.ts.tie_breaker_id))
+        {
 //							printf("Received an invalidation with >= timestamp\n");
-				///Update Value, TS and last_writer_id
+            ///Update Value, TS and last_writer_id
 //				curr_meta->last_writer_id = inv_ptr->op_meta.sender;
-				kv_ptr->val_len = inv_ptr->op_meta.val_len + sizeof(spacetime_object_meta);
-				if(ENABLE_ASSERTIONS){
+            kv_ptr->val_len = inv_ptr->op_meta.val_len + sizeof(spacetime_object_meta);
+            if(ENABLE_ASSERTIONS){
 //					assert(kv_ptr->val_len == KVS_VALUE_SIZE >> SHIFT_BITS);
-					assert(inv_ptr->op_meta.val_len == ST_VALUE_SIZE >> SHIFT_BITS);
-				}
-				memcpy(kv_value_ptr, inv_ptr->value, ST_VALUE_SIZE);
-				///Update state
+                assert(inv_ptr->op_meta.val_len == ST_VALUE_SIZE >> SHIFT_BITS);
+            }
+            memcpy(kv_value_ptr, inv_ptr->value, ST_VALUE_SIZE);
+            ///Update state
 
-				switch(curr_meta->state) {
-					case VALID_STATE:
-						if(machine_id != tail_id()) // Tail never gets invalid
-							curr_meta->state = INVALID_STATE;
-						break;
-					case INVALID_STATE:
-						break;
-					default: assert(0);
-				}
-				cctrl_unlock_custom_version(&curr_meta->cctrl, inv_ptr->op_meta.ts.tie_breaker_id,
-											inv_ptr->op_meta.ts.version);
-			} else if(timestamp_is_equal(curr_meta->cctrl.ts.version - 1,
-										 curr_meta->cctrl.ts.tie_breaker_id,
-										 inv_ptr->op_meta.ts.version,
-										 inv_ptr->op_meta.ts.tie_breaker_id))
-				assert(0);
-			else
-				cctrl_unlock_dec_version(&curr_meta->cctrl);
-		}
-	}
+            switch(curr_meta->state) {
+                case VALID_STATE:
+                    if(machine_id != tail_id()) // Tail never gets invalid
+                        curr_meta->state = INVALID_STATE;
+                    break;
+                case INVALID_STATE:
+                    break;
+                default: assert(0);
+            }
+            cctrl_unlock_custom_version(&curr_meta->cctrl, inv_ptr->op_meta.ts.tie_breaker_id,
+                                        inv_ptr->op_meta.ts.version);
+        } else if(timestamp_is_equal(curr_meta->cctrl.ts.version - 1,
+                                     curr_meta->cctrl.ts.tie_breaker_id,
+                                     inv_ptr->op_meta.ts.version,
+                                     inv_ptr->op_meta.ts.tie_breaker_id))
+            assert(0);
+        else
+            cctrl_unlock_dec_version(&curr_meta->cctrl);
+    }
 	inv_ptr->op_meta.opcode = ST_INV_SUCCESS;
 
 	if(inv_ptr->op_meta.initiator == machine_id && machine_id == tail_id())

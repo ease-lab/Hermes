@@ -586,7 +586,7 @@ void*
 run_worker(void *arg)
 {
     assert(rmw_ratio == 0);
-	assert(CR_IS_RUNNING == 1);
+	assert(is_CR == 1);
     assert(credits_num % MACHINE_NUM == 0); // CR ONLY
 	assert(ENABLE_COALESCE_OF_HOT_REQS == 0);
 
@@ -770,23 +770,19 @@ run_worker(void *arg)
 											  num_of_iters_serving_op, NULL,
 											  &stopwatch_for_req_latency,
 											  n_hottest_keys_in_ops_get, n_hottest_keys_in_ops_put);
-            w_stats[worker_lid].total_loops++; //todo only for dbg
             cr_batch_ops_to_KVS(Local_ops, (uint8_t *) ops, max_batch_size, sizeof(spacetime_op_t), NULL);
+
+            //TODO: changed
+            stop_latency_of_completed_reads(ops, worker_lid, &stopwatch_for_req_latency);
 		}
 
 		if (update_ratio > 0) {
 
 			if(machine_id == head_id()) {
 				//TODO: Still we might allow more invs than ACK recvs available
-				if(!CR_ENABLE_EARLY_INV_CRDS ||
-				   inv_ud_c->stats.send_total_msgs - ack_ud_c->stats.recv_total_msgs <= CR_ACK_CREDITS)
-				{
-					/// Initiate INVs for head writes
-					wings_issue_pkts(inv_ud_c, (uint8_t *) ops,
-									 max_batch_size, sizeof(spacetime_op_t), &rolling_idx,
-									 inv_skip_or_get_sender_id, inv_modify_elem_after_send,
-									 inv_copy_and_modify_elem);
-				}
+                const uint16_t max_outstanding_remote_writes = (MACHINE_NUM - 1) * CR_ACK_CREDITS;
+//                const uint16_t max_outstanding_remote_writes = (2) * CR_ACK_CREDITS;
+
 
 				///////////////
 				///<3rd stage>
@@ -796,10 +792,9 @@ run_worker(void *arg)
 				cr_batch_ops_to_KVS(Remote_writes, (uint8_t *) remote_writes,
 									max_batch_size, sizeof(spacetime_op_t), NULL);
 
-				stop_latency_of_completed_reads(ops, worker_lid, &stopwatch_for_req_latency);
+//				stop_latency_of_completed_reads(ops, worker_lid, &stopwatch_for_req_latency);
 
 				//TODO: Still we might allow more invs than ACK recvs available
-				const uint16_t max_outstanding_remote_writes = CR_ACK_CREDITS;
 				if(!CR_ENABLE_EARLY_INV_CRDS ||
 				   inv_ud_c->stats.send_total_msgs - ack_ud_c->stats.recv_total_msgs <= max_outstanding_remote_writes)
 				{
@@ -821,6 +816,15 @@ run_worker(void *arg)
 				///</3rd stage>
 				///////////////
 
+                if(!CR_ENABLE_EARLY_INV_CRDS ||
+                   inv_ud_c->stats.send_total_msgs - ack_ud_c->stats.recv_total_msgs <= max_outstanding_remote_writes)
+                {
+                    /// Initiate INVs for head writes
+                    wings_issue_pkts(inv_ud_c, (uint8_t *) ops,
+                                     max_batch_size, sizeof(spacetime_op_t), &rolling_idx,
+                                     inv_skip_or_get_sender_id, inv_modify_elem_after_send,
+                                     inv_copy_and_modify_elem);
+                }
 
 			}
 
@@ -906,8 +910,7 @@ run_worker(void *arg)
 																inv_fwd_modify_elem_after_send,
 																inv_fwd_copy_and_modify_elem);
 
-					else if (machine_id == tail_id())
-					{
+					else if (machine_id == tail_id()) {
 						/// Initiate ACKS (forward to prev)
 						has_outstanding_invs = wings_issue_pkts(ack_ud_c, (uint8_t *) inv_recv_ops, invs_polled,
 																sizeof(spacetime_inv_t), NULL, ack_skip_or_get_sender_id,
@@ -937,10 +940,8 @@ run_worker(void *arg)
 									 ack_fwd_modify_elem_after_send, ack_fwd_copy_and_modify_elem);
 					if(ENABLE_ASSERTIONS)
 						assert(ack_ud_c->stats.send_total_msgs == ack_ud_c->stats.recv_total_msgs - ack_ud_c->num_overflow_msgs);
-				}
 
-				else
-                    ///empty ack_rcv_ops in head node
+				} else ///empty ack_rcv_ops in head node
                     for(int i = 0; i < coh_ops_len; ++i)
                         ack_recv_ops[i].opcode = ST_EMPTY;
 			}

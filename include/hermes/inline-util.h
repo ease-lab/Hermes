@@ -1355,7 +1355,7 @@ refill_ops_n_suspect_failed_nodes(uint32_t *trace_iter, uint16_t worker_lid,
 		if(ENABLE_ASSERTIONS && first_iter_has_passed[worker_lid] == 1){
 				assert(ops[i].op_meta.opcode == ST_OP_PUT ||
 				       ops[i].op_meta.opcode == ST_OP_GET ||
-				       (CR_IS_RUNNING == 0 && ops[i].op_meta.opcode == ST_OP_RMW));
+				       (is_CR == 0 && ops[i].op_meta.opcode == ST_OP_RMW));
 				assert(ops[i].op_meta.state == ST_PUT_COMPLETE ||
 					   ops[i].op_meta.state == ST_GET_COMPLETE ||
 					   ops[i].op_meta.state == ST_PUT_SUCCESS ||
@@ -1506,7 +1506,7 @@ refill_ops_n_suspect_failed_nodes(uint32_t *trace_iter, uint16_t worker_lid,
 		for(int i = 0; i < max_batch_size; i++)
 			assert(ops[i].op_meta.opcode == ST_OP_PUT ||
 			       ops[i].op_meta.opcode == ST_OP_GET ||
-			       (ops[i].op_meta.opcode == ST_OP_RMW && CR_IS_RUNNING == 0));
+			       (ops[i].op_meta.opcode == ST_OP_RMW && is_CR == 0));
 
 	return node_suspected;
 }

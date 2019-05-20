@@ -113,7 +113,8 @@ shm-rm.sh 1>/dev/null 2>/dev/null
 
 
 blue "Reset server QP registry"
-memcached -l 0.0.0.0 1>/dev/null 2>/dev/null &
+#memcached -l 0.0.0.0 1>/dev/null 2>/dev/null &
+memcached -l ${HRD_REGISTRY_IP} 1>/dev/null 2>/dev/null &
 sleep 1
 
 
@@ -129,4 +130,5 @@ sudo LD_LIBRARY_PATH=/usr/local/lib/ -E \
 	--credits      ${CREDITS}           \
 	--max-coalesce ${MAX_COALESCE}      \
 	--max-batch-size ${MAX_BATCH_SIZE}  \
+	--hermes                            \
 	2>&1

@@ -778,10 +778,12 @@ wings_issue_pkts(ud_channel_t *ud_c,
 
 //        if(!ud_c->is_bcast_channel && !ud_c->is_header_only)
 		if((!ud_c->is_bcast_channel && !ud_c->is_header_only) || is_small_msg == 0)
+        {
 			// Send unicasts because if we cannot coalesce pkts, due to different endpoints
 			if(_wings_curr_send_pkt_ptr(ud_c)->req_num > 0 &&
 			   (is_small_msg == 0 || curr_msg_dst != last_msg_dst))
 				_wings_check_if_batch_n_inc_pkt_ptr(ud_c, &pkts_in_batch, &msgs_in_batch);
+        }
 
 		last_msg_dst = curr_msg_dst;
 
@@ -793,8 +795,8 @@ wings_issue_pkts(ud_channel_t *ud_c,
 
 		// Check if we should send a batch since we might have reached the max batch size
 //        if(ud_c->is_header_only || _wings_curr_send_pkt_ptr(ud_c)->req_num == ud_c->max_coalescing)
-		if(is_small_msg == 0 || ud_c->is_header_only ||
-		   _wings_curr_send_pkt_ptr(ud_c)->req_num == ud_c->max_coalescing)
+        if(is_small_msg == 0 || ud_c->is_header_only ||
+           _wings_curr_send_pkt_ptr(ud_c)->req_num == ud_c->max_coalescing)
         {
             _wings_check_if_batch_n_inc_pkt_ptr(ud_c, &pkts_in_batch, &msgs_in_batch);
         }

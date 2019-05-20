@@ -23,6 +23,7 @@ volatile struct remote_qp remote_worker_qps[WORKER_NUM][TOTAL_WORKER_UD_QPs];
 dbit_vector_t *g_share_qs_barrier;
 
 // Global config vars
+uint8_t is_CR;
 int num_workers;
 int update_ratio;
 int rmw_ratio;
@@ -36,6 +37,7 @@ int main(int argc, char *argv[])
 	int i, c;
 	is_roce = -1; machine_id = -1;
 	// config vars
+	is_CR = 1;
 	num_workers = -1;
 	update_ratio = -1;
     rmw_ratio = -1;
@@ -99,12 +101,13 @@ int main(int argc, char *argv[])
 			{ .name = "credits",		    .has_arg = 1, .val = 'c' },
 			{ .name = "max-coalesce",		.has_arg = 1, .val = 'C' },
 			{ .name = "max-batch-size",		.has_arg = 1, .val = 'b' },
+            { .name = "hermes",		        .has_arg = 0, .val = 'H' },
 			{ 0 }
 	};
 
 	/* Parse and check arguments */
 	while(1) {
-		c = getopt_long(argc, argv, "m:r:R:d:w:c:C:W:", opts, NULL);
+		c = getopt_long(argc, argv, "m:r:R:d:w:c:C:W:H", opts, NULL);
 		if(c == -1) break;
 
 		switch (c) {
@@ -136,6 +139,9 @@ int main(int argc, char *argv[])
 			case 'b':
 				max_batch_size = atoi(optarg);
 				break;
+            case 'H':
+                is_CR = 0;
+                break;
 			default:
 				printf("Invalid argument %d\n", c);
 				assert(false);

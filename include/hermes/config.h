@@ -14,16 +14,16 @@
 #define MACHINE_NUM 5
 #define REMOTE_MACHINES (MACHINE_NUM - 1)
 #define GROUP_MEMBERSHIP_ARRAY_SIZE HERMES_CEILING(MACHINE_NUM, 8) //assuming uint8_t
-#define WORKERS_PER_MACHINE 38 //38
+#define WORKERS_PER_MACHINE 39 //38
 #define KV_SOCKET 0
 #define SOCKET_TO_START_SPAWNING_THREADS 0
 #define USE_ALL_SOCKETS 1
 #define ENABLE_HYPERTHREADING 1
 #define UPDATE_RATIO 200
 #define RMW_RATIO 0 //percentage of writes to be RMWs
-#define MAX_BATCH_OPS_SIZE 250 //250 // up to 254
+#define MAX_BATCH_OPS_SIZE 15 //250 // up to 254
 
-#define ENABLE_RMWs 0
+#define ENABLE_RMWs 1
 static_assert(ENABLE_RMWs == 0 || ENABLE_RMWs == 1,"");
 
 //LATENCY
@@ -73,7 +73,6 @@ static_assert(!ENABLE_VIRTUAL_NODE_IDS || MACHINE_NUM * VIRTUAL_NODE_IDS_PER_NOD
 #define CR_ENABLE_ALL_NODES_GETS_EXCEPT_HEAD 0
 #define CR_ENABLE_BLOCKING_INVALID_WRITES_ON_HEAD 0
 
-#define CR_IS_RUNNING 1
 #define CR_REMOTE_WRITES_MAX_REQ_COALESCE INV_MAX_REQ_COALESCE
 #define CR_DISABLE_REMOTE_WRITES_INLINING DISABLE_INV_INLINING
 #define CR_REMOTE_WRITES_CREDITS (CREDITS_PER_REMOTE_WORKER / MACHINE_NUM)
@@ -103,8 +102,7 @@ static_assert(!ENABLE_VIRTUAL_NODE_IDS || MACHINE_NUM * VIRTUAL_NODE_IDS_PER_NOD
 ----------------- REQ COALESCING -------------------
 --------------------------------------------------*/
 //#define MAX_REQ_COALESCE MAX_BATCH_OPS_SIZE
-//#define MAX_REQ_COALESCE 20
-#define MAX_REQ_COALESCE 20
+#define MAX_REQ_COALESCE 5
 #define INV_MAX_REQ_COALESCE MAX_REQ_COALESCE
 #define ACK_MAX_REQ_COALESCE MAX_REQ_COALESCE
 #define VAL_MAX_REQ_COALESCE MAX_REQ_COALESCE
@@ -112,8 +110,8 @@ static_assert(!ENABLE_VIRTUAL_NODE_IDS || MACHINE_NUM * VIRTUAL_NODE_IDS_PER_NOD
 /*-------------------------------------------------
 -----------------FLOW CONTROL---------------------
 --------------------------------------------------*/
-//#define CREDITS_PER_REMOTE_WORKER 20 //(1 * MAX_REQ_COALESCE) // Hermes
-#define CREDITS_PER_REMOTE_WORKER 250 //(MAX_BATCH_OPS_SIZE) // CR
+#define CREDITS_PER_REMOTE_WORKER 5 //(1 * MAX_REQ_COALESCE) // Hermes
+//#define CREDITS_PER_REMOTE_WORKER 200 //(MAX_BATCH_OPS_SIZE) // CR
 #define INV_CREDITS CREDITS_PER_REMOTE_WORKER
 #define ACK_CREDITS CREDITS_PER_REMOTE_WORKER
 #define VAL_CREDITS CREDITS_PER_REMOTE_WORKER
@@ -282,6 +280,7 @@ extern volatile uint8_t node_suspicions[WORKERS_PER_MACHINE][MACHINE_NUM];
 extern volatile char worker_needed_ah_ready;
 
 // global config vars
+extern uint8_t is_CR;
 extern int update_ratio;
 extern int rmw_ratio;
 extern int num_workers;

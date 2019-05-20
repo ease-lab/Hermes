@@ -234,7 +234,7 @@ print_total_send_recv_msgs(ud_channel_t *inv_ud_c, ud_channel_t *ack_ud_c,
 void*
 run_worker(void *arg)
 {
-	assert(CR_IS_RUNNING == 0);
+	assert(is_CR == 0);
 
 	struct thread_params params = *(struct thread_params *) arg;
 	uint16_t worker_lid = (uint16_t) params.id;	// Local ID of this worker thread

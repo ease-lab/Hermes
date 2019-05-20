@@ -22,10 +22,11 @@ FILES=(
 ### Runs to make
 #declare -a write_ratios=(0 10 50 200 500 1000)
 #declare -a write_ratios=(500 750 1000)
-declare -a write_ratios=(1000)
-#declare -a write_ratios=(10 20 50)
 #declare -a write_ratios=(200)
+#declare -a write_ratios=(10 20 50)
+declare -a write_ratios=(1000)
 declare -a rmw_ratios=(0)
+#declare -a rmw_ratios=(1000)
 #declare -a num_workers=(5 10 15 20 25 30 36)
 declare -a num_workers=(38)
 #declare -a batch_sizes=(25 50 75 100 125 150 200 250)
