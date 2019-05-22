@@ -7,7 +7,7 @@
 
 #include "../utils/bit_vector.h"
 #include "../utils/time_rdtsc.h"
-#include "../wings/wings_api.h"
+#include "../../include/wings/wings.h"
 // Send heartbeats
 // Recv heartbeats
 // Change View
@@ -35,7 +35,9 @@
 // Guarantees Nodes in the same EPOCH id have the same group view
 
 #define ENABLE_ARBITRATION 1
-#define FAKE_LINK_FAILURE 1
+
+// Hades debug Tests
+#define FAKE_LINK_FAILURE 0
 #define FAKE_LINK_FAILURE_AFTER_SEC 15
 #define STOP_FAKE_LINK_FAILURE_AFTER_SEC 20
 #define FAKE_ONE_WAY_LINK_FAILURE 0
@@ -89,6 +91,11 @@ typedef struct
     ud_channel_t* hviews_crd_c;
 }
 hades_wings_ctx_t;
+
+
+void* hades_full_thread(void *node_id);
+uint16_t poll_for_remote_views(hades_wings_ctx_t *hw_ctx);
+void update_view_and_issue_hbs(hades_wings_ctx_t *hw_ctx);
 
 inline static void
 hades_ctx_init(hades_ctx_t* ctx, uint8_t node_id, uint8_t max_nodes,
@@ -169,6 +176,8 @@ hades_wings_ctx_init(hades_wings_ctx_t* wctx, uint8_t node_id, uint8_t max_nodes
                          disable_crd_ctrl, expl_crd_ctrl, wctx->hviews_crd_c, credits,
                          max_nodes, (uint8_t) machine_id, stats_on, prints_on);
 }
+
+
 
 
 // How does somebody joins?

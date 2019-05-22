@@ -11,19 +11,19 @@
 #define HERMES_CEILING(x,y) (((x) + (y) - 1) / (y))
 #define HERMES_MIN(x,y) (x < y ? x : y)
 
-#define MACHINE_NUM 5
+#define MACHINE_NUM 3
 #define REMOTE_MACHINES (MACHINE_NUM - 1)
 #define GROUP_MEMBERSHIP_ARRAY_SIZE HERMES_CEILING(MACHINE_NUM, 8) //assuming uint8_t
-#define WORKERS_PER_MACHINE 39 //38
+#define WORKERS_PER_MACHINE 2 //38
 #define KV_SOCKET 0
 #define SOCKET_TO_START_SPAWNING_THREADS 0
 #define USE_ALL_SOCKETS 1
 #define ENABLE_HYPERTHREADING 1
-#define UPDATE_RATIO 200
+#define UPDATE_RATIO 750
 #define RMW_RATIO 0 //percentage of writes to be RMWs
-#define MAX_BATCH_OPS_SIZE 15 //250 // up to 254
+#define MAX_BATCH_OPS_SIZE 10 //250 // up to 254
 
-#define ENABLE_RMWs 1
+#define ENABLE_RMWs 0
 static_assert(ENABLE_RMWs == 0 || ENABLE_RMWs == 1,"");
 
 //LATENCY
@@ -51,7 +51,7 @@ static_assert(!ENABLE_VIRTUAL_NODE_IDS || MACHINE_NUM * VIRTUAL_NODE_IDS_PER_NOD
 #define ENABLE_WRITE_COALESCE_TO_THE_SAME_KEY_IN_SAME_NODE 0
 
 //DEBUG
-#define ENABLE_ASSERTIONS 0
+#define ENABLE_ASSERTIONS 1
 #define DISABLE_VALS_FOR_DEBUGGING 0
 #define KEY_NUM 0 //use 0 to disable
 
@@ -63,7 +63,8 @@ static_assert(!ENABLE_VIRTUAL_NODE_IDS || MACHINE_NUM * VIRTUAL_NODE_IDS_PER_NOD
 #define USE_A_SINGLE_KEY 0        // if FEED_FROM_TRACE == 0
 #define ST_KEY_ID_255_OR_HIGHER 255
 
-
+// FAILURES
+#define ENABLE_HADES_FAILURE_DETECTION 1
 // ////////////////
 // <CR configuration>
 // ////////////////
@@ -85,6 +86,7 @@ static_assert(!ENABLE_VIRTUAL_NODE_IDS || MACHINE_NUM * VIRTUAL_NODE_IDS_PER_NOD
 #define CR_ENABLE_EARLY_INV_CRDS 1
 
 #define CR_ACK_CREDITS (255) //(MACHINE_NUM * ACK_CREDITS)
+//#define CR_ACK_CREDITS (MACHINE_NUM * 255) //(MACHINE_NUM * ACK_CREDITS)
 
 #define CR_INV_UD_QP_ID 0
 #define CR_INV_CRD_UD_QP_ID 1
@@ -102,7 +104,7 @@ static_assert(!ENABLE_VIRTUAL_NODE_IDS || MACHINE_NUM * VIRTUAL_NODE_IDS_PER_NOD
 ----------------- REQ COALESCING -------------------
 --------------------------------------------------*/
 //#define MAX_REQ_COALESCE MAX_BATCH_OPS_SIZE
-#define MAX_REQ_COALESCE 5
+#define MAX_REQ_COALESCE 10
 #define INV_MAX_REQ_COALESCE MAX_REQ_COALESCE
 #define ACK_MAX_REQ_COALESCE MAX_REQ_COALESCE
 #define VAL_MAX_REQ_COALESCE MAX_REQ_COALESCE
@@ -110,8 +112,8 @@ static_assert(!ENABLE_VIRTUAL_NODE_IDS || MACHINE_NUM * VIRTUAL_NODE_IDS_PER_NOD
 /*-------------------------------------------------
 -----------------FLOW CONTROL---------------------
 --------------------------------------------------*/
-#define CREDITS_PER_REMOTE_WORKER 5 //(1 * MAX_REQ_COALESCE) // Hermes
-//#define CREDITS_PER_REMOTE_WORKER 200 //(MAX_BATCH_OPS_SIZE) // CR
+//#define CREDITS_PER_REMOTE_WORKER 5 //(1 * MAX_REQ_COALESCE) // Hermes
+#define CREDITS_PER_REMOTE_WORKER 250 //(MAX_BATCH_OPS_SIZE) // CR
 #define INV_CREDITS CREDITS_PER_REMOTE_WORKER
 #define ACK_CREDITS CREDITS_PER_REMOTE_WORKER
 #define VAL_CREDITS CREDITS_PER_REMOTE_WORKER
@@ -159,6 +161,7 @@ static_assert(!ENABLE_VIRTUAL_NODE_IDS || MACHINE_NUM * VIRTUAL_NODE_IDS_PER_NOD
 #define VAL_UD_QP_ID 2
 #define CRD_UD_QP_ID 3
 #define TOTAL_WORKER_UD_QPs 4
+#define TOTAL_WORKER_N_FAILURE_DETECTION_UD_QPs (TOTAL_WORKER_UD_QPs + (ENABLE_HADES_FAILURE_DETECTION ? 2 : 0))
 
 //RECV Depths
 #define RECV_INV_Q_DEPTH MAX_RECV_INV_WRS
@@ -223,7 +226,7 @@ static_assert(!ENABLE_VIRTUAL_NODE_IDS || MACHINE_NUM * VIRTUAL_NODE_IDS_PER_NOD
 #define PRINT_WORKER_STATS 0
 
 //Stats
-#define EXIT_ON_STATS_PRINT 1
+#define EXIT_ON_STATS_PRINT 0
 #define PRINT_NUM_STATS_BEFORE_EXITING 5 //80
 #define ENABLE_STAT_COUNTING 0
 #define DUMP_XPUT_STATS_TO_FILE 1
@@ -234,8 +237,7 @@ static_assert(!ENABLE_VIRTUAL_NODE_IDS || MACHINE_NUM * VIRTUAL_NODE_IDS_PER_NOD
 #define ROUNDS_BEFORE_FAILURE 2
 
 //FAILURE DETECTION
-#define NODES_WITH_FAILURE_DETECTOR 0
-#define WORKER_EMULATING_FAILURE_DETECTOR 0
+#define WORKER_WITH_FAILURE_DETECTOR 0
 #define NUM_OF_IDLE_ITERS_FOR_SUSPICION M_2 //M_4 //M_2 //K_256 /// WARNNING if this is very small we could be resetting some buffs after failure before their contents are send --> causing some asserts!
 
 // Rarely change

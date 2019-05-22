@@ -4,7 +4,7 @@
 
 #ifndef WINGS_API_H
 #define WINGS_API_H
-#include <hrd.h>
+#include "../libhrd/hrd.h"
 #include "../utils/bit_vector.h"
 
 /// WARNING!!
@@ -118,7 +118,7 @@ typedef struct _ud_channel_t
 	uint8_t channel_id; //id of the curr channel (e.g. local node id)
     uint16_t num_channels; // e.g. remote nodes + local node
     uint16_t num_crds_per_channel;
-    uint8_t* credits_per_channels; // array size of num_channels denoting available space on remote sides
+    uint16_t* credits_per_channels; // array size of num_channels denoting available space on remote sides
     /// Credits refer to msgs irrespective if coalesed or not --> a remote buffer must be able to handle max_number_of_msgs * max_coalescing
 
 
@@ -213,7 +213,7 @@ void wings_ud_channel_init(ud_channel_t *ud_c, char *qp_name, enum channel_type 
 						   // Credits
 						   uint8_t disable_crd_ctrl,
 						   uint8_t expl_crd_ctrl, ud_channel_t *linked_channel,
-						   uint8_t crds_per_channel, uint16_t num_channels, uint8_t channel_id,
+						   uint16_t crds_per_channel, uint16_t num_channels, uint8_t channel_id,
 						   // Toggles
 						   uint8_t stats_on, uint8_t prints_on);
 
@@ -227,7 +227,7 @@ wings_poll_buff_and_post_recvs(ud_channel_t *ud_c, uint16_t max_pkts_to_poll,
 							   uint8_t *recv_buff_space);
 
 static inline uint8_t
-wings_issue_pkts(ud_channel_t *ud_c,
+wings_issue_pkts(ud_channel_t *ud_c, bit_vector_t* membership,
 				 uint8_t *input_array_of_elems, uint16_t input_array_len,
 				 uint16_t size_of_input_elems, uint16_t *input_array_rolling_idx,
 				 skip_input_elem_or_get_dst_id_t skip_or_get_sender_id_func_ptr,
@@ -235,8 +235,9 @@ wings_issue_pkts(ud_channel_t *ud_c,
 				 copy_and_modify_input_elem_t copy_and_modify_elem);
 
 static inline void
-wings_issue_credits(ud_channel_t *ud_c, uint8_t *input_array_of_elems,
-					uint16_t input_array_len, uint16_t size_of_input_elems,
+wings_issue_credits(ud_channel_t *ud_c, bit_vector_t* membership,
+                    uint8_t *input_array_of_elems, uint16_t input_array_len,
+                    uint16_t size_of_input_elems,
 					skip_input_elem_or_get_dst_id_t skip_or_get_sender_id_func_ptr,
 					modify_input_elem_after_send_t modify_elem_after_send);
 

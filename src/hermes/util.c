@@ -277,6 +277,10 @@ char* code_to_str(uint8_t code)
             return "ST_RMW_ABORT";
         case ST_PUT_COMPLETE_SEND_VALS:
             return "ST_PUT_COMPLETE_SEND_VALS";
+        case ST_RMW_COMPLETE_SEND_VALS:
+            return "ST_RMW_COMPLETE_SEND_VALS";
+        case ST_REPLAY_COMPLETE_SEND_VALS:
+            return "ST_REPLAY_COMPLETE_SEND_VALS";
         case ST_INV_OUT_OF_GROUP:
             return "ST_INV_OUT_OF_GROUP";
         case ST_SEND_CRD:

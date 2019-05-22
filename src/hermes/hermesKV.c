@@ -33,10 +33,13 @@ hermes_assertions_begin_ack(spacetime_ack_t *ack_ptr)
 	assert(REMOTE_MACHINES != 1 || ack_ptr->sender == REMOTE_MACHINES - machine_id);
 	assert(ack_ptr->opcode == ST_OP_ACK || ack_ptr->opcode == ST_OP_INV_ABORT ||
                    ack_ptr->opcode == ST_OP_MEMBERSHIP_CHANGE);
-	assert(group_membership.num_of_alive_remotes != REMOTE_MACHINES ||
-	       ack_ptr->opcode == ST_OP_INV_ABORT ||
-		   ack_ptr->ts.tie_breaker_id == machine_id ||
-		   (ENABLE_VIRTUAL_NODE_IDS && ack_ptr->ts.tie_breaker_id  % MACHINE_NUM == machine_id));
+
+	///WARNING the following assertion is incorrect for write replays
+//	assert(group_membership.num_of_alive_remotes != REMOTE_MACHINES ||
+//	       ack_ptr->opcode == ST_OP_INV_ABORT ||
+//		   ack_ptr->ts.tie_breaker_id == machine_id ||
+//		   (ENABLE_VIRTUAL_NODE_IDS && ack_ptr->ts.tie_breaker_id  % MACHINE_NUM == machine_id));
+
 //			yellow_printf("ACKS: Ops[%d]vvv hash(1st 8B):%" PRIu64 " version: %d, tie: %d\n", I,
 //					   ((uint64_t *) &(*op)[I].key)[0], (*op)[I].version, (*op)[I].tie_breaker_id);
 }
@@ -424,6 +427,61 @@ hermes_exec_rmw(spacetime_op_t *op_ptr, struct mica_op *kv_ptr,
     }
 }
 
+static inline void
+hermes_exec_check_update_completion(spacetime_op_t *op_ptr, struct mica_op *kv_ptr,
+                                    uint8_t idx, spacetime_group_membership curr_membership)
+{
+    spacetime_object_meta lock_free_read_meta;
+    spacetime_object_meta *curr_meta = (spacetime_object_meta *) kv_ptr->value;
+    hermes_lock_free_read_obj_meta(&lock_free_read_meta, curr_meta);
+
+    if(ENABLE_ASSERTIONS) {
+        assert(op_ptr->op_meta.opcode == ST_OP_PUT ||
+               op_ptr->op_meta.opcode == ST_OP_RMW ||
+               op_ptr->op_meta.state == ST_IN_PROGRESS_REPLAY);
+
+        assert(!timestamp_is_smaller(lock_free_read_meta.cctrl.ts.version,
+                                     lock_free_read_meta.cctrl.ts.tie_breaker_id,
+                                     op_ptr->op_meta.ts.version, op_ptr->op_meta.ts.tie_breaker_id));
+    }
+
+    if (is_last_ack(lock_free_read_meta.ack_bv, curr_membership)) { //if last local write completed
+        cctrl_lock(&curr_meta->cctrl);
+        if(is_last_ack(curr_meta->ack_bv, curr_membership)) {
+            if(ENABLE_ASSERTIONS)
+                assert(curr_meta->op_buffer_index == idx);
+            curr_meta->op_buffer_index = ST_OP_BUFFER_INDEX_EMPTY; //reset the write buff index
+            switch (curr_meta->state) {
+
+                case INVALID_WRITE_STATE:
+                    curr_meta->state = INVALID_STATE;
+                    ///Warning break omitted intentionally
+                case VALID_STATE:
+                case INVALID_STATE:
+                    op_ptr->op_meta.state = op_ptr->op_meta.opcode == ST_OP_PUT ?
+                                            ST_PUT_COMPLETE : ST_RMW_COMPLETE;
+                    break;
+                case WRITE_STATE:
+                case REPLAY_STATE:
+                    op_ptr->op_meta.ts.version = curr_meta->cctrl.ts.version - 1; // -1 because of seqlock does version + 1
+                    op_ptr->op_meta.ts.tie_breaker_id = curr_meta->cctrl.ts.tie_breaker_id;
+                    if(curr_meta->state == WRITE_STATE){
+                        op_ptr->op_meta.state = op_ptr->op_meta.opcode == ST_OP_PUT ?
+                                                ST_PUT_COMPLETE_SEND_VALS : ST_RMW_COMPLETE_SEND_VALS;
+                    } else{
+                        if(ENABLE_ASSERTIONS)
+                            assert(op_ptr->op_meta.state == ST_IN_PROGRESS_REPLAY);
+                        op_ptr->op_meta.state = DISABLE_VALS_FOR_DEBUGGING == 1 ?
+                                                ST_GET_COMPLETE : ST_REPLAY_COMPLETE_SEND_VALS;
+                    }
+                    curr_meta->state = VALID_STATE;
+                    break;
+                default: assert(0);
+            }
+        }
+        cctrl_unlock_dec_version(&curr_meta->cctrl);
+    }
+}
 
 //////////// Exec protocol action functions
 static inline void
@@ -667,6 +725,14 @@ hermes_skip_op(spacetime_op_t *op_ptr)
 }
 
 static inline uint8_t
+hermes_skip_op_after_membship_change(spacetime_op_t *op_ptr)
+{
+    return (uint8_t) ((op_ptr->op_meta.state == ST_IN_PROGRESS_PUT ||
+                       op_ptr->op_meta.state == ST_IN_PROGRESS_RMW ||
+                       op_ptr->op_meta.state == ST_IN_PROGRESS_REPLAY) ? 0 : 1);
+}
+
+static inline uint8_t
 hermes_skip_inv(spacetime_inv_t *inv_ptr, int* node_suspected)
 {
 	if(inv_ptr->op_meta.opcode == ST_OP_MEMBERSHIP_CHANGE) {
@@ -692,6 +758,8 @@ hermes_skip_dispatcher(enum hermes_batch_type_t type, void* ptr, int* node_suspe
 	switch (type){
 		case local_ops:
 			return hermes_skip_op(ptr);
+        case local_ops_after_membership_change:
+            return hermes_skip_op_after_membship_change(ptr);
 		case invs:
 			return hermes_skip_inv(ptr, node_suspected);
 		case acks:
@@ -708,6 +776,7 @@ hermes_assertions_begin_dispatcher(enum hermes_batch_type_t type, void* ptr)
 	if(ENABLE_ASSERTIONS)
 		switch (type){
 			case local_ops:
+            case local_ops_after_membership_change:
 				break;
 			case invs:
 				hermes_assertions_begin_inv(ptr);
@@ -728,6 +797,7 @@ hermes_print_dispatcher(enum hermes_batch_type_t type, int op_num, uint8_t threa
 	if(ENABLE_BATCH_OP_PRINTS)
 		switch (type){
 			case local_ops:
+            case local_ops_after_membership_change:
 				break;
 			case invs:
 				if(ENABLE_INV_PRINTS && thread_id < MAX_THREADS_TO_PRINT)
@@ -751,6 +821,7 @@ hermes_assertions_end_dispatcher(enum hermes_batch_type_t type, spacetime_op_t* 
 	if(ENABLE_ASSERTIONS)
 		switch (type){
 			case local_ops:
+            case local_ops_after_membership_change:
 			case invs:
 				break;
 			case acks:
@@ -775,8 +846,19 @@ hermes_exec_dispatcher(enum hermes_batch_type_t type, void* op_ptr, struct mica_
 				hermes_exec_write(op_ptr, kv_ptr, idx, curr_membership);
 		    else if (ENABLE_RMWs && ((spacetime_op_t*) op_ptr)->op_meta.opcode == ST_OP_RMW)
                 hermes_exec_rmw(op_ptr, kv_ptr, idx, curr_membership);
-		    else assert(0);
+		    else {
+                printf("Ops[%d]: %s\n", idx, code_to_str(((spacetime_op_t*) op_ptr)->op_meta.opcode));
+		        assert(0);
+		    }
 			break;
+        case local_ops_after_membership_change:
+            if(((spacetime_op_t*) op_ptr)->op_meta.opcode == ST_OP_PUT ||
+               ((spacetime_op_t*) op_ptr)->op_meta.opcode == ST_OP_RMW ||
+               ((spacetime_op_t*) op_ptr)->op_meta.state == ST_IN_PROGRESS_REPLAY)
+            {
+                hermes_exec_check_update_completion(op_ptr, kv_ptr, idx, curr_membership);
+            } else assert(0);
+            break;
 		case invs:
 		    hermes_exec_inv(op_ptr, kv_ptr, read_write_op);
 			break;

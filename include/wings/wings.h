@@ -362,7 +362,6 @@ wings_poll_buff_and_post_recvs(ud_channel_t *ud_c, uint16_t max_msgs_to_poll,
             uint16_t msg_size = next_packet->pkt.only_small_msgs == 1 ?
                                 ud_c->small_msg_size : ud_c->max_msg_size;
 			for (int j = 0; j < next_packet->pkt.req_num; ++j) {
-//                next_req = &next_packet_reqs[j * ud_c->max_msg_size];
 				next_req = &next_packet_reqs[j * msg_size];
 
 				if (msgs_polled >= remaining_msgs_to_poll)
@@ -370,7 +369,6 @@ wings_poll_buff_and_post_recvs(ud_channel_t *ud_c, uint16_t max_msgs_to_poll,
 				else {
 					recv_op_ptr = &recv_ops[msgs_polled * ud_c->max_msg_size];
                     memcpy(recv_op_ptr, next_req, msg_size);
-//					memcpy(recv_op_ptr, next_req, ud_c->max_msg_size);
 				}
 
 				msgs_polled++;
@@ -425,10 +423,21 @@ wings_poll_buff_and_post_recvs(ud_channel_t *ud_c, uint16_t max_msgs_to_poll,
 /* ---------------------------------------------------------------------------
 ----------------------------------- CREDITS ----------------------------------
 ---------------------------------------------------------------------------*/
+static inline uint8_t
+_wings_node_is_in_membership(uint8_t node_id, bit_vector_t membership)
+{
+    if(WINGS_ENABLE_ASSERTIONS) assert(node_id < 8);
+
+    return  bv_bit_get(membership, node_id) == 1 ? 1 : 0;
+}
+
 // For all the CREDIT functions --> if its a bcast channel endpoint_id is ignored
 static inline uint8_t
-_wings_has_sufficient_crds_no_polling(ud_channel_t *ud_c, uint8_t endpoint_id)
+_wings_has_sufficient_crds_no_polling_membership(ud_channel_t *ud_c, uint8_t endpoint_id,
+                                                          bit_vector_t* membership)
 {
+    uint8_t check_membership = membership == NULL ? 0 : 1;
+
     if(ud_c->disable_crd_ctrl)
 		return 1;
 
@@ -438,13 +447,34 @@ _wings_has_sufficient_crds_no_polling(ud_channel_t *ud_c, uint8_t endpoint_id)
     else
         for (int i = 0; i < ud_c->num_channels; ++i) {
             if (i == ud_c->channel_id) continue;
-            //TODO if i == local_node_id  || !node_in_membership(i) --> continue
-//            if (!node_is_in_membership(last_g_membership, j)) continue; //skip machine which is removed from group
+            if (check_membership == 1 && !_wings_node_is_in_membership(i, *membership)) continue; //skip machine if not in membership
             if (ud_c->credits_per_channels[i] <= 0)
                 return 0;
         }
 
     return 1;
+}
+
+// For all the CREDIT functions --> if its a bcast channel endpoint_id is ignored
+static inline uint8_t
+_wings_has_sufficient_crds_no_polling(ud_channel_t *ud_c, uint8_t endpoint_id)
+{
+    return _wings_has_sufficient_crds_no_polling_membership(ud_c, endpoint_id, NULL);
+}
+
+static inline uint8_t
+_wings_has_sufficient_crds_membership(ud_channel_t *ud_c, uint8_t endpoint_id, bit_vector_t* membership)
+{
+    if(_wings_has_sufficient_crds_no_polling_membership(ud_c, endpoint_id, membership))
+        return 1;
+
+    if(ud_c->expl_crd_ctrl) {
+		_wings_poll_crds_and_post_recvs(ud_c->channel_providing_crds);
+
+        if(_wings_has_sufficient_crds_no_polling_membership(ud_c, endpoint_id, membership))
+            return 1;
+    }
+    return 0;
 }
 
 static inline uint8_t
@@ -463,20 +493,21 @@ _wings_has_sufficient_crds(ud_channel_t *ud_c, uint8_t endpoint_id)
 }
 
 static inline void
-_wings_dec_crds(ud_channel_t *ud_c, uint8_t endpoint_id)
+_wings_dec_crds_membership(ud_channel_t *ud_c, uint8_t endpoint_id, bit_vector_t* membership)
 {
+    uint8_t check_membership = membership == NULL ? 0 : 1;
+
 	if(ud_c->disable_crd_ctrl) return;
 
     if(WINGS_ENABLE_ASSERTIONS)
-        assert(_wings_has_sufficient_crds_no_polling(ud_c, endpoint_id));
+        assert(_wings_has_sufficient_crds_no_polling_membership(ud_c, endpoint_id, membership));
 
     if(!ud_c->is_bcast_channel)
         ud_c->credits_per_channels[endpoint_id]--;
     else
         for(int i = 0; i < ud_c->num_channels; ++i){
             if(i == ud_c->channel_id) continue;
-			//TODO if i == local_node_id  || !node_in_membership(i) --> continue
-//            if (!node_is_in_membership(last_g_membership, j)) continue; //skip machine which is removed from group
+            if (check_membership == 1 && !_wings_node_is_in_membership(i, *membership)) continue; //skip machine if not in membership
             ud_c->credits_per_channels[i]--;
         }
 
@@ -494,12 +525,18 @@ _wings_dec_crds(ud_channel_t *ud_c, uint8_t endpoint_id)
     }
 }
 
+static inline void
+_wings_dec_crds(ud_channel_t *ud_c, uint8_t endpoint_id)
+{
+    _wings_dec_crds_membership(ud_c, endpoint_id, NULL);
+}
+
 
 
 static inline void
 wings_reset_credits(ud_channel_t *ud_c, uint8_t endpoint_id)
 {
-	ud_c->credits_per_channels[endpoint_id] = (uint8_t) ud_c->channel_providing_crds->num_crds_per_channel;
+	ud_c->credits_per_channels[endpoint_id] = (uint16_t) ud_c->channel_providing_crds->num_crds_per_channel;
 }
 
 /* ---------------------------------------------------------------------------
@@ -575,7 +612,9 @@ _wings_forge_wr(ud_channel_t *ud_c, uint8_t dst_qp_id, uint8_t *req_to_copy,
 
 		if(curr_req_num == 1){
             ud_c->send_sgl[pkts_in_batch].addr = (uint64_t) curr_pkt_ptr;
+#if WINGS_ENABLE_TWO_MSG_SIZES == 1
 		    curr_pkt_ptr->only_small_msgs = is_small_msg == 1 ? 1 : 0;
+#endif
 		}
 	}
 
@@ -729,7 +768,7 @@ _wings_get_sender_id_n_msg_type(uint8_t skip_or_sender_id, uint8_t *is_small_msg
 }
 
 static inline uint8_t
-wings_issue_pkts(ud_channel_t *ud_c,
+wings_issue_pkts(ud_channel_t *ud_c, bit_vector_t* membership,
 				 uint8_t *input_array_of_elems, uint16_t input_array_len,
 				 uint16_t size_of_input_elems, uint16_t *input_array_rolling_idx,
 				 skip_input_elem_or_get_dst_id_t skip_or_get_sender_id_func_ptr,
@@ -758,13 +797,12 @@ wings_issue_pkts(ud_channel_t *ud_c,
             assert(skip_or_sender_id < 258);
 
 
-//		curr_msg_dst = (uint8_t) skip_or_sender_id;
         curr_msg_dst = _wings_get_sender_id_n_msg_type(skip_or_sender_id, &is_small_msg);
         if(ud_c->is_header_only)
             is_small_msg = 1;
 
 		// Break if we do not have sufficient credits
-		if (!_wings_has_sufficient_crds(ud_c, curr_msg_dst)) {
+		if (!_wings_has_sufficient_crds_membership(ud_c, curr_msg_dst, membership)) {
 			has_outstanding_msgs = 1;
             if(ud_c->enable_stats)
             	ud_c->stats.no_stalls_due_to_credits++;
@@ -774,9 +812,8 @@ wings_issue_pkts(ud_channel_t *ud_c,
 			break; // we need to break for broadcast (lets assume it is ok to break for unicasts as well since it may only harm perf)
 		}
 
-		_wings_dec_crds(ud_c, curr_msg_dst);
+        _wings_dec_crds_membership(ud_c, curr_msg_dst, membership);
 
-//        if(!ud_c->is_bcast_channel && !ud_c->is_header_only)
 		if((!ud_c->is_bcast_channel && !ud_c->is_header_only) || is_small_msg == 0)
         {
 			// Send unicasts because if we cannot coalesce pkts, due to different endpoints
@@ -794,7 +831,6 @@ wings_issue_pkts(ud_channel_t *ud_c,
 		modify_elem_after_send(curr_elem); // E.g. Change the state of the element which triggered a send
 
 		// Check if we should send a batch since we might have reached the max batch size
-//        if(ud_c->is_header_only || _wings_curr_send_pkt_ptr(ud_c)->req_num == ud_c->max_coalescing)
         if(is_small_msg == 0 || ud_c->is_header_only ||
            _wings_curr_send_pkt_ptr(ud_c)->req_num == ud_c->max_coalescing)
         {
@@ -805,7 +841,6 @@ wings_issue_pkts(ud_channel_t *ud_c,
 	// Even if the last pkt is not full do the appropriate actions and incl to NIC batch
 	wings_ud_send_pkt_t* curr_pkt_ptr = NULL;
 
-//    if(!ud_c->is_header_only){
 	if(!ud_c->is_header_only && is_small_msg == 1){
 		 curr_pkt_ptr = _wings_curr_send_pkt_ptr(ud_c);
 		if(curr_pkt_ptr->req_num > 0 && curr_pkt_ptr->req_num < ud_c->max_coalescing)
@@ -816,7 +851,6 @@ wings_issue_pkts(ud_channel_t *ud_c,
 	if (pkts_in_batch > 0)
 		_wings_batch_pkts_2_NIC(ud_c, pkts_in_batch, msgs_in_batch);
 
-//    if(!ud_c->is_header_only)
 	if(!ud_c->is_header_only && is_small_msg == 1)
 		// Move to next packet and reset data left from previous bcasts/unicasts
 		if(curr_pkt_ptr->req_num > 0 && curr_pkt_ptr->req_num < ud_c->max_coalescing)
@@ -826,8 +860,9 @@ wings_issue_pkts(ud_channel_t *ud_c,
 }
 
 static inline void
-wings_issue_credits(ud_channel_t *ud_c, uint8_t *input_array_of_elems,
-					uint16_t input_array_len, uint16_t size_of_input_elems,
+wings_issue_credits(ud_channel_t *ud_c, bit_vector_t* membership,
+                    uint8_t *input_array_of_elems, uint16_t input_array_len,
+                    uint16_t size_of_input_elems,
 					skip_input_elem_or_get_dst_id_t skip_or_get_sender_id_func_ptr,
 					modify_input_elem_after_send_t modify_elem_after_send)
 {
@@ -847,12 +882,12 @@ wings_issue_credits(ud_channel_t *ud_c, uint8_t *input_array_of_elems,
 		uint8_t curr_msg_dst = (uint8_t) skip_or_sender_id;
 
 		// Check if we have sufficient credits --> (we should always have enough credits for CRDs)
-		if (!_wings_has_sufficient_crds(ud_c, curr_msg_dst))
-			assert(0);
+        if (!_wings_has_sufficient_crds_membership(ud_c, curr_msg_dst, membership))
+            assert(0);
 		if(ud_c->no_crds_to_send_per_endpoint[curr_msg_dst] == 0 && ud_c->credits_per_channels[curr_msg_dst] == 0)
 			assert(0);
 
-		_wings_dec_crds(ud_c, curr_msg_dst);
+        _wings_dec_crds_membership(ud_c, curr_msg_dst, membership);
 
 		ud_c->no_crds_to_send_per_endpoint[curr_msg_dst]++;
 

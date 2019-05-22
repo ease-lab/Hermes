@@ -5,7 +5,7 @@
 #include "inline-util.h"
 
 ///
-#include "../../include/utils/time_rdtsc.h"
+#include "../../include/hades/hades.h"
 #include "../../include/wings/wings.h"
 ///
 
@@ -119,6 +119,7 @@ ack_copy_and_modify_elem(uint8_t* msg_to_send, uint8_t* triggering_req)
 }
 
 
+
 int
 val_skip_or_get_sender_id(uint8_t *req)
 {
@@ -135,7 +136,9 @@ val_skip_or_get_sender_id(uint8_t *req)
 	return ack_req->sender;
 }
 
-void val_modify_elem_after_send(uint8_t* req) {
+void
+val_modify_elem_after_send(uint8_t* req)
+{
 	spacetime_ack_t* ack_req = (spacetime_ack_t *) req;
 
 	if(ENABLE_ASSERTIONS)
@@ -152,6 +155,50 @@ val_copy_and_modify_elem(uint8_t* msg_to_send, uint8_t* triggering_req)
 	memcpy(val_to_send, triggering_req, sizeof(spacetime_val_t)); // copy req to next_req_ptr
 	val_to_send->opcode = ST_OP_VAL;
 	val_to_send->sender = (uint8_t) machine_id;
+}
+
+
+
+
+int
+memb_change_skip_or_get_sender_id(uint8_t *req)
+{
+	spacetime_op_t* op_req = (spacetime_op_t *) req;
+    if(op_req->op_meta.state != ST_PUT_COMPLETE_SEND_VALS &&
+       op_req->op_meta.state != ST_RMW_COMPLETE_SEND_VALS &&
+       op_req->op_meta.state != ST_REPLAY_COMPLETE_SEND_VALS)
+        return -1;
+	return 1; // it is bcast so just return something greater than zero
+}
+
+void
+memb_change_modify_elem_after_send(uint8_t *req)
+{
+    spacetime_op_t* op_req = (spacetime_op_t *) req;
+    switch(op_req->op_meta.state){
+        case ST_PUT_COMPLETE_SEND_VALS:
+            op_req->op_meta.state = ST_PUT_COMPLETE;
+            break;
+        case ST_RMW_COMPLETE_SEND_VALS:
+            op_req->op_meta.state = ST_RMW_COMPLETE;
+            break;
+        case ST_REPLAY_COMPLETE_SEND_VALS:
+            op_req->op_meta.state = ST_NEW; //ST_REPLAY_COMPLETE;
+            break;
+        default:assert(0);
+    }
+}
+
+void
+memb_change_copy_and_modify_elem(uint8_t *msg_to_send, uint8_t *triggering_req)
+{
+
+    spacetime_op_t* op_req = (spacetime_op_t *) triggering_req;
+	spacetime_val_t* val_to_send = (spacetime_val_t *) msg_to_send;
+
+	val_to_send->opcode = ST_OP_VAL;
+	val_to_send->sender = (uint8_t) machine_id;
+	val_to_send->ts = op_req->op_meta.ts;
 }
 
 
@@ -231,6 +278,54 @@ print_total_send_recv_msgs(ud_channel_t *inv_ud_c, ud_channel_t *ack_ud_c,
 				  val_ud_c->stats.recv_total_msgs, crd_ud_c->stats.recv_total_msgs);
 }
 
+void
+spin_until_all_nodes_are_in_membership(spacetime_group_membership *last_group_membership,
+                                       hades_wings_ctx_t *hw_ctx, uint16_t worker_lid)
+{
+    bit_vector_t* membership_ptr = (bit_vector_t*) &last_group_membership->g_membership;
+    bv_reset_all(membership_ptr);
+    while (bv_no_setted_bits(*membership_ptr) < MACHINE_NUM){
+        if(worker_lid == WORKER_WITH_FAILURE_DETECTOR) {
+            update_view_and_issue_hbs(hw_ctx);
+            if (!bv_are_equal(*membership_ptr, hw_ctx->ctx.curr_g_membership))
+                group_membership_update(hw_ctx->ctx);
+            poll_for_remote_views(hw_ctx);
+        }
+        *last_group_membership = group_membership;
+    }
+}
+
+static inline void
+failure_detection_n_membership(ud_channel_t** ud_channel_ptrs, bit_vector_t* last_membership,
+                               hades_wings_ctx_t* hw_ctx, uint16_t worker_lid)
+{
+    if(worker_lid == WORKER_WITH_FAILURE_DETECTOR) {
+        update_view_and_issue_hbs(hw_ctx);
+
+        ///<TODO>: We need to fix recovery (RDMA side of wings)!! the following is not fully correct
+        /// Additionally, this handles only WORKER_WITH_FAILURE_DETECTOR thread instead of every thread
+        if (!bv_are_equal(hw_ctx->ctx.last_local_view.view, hw_ctx->ctx.intermediate_local_view.view)){
+            for(int j = 0; j < 8; ++j)
+                if(bv_bit_get(hw_ctx->ctx.last_local_view.view, j) == 0 &&
+                   bv_bit_get(hw_ctx->ctx.intermediate_local_view.view, j) == 1)
+                {
+                    printf("W[%d]: updates %d endpoint channels\n", worker_lid, j);
+                    for(int i = 0; i < TOTAL_WORKER_UD_QPs; ++i){
+                        wings_reset_credits(ud_channel_ptrs[i], j);
+                        wings_reconfigure_wrs_ah(ud_channel_ptrs[i], j);
+                    }
+                }
+        }
+        //</TODO>
+
+        if (!bv_are_equal(*last_membership, hw_ctx->ctx.curr_g_membership)){
+            group_membership_update(hw_ctx->ctx);
+        }
+
+        poll_for_remote_views(hw_ctx);
+    }
+}
+
 void*
 run_worker(void *arg)
 {
@@ -245,14 +340,14 @@ run_worker(void *arg)
 	/* --------------------------------------------------------
 	------------------- RDMA WINGS DECLARATIONS---------------
 	---------------------------------------------------------*/
-	ud_channel_t ud_channels[TOTAL_WORKER_UD_QPs];
-	ud_channel_t* ud_channel_ptrs[TOTAL_WORKER_UD_QPs];
+	ud_channel_t ud_channels[TOTAL_WORKER_N_FAILURE_DETECTION_UD_QPs];
+	ud_channel_t* ud_channel_ptrs[TOTAL_WORKER_N_FAILURE_DETECTION_UD_QPs];
 	ud_channel_t* inv_ud_c = &ud_channels[INV_UD_QP_ID];
 	ud_channel_t* ack_ud_c = &ud_channels[ACK_UD_QP_ID];
 	ud_channel_t* val_ud_c = &ud_channels[VAL_UD_QP_ID];
 	ud_channel_t* crd_ud_c = &ud_channels[CRD_UD_QP_ID];
 
-	for(int i = 0; i < TOTAL_WORKER_UD_QPs; ++i)
+	for(int i = 0; i < TOTAL_WORKER_N_FAILURE_DETECTION_UD_QPs; ++i)
 		ud_channel_ptrs[i] = &ud_channels[i];
 
 	const uint8_t is_bcast = 1;
@@ -280,9 +375,28 @@ run_worker(void *arg)
 						  DISABLE_VAL_INLINING == 0 ? 1 : 0, is_hdr_only, is_bcast, disable_crd_ctrl, 1,
 						  crd_ud_c, (uint8_t) credits_num, MACHINE_NUM, (uint8_t) machine_id, stats_on, prints_on);
 
-	wings_setup_channel_qps_and_recvs(ud_channel_ptrs, TOTAL_WORKER_UD_QPs, g_share_qs_barrier, worker_lid);
+	///<HADES> Failure Detector Init
+    hades_wings_ctx_t hw_ctx;
+    uint16_t total_ud_qps = TOTAL_WORKER_UD_QPs;
+	if(ENABLE_HADES_FAILURE_DETECTION && worker_lid == WORKER_WITH_FAILURE_DETECTOR){
+	    total_ud_qps = TOTAL_WORKER_N_FAILURE_DETECTION_UD_QPs;
+        ud_channel_t* hviews_c = &ud_channels[TOTAL_WORKER_UD_QPs];
+        ud_channel_t* hviews_crd_c = &ud_channels[TOTAL_WORKER_UD_QPs + 1];
+
+        const uint16_t max_views_to_poll = 10;
+        const uint32_t send_view_every_us = 100;
+        const uint32_t update_local_view_ms = 10;
+
+        hades_wings_ctx_init(&hw_ctx, machine_id, MACHINE_NUM,
+                             max_views_to_poll, send_view_every_us, update_local_view_ms,
+                             hviews_c, hviews_crd_c, worker_lid);
+	}
+    ///</HADES>
+
+	wings_setup_channel_qps_and_recvs(ud_channel_ptrs, total_ud_qps, g_share_qs_barrier, worker_lid);
 
 	channel_assertions(inv_ud_c, ack_ud_c, val_ud_c, crd_ud_c);
+
 
 
 	uint16_t ops_len = (uint16_t) (credits_num * REMOTE_MACHINES * max_coalesce); //credits * remote_machines * max_req_coalesce
@@ -301,7 +415,6 @@ run_worker(void *arg)
 
 	setup_kvs_buffs(&ops, &inv_recv_ops, &ack_recv_ops, &val_recv_ops);
 
-	spacetime_group_membership last_group_membership = group_membership;
 
 	struct spacetime_trace_command *trace;
 	trace_init(&trace, worker_gid);
@@ -320,7 +433,7 @@ run_worker(void *arg)
 	uint16_t rolling_inv_index = 0;
 	uint16_t invs_polled = 0, acks_polled = 0, vals_polled = 0;
 	uint8_t has_outstanding_vals = 0,
-	        has_outstanding_vals_from_memb_change = 0;
+	        has_remaining_vals_from_memb_change = 0;
 
 	uint32_t *num_of_iters_serving_op = malloc(max_batch_size * sizeof(uint32_t));
 	for(int i = 0; i < max_batch_size; ++i)
@@ -331,9 +444,26 @@ run_worker(void *arg)
 		if (spawn_stats_thread() != 0) red_printf("Stats thread was not successfully spawned \n");
 
     struct timespec stopwatch_for_req_latency;
+
+    // Membership init
+    spacetime_group_membership group_membership;
+    bit_vector_t* membership_ptr = ENABLE_HADES_FAILURE_DETECTION ?
+                                    (bit_vector_t*) &group_membership.g_membership: NULL;
+    if(ENABLE_HADES_FAILURE_DETECTION)
+        spin_until_all_nodes_are_in_membership(&group_membership, &hw_ctx, worker_lid);
+    else
+        group_membership = group_membership;
+
+
+    printf("~~~~~~~~~ Starting while ! ~~~~~~~~~\n");
 	/* -----------------------------------------------------
        ------------------------Main Loop--------------------
 	   ----------------------------------------------------- */
+
+    struct timespec stopwatch_for_failures;
+    get_rdtsc_timespec(&stopwatch_for_failures);
+    uint8_t flag_time_has_passed = 0;
+
 	while (true) {
 
 	    if(unlikely(w_stats[worker_lid].total_loops % M_16 == 0)){
@@ -345,84 +475,108 @@ run_worker(void *arg)
 //	        		ack_ud_c.credits_per_channels[remote_node]);
 //	        for(int i = 0; i < MAX_BATCH_OPS_SIZE; ++i)
 //				printf("ops[%d]: state-> %s\n", i, code_to_str(ops[i].op_meta.state));
-	    }
+        }
 
-		node_suspected = refill_ops_n_suspect_failed_nodes(&trace_iter, worker_lid, trace, ops,
-														   num_of_iters_serving_op, &last_group_membership,
-														   &stopwatch_for_req_latency,
-														   n_hottest_keys_in_ops_get, n_hottest_keys_in_ops_put);
+        if(flag_time_has_passed == 1){
 
-	    hermes_batch_ops_to_KVS(local_ops, (uint8_t *) ops, max_batch_size, sizeof(spacetime_op_t),
-								last_group_membership, NULL, NULL, (uint8_t) worker_lid);
+            node_suspected = refill_ops(&trace_iter, worker_lid, trace, ops,
+                                        num_of_iters_serving_op, &stopwatch_for_req_latency,
+                                        n_hottest_keys_in_ops_get, n_hottest_keys_in_ops_put);
 
-	    stop_latency_of_completed_reads(ops, worker_lid, &stopwatch_for_req_latency);
+            hermes_batch_ops_to_KVS(local_ops, (uint8_t *) ops, max_batch_size, sizeof(spacetime_op_t),
+                                    group_membership, NULL, NULL, (uint8_t) worker_lid);
 
-		if (update_ratio > 0) {
-			///~~~~~~~~~~~~~~~~~~~~~~INVS~~~~~~~~~~~~~~~~~~~~~~~~~~~
-			wings_issue_pkts(inv_ud_c, (uint8_t *) ops,
-							 (uint16_t) max_batch_size, sizeof(spacetime_op_t), &rolling_inv_index,
-							 inv_skip_or_get_sender_id, inv_modify_elem_after_send, inv_copy_and_modify_elem);
+            stop_latency_of_completed_reads(ops, worker_lid, &stopwatch_for_req_latency);
 
-			///Poll for INVs
-			invs_polled = wings_poll_buff_and_post_recvs(inv_ud_c, ops_len, (uint8_t *) inv_recv_ops);
+            if (update_ratio > 0) {
+                ///~~~~~~~~~~~~~~~~~~~~~~INVS~~~~~~~~~~~~~~~~~~~~~~~~~~~
+                wings_issue_pkts(inv_ud_c, membership_ptr, (uint8_t *) ops,
+                                 (uint16_t) max_batch_size, sizeof(spacetime_op_t), &rolling_inv_index,
+                                 inv_skip_or_get_sender_id, inv_modify_elem_after_send, inv_copy_and_modify_elem);
+
+                ///Poll for INVs
+                invs_polled = wings_poll_buff_and_post_recvs(inv_ud_c, ops_len, (uint8_t *) inv_recv_ops);
 
 
-			if(invs_polled > 0) {
-				hermes_batch_ops_to_KVS(invs, (uint8_t *) inv_recv_ops, invs_polled, sizeof(spacetime_inv_t),
-										last_group_membership, &node_suspected, ops, (uint8_t) worker_lid);
+                if(invs_polled > 0) {
+                    hermes_batch_ops_to_KVS(invs, (uint8_t *) inv_recv_ops, invs_polled, sizeof(spacetime_inv_t),
+                                            group_membership, &node_suspected, ops, (uint8_t) worker_lid);
 
-				///~~~~~~~~~~~~~~~~~~~~~~ACKS~~~~~~~~~~~~~~~~~~~~~~~~~~~
-				wings_issue_pkts(ack_ud_c, (uint8_t *) inv_recv_ops,
-                                 invs_polled, sizeof(spacetime_inv_t), NULL,
-                                 ack_skip_or_get_sender_id, ack_modify_elem_after_send, ack_copy_and_modify_elem);
+                    ///~~~~~~~~~~~~~~~~~~~~~~ACKS~~~~~~~~~~~~~~~~~~~~~~~~~~~
+                    wings_issue_pkts(ack_ud_c, membership_ptr, (uint8_t *) inv_recv_ops,
+                                     invs_polled, sizeof(spacetime_inv_t), NULL,
+                                     ack_skip_or_get_sender_id, ack_modify_elem_after_send, ack_copy_and_modify_elem);
 
-				if(ENABLE_ASSERTIONS)
-					assert(inv_ud_c->stats.recv_total_msgs == ack_ud_c->stats.send_total_msgs);
-//                    assert(ENABLE_RMWs || inv_ud_c->stats.recv_total_msgs == ack_ud_c->stats.send_total_msgs);
-			}
+                    if(ENABLE_ASSERTIONS)
+                        assert(inv_ud_c->stats.recv_total_msgs == ack_ud_c->stats.send_total_msgs);
+                }
 
-			if(has_outstanding_vals == 0 && has_outstanding_vals_from_memb_change == 0) {
-				///Poll for Acks
-				acks_polled = wings_poll_buff_and_post_recvs(ack_ud_c, ops_len, (uint8_t *) ack_recv_ops);
+                if(has_outstanding_vals == 0 && has_remaining_vals_from_memb_change == 0) {
+                    ///Poll for Acks
+                    acks_polled = wings_poll_buff_and_post_recvs(ack_ud_c, ops_len, (uint8_t *) ack_recv_ops);
 
-				if (acks_polled > 0){
-					hermes_batch_ops_to_KVS(acks, (uint8_t *) ack_recv_ops, acks_polled,  ack_size, // sizeof(spacetime_ack_t),
-											last_group_membership, NULL, ops, (uint8_t) worker_lid);
+                    if (acks_polled > 0){
+                        hermes_batch_ops_to_KVS(acks, (uint8_t *) ack_recv_ops, acks_polled, ack_size,
+                                                group_membership, NULL, ops, (uint8_t) worker_lid);
 
-					stop_latency_of_completed_writes(ops, worker_lid, &stopwatch_for_req_latency);
-				}
-			}
+                        stop_latency_of_completed_writes(ops, worker_lid, &stopwatch_for_req_latency);
+                    }
+                }
 
-			if(!DISABLE_VALS_FOR_DEBUGGING) {
-				///~~~~~~~~~~~~~~~~~~~~~~ VALs ~~~~~~~~~~~~~~~~~~~~~~~~~~~
-				has_outstanding_vals = wings_issue_pkts(val_ud_c, (uint8_t *) ack_recv_ops,
-														ack_ud_c->recv_pkt_buff_len, ack_size, //sizeof(spacetime_ack_t),
-														NULL, val_skip_or_get_sender_id,
-														val_modify_elem_after_send, val_copy_and_modify_elem);
+                if(!DISABLE_VALS_FOR_DEBUGGING) {
+                    ///~~~~~~~~~~~~~~~~~~~~~~ VALs ~~~~~~~~~~~~~~~~~~~~~~~~~~~
+                    if(has_remaining_vals_from_memb_change > 0)
+                        has_remaining_vals_from_memb_change = wings_issue_pkts(val_ud_c, membership_ptr, (uint8_t *) ops,
+                                                                               max_batch_size, sizeof(spacetime_op_t), NULL,
+                                                                               memb_change_skip_or_get_sender_id,
+                                                                               memb_change_modify_elem_after_send,
+                                                                               memb_change_copy_and_modify_elem);
+                    else
+                        has_outstanding_vals = wings_issue_pkts(val_ud_c, membership_ptr, (uint8_t *) ack_recv_ops,
+                                                                ack_ud_c->recv_pkt_buff_len, ack_size, NULL,
+                                                                val_skip_or_get_sender_id,
+                                                                val_modify_elem_after_send, val_copy_and_modify_elem);
 
-				///Poll for Vals
-				vals_polled = wings_poll_buff_and_post_recvs(val_ud_c, ops_len, (uint8_t *) val_recv_ops);
+                    ///Poll for Vals
+                    vals_polled = wings_poll_buff_and_post_recvs(val_ud_c, ops_len, (uint8_t *) val_recv_ops);
 
-				if (vals_polled > 0) {
-					hermes_batch_ops_to_KVS(vals, (uint8_t *) val_recv_ops, vals_polled, sizeof(spacetime_val_t),
-											last_group_membership, NULL, NULL, (uint8_t) worker_lid);
+                    if (vals_polled > 0) {
+                        hermes_batch_ops_to_KVS(vals, (uint8_t *) val_recv_ops, vals_polled, sizeof(spacetime_val_t),
+                                                group_membership, NULL, NULL, (uint8_t) worker_lid);
 
-					///~~~~~~~~~~~~~~~~~~~~~~CREDITS~~~~~~~~~~~~~~~~~~~~~~~~~~~
-					wings_issue_credits(crd_ud_c, (uint8_t *) val_recv_ops, ops_len, sizeof(spacetime_val_t),
-										rem_write_crd_skip_or_get_sender_id, rem_write_crd_modify_elem_after_send);
-				}
-			}
+                        ///~~~~~~~~~~~~~~~~~~~~~~CREDITS~~~~~~~~~~~~~~~~~~~~~~~~~~~
+                        wings_issue_credits(crd_ud_c, membership_ptr, (uint8_t *) val_recv_ops, ops_len, sizeof(spacetime_val_t),
+                                            rem_write_crd_skip_or_get_sender_id, rem_write_crd_modify_elem_after_send);
+                    }
+                }
+            }
+        }else if(time_elapsed_in_sec(stopwatch_for_failures) > 2){
+            flag_time_has_passed = 1;
+            printf("~~~~~~~~~ Starting execution! ~~~~~~~~~\n");
+        }
 
-//            ///Emulating a perfect failure detector via a group membership
-//			if (unlikely(node_suspected >= 0 && worker_lid == WORKER_EMULATING_FAILURE_DETECTOR))
-//				follower_removal(node_suspected);
-//
-//
-//			if(group_membership_has_changed(&last_group_membership, worker_lid)) {
-//			    printf("Reconfiguring group membership\n");
-//				assert(0);
-//			}
-		}
+        // Failure Detection and Membership
+        if(ENABLE_HADES_FAILURE_DETECTION){
+            failure_detection_n_membership(ud_channel_ptrs, membership_ptr, &hw_ctx, worker_lid);
+
+            if(group_membership_has_changed(&group_membership, worker_lid)) {
+
+                /// Complete inprogress updates/replays waiting for ACKS only from failed nodes
+                hermes_batch_ops_to_KVS(local_ops_after_membership_change, (uint8_t *) ops,
+                                        max_batch_size, sizeof(spacetime_op_t),
+                                        group_membership, NULL, NULL, (uint8_t) worker_lid);
+
+                stop_latency_of_completed_writes(ops, worker_lid, &stopwatch_for_req_latency);
+
+                if(!DISABLE_VALS_FOR_DEBUGGING)
+                    /// Bcast VAL msgs for those completed update/replays
+                    has_remaining_vals_from_memb_change = wings_issue_pkts(val_ud_c, membership_ptr, (uint8_t *) ops,
+                                                                           max_batch_size, sizeof(spacetime_op_t), NULL,
+                                                                           memb_change_skip_or_get_sender_id,
+                                                                           memb_change_modify_elem_after_send,
+                                                                           memb_change_copy_and_modify_elem);
+            }
+        }
 		w_stats[worker_lid].total_loops++;
 	}
 	return NULL;

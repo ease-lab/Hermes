@@ -48,7 +48,7 @@ set(SOURCE_FILES_hades
         include/wings/wings_api.h
         include/wings/wings.h
         include/hades/hades.h
-        )
+        src/hades/hades_main.c)
 
 
 set(SOURCE_FILES_hermes

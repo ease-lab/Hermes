@@ -35,7 +35,6 @@ echo Machine-Id "$machine_id"
 
 
 export HRD_REGISTRY_IP="129.215.165.8" # I.E. HOUSTON
-#export HRD_REGISTRY_IP="129.215.165.7" # I.E. SANANTONIO
 export MLX5_SINGLE_THREADED=1
 export MLX5_SCATTER_TO_CQE=1
 
@@ -70,7 +69,8 @@ shm-rm.sh 1>/dev/null 2>/dev/null
 
 
 blue "Reset server QP registry"
-memcached -l 0.0.0.0 1>/dev/null 2>/dev/null &
+#memcached -l 0.0.0.0 1>/dev/null 2>/dev/null &
+memcached -l ${HRD_REGISTRY_IP} 1>/dev/null 2>/dev/null &
 sleep 1
 
 blue "Running hades"

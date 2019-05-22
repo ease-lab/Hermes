@@ -1022,7 +1022,7 @@ reconfigure_wrs(struct ibv_send_wr *inv_send_wr, struct ibv_sge *inv_send_sgl,
 				remote_machine_ids[rm_id_index++] = curr_machine_id;
 		}
 	}
-	if(worker_lid == WORKER_EMULATING_FAILURE_DETECTOR){
+	if(worker_lid == WORKER_WITH_FAILURE_DETECTOR){
 		green_printf("Alive Remotes(%d): {", last_g_membership.num_of_alive_remotes);
 		for(i = 0; i < rm_id_index; i++)
 			yellow_printf(" %d,",remote_machine_ids[i]);

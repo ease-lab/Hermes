@@ -19,10 +19,11 @@ static inline uint64_t RDTSC()
     return ((uint64_t)hi << 32) | lo;
 }
 
-const int NANO_SECONDS_IN_SEC = 1000000000;
+static const int NANO_SECONDS_IN_SEC = 1000000000;
 // returns a static buffer of struct timespec with the time difference of
 // ts1 and ts2 ts1 is assumed to be greater than ts2
-struct timespec *timespec_diff(struct timespec *ts1, struct timespec *ts2)
+static struct timespec *
+timespec_diff(struct timespec *ts1, struct timespec *ts2)
 {
     static struct timespec ts;
     ts.tv_sec = ts1->tv_sec - ts2->tv_sec;

@@ -4,15 +4,15 @@
 
 #include <getopt.h>
 #include "../../include/hades/hades.h"
-#include "../../include/wings/wings.h"
 
 
 
-
-typedef struct{
+typedef struct
+{
     hades_view_t* ctx_last_local_view;
     uint8_t dst_id;
-}hades_view_wrapper_w_dst_id_t;
+}
+hades_view_wrapper_w_dst_id_t;
 
 int
 hades_skip_or_get_dst_id(uint8_t *req)
@@ -76,7 +76,7 @@ check_if_majority_is_rechable(hades_ctx_t *h_ctx)
        bv_no_setted_bits(h_ctx->intermediate_local_view.view) < majority_of_nodes(h_ctx))
     {
         red_printf("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n");
-        red_printf("~ WARNING: I cannot reach a majority of nodes! ~\n");
+        red_printf("~ [HADES WARNING]: I cannot reach a majority ! ~\n");
         red_printf("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n");
         yellow_printf("Last membership (epoch %d): ", h_ctx->intermediate_local_view.epoch_id);
         bv_print_enhanced(h_ctx->curr_g_membership);
@@ -233,8 +233,10 @@ update_view_n_membership(hades_ctx_t *h_ctx)
 
 //                printf("Max epoch id: %d, same_w_local_membership: %d\n",
 //                        max_epoch_id, same_w_local_membership);
-                green_printf("GROUP MEMBERSHIP CHANGE: epoch(%d)\n", h_ctx->intermediate_local_view.epoch_id);
-                bv_print_enhanced(h_ctx->curr_g_membership);
+                yellow_printf("[HADES] MEMBERSHIP CHANGE --> [epoch %d], ", h_ctx->intermediate_local_view.epoch_id);
+                bv_print(h_ctx->curr_g_membership);
+                printf("\n");
+//                bv_print_enhanced(h_ctx->curr_g_membership);
             }
         }
 
@@ -270,19 +272,20 @@ issue_heartbeats(hades_wings_ctx_t *hw_ctx)
             // Reset a tmp timer in case the send fails due to not enough crds
             struct timespec ts_last_send_tmp;
             get_rdtsc_timespec(&ts_last_send_tmp);
-            uint8_t send_failed = wings_issue_pkts(hw_ctx->hviews_c, (uint8_t *) &last_local_view, 1,
+            uint8_t send_failed = wings_issue_pkts(hw_ctx->hviews_c, NULL, (uint8_t *) &last_local_view, 1,
                                                    sizeof(hades_view_wrapper_w_dst_id_t), NULL,
                                                    hades_skip_or_get_dst_id, wings_NOP_modify_elem_after_send,
                                                    hades_copy_and_modify_elem);
             if(!send_failed)
                 h_ctx->ts_last_send[i] = ts_last_send_tmp;
-//                print_send_hbt(hbeat_c, &h_ctx);
+//                print_send_hbt(hw_ctx->hviews_c, h_ctx);
         }
     }
 }
 
-static inline void
-update_view_and_issue(hades_wings_ctx_t *hw_ctx)
+//static inline
+void
+update_view_and_issue_hbs(hades_wings_ctx_t *hw_ctx)
 {
     update_view_n_membership(&hw_ctx->ctx);
 
@@ -290,7 +293,8 @@ update_view_and_issue(hades_wings_ctx_t *hw_ctx)
 }
 
 
-static inline uint16_t
+//static inline
+uint16_t
 poll_for_remote_views(hades_wings_ctx_t *hw_ctx)
 {
     hades_ctx_t *h_ctx = &hw_ctx->ctx;
@@ -301,28 +305,27 @@ poll_for_remote_views(hades_wings_ctx_t *hw_ctx)
 
 //    print_recved_hbts(hw_ctx->hviews_c, h_ctx->poll_buff, views_polled);
 
-    if(views_polled > 0)
-        for(int i = 0; i < views_polled; ++i){
-            uint8_t sender_id = h_ctx->poll_buff[i].node_id;
-            h_ctx->recved_views_flag[sender_id] = 1;
-            h_ctx->remote_recved_views[sender_id] = h_ctx->poll_buff[i];
-            bv_bit_set(&h_ctx->intermediate_local_view.view, sender_id);
+    for(int i = 0; i < views_polled; ++i){
+        uint8_t sender_id = h_ctx->poll_buff[i].node_id;
+        h_ctx->recved_views_flag[sender_id] = 1;
+        h_ctx->remote_recved_views[sender_id] = h_ctx->poll_buff[i];
+        bv_bit_set(&h_ctx->intermediate_local_view.view, sender_id);
 
-            // In case somebody tries to rejoin
-            if(h_ctx->last_local_view.epoch_id > 1)
-                if(h_ctx->poll_buff[i].epoch_id == 0 &&
-                   hw_ctx->hviews_c->credits_per_channels[sender_id] == 0)
-                {
-                    ///Need to reset its credits and reconfigure the qps to start sending views again
-                    ///Warning: currently we share qp info via memcache so if node storing memcache (e.g. houston)
-                    ///         fails we cannot make him re-join (prev qp info are lost)
-                    printf("Resetting credits and reconfiguring ibv_qps for channel: %d\n", sender_id);
-                    wings_reset_credits(hw_ctx->hviews_c, sender_id);
-                    wings_reconfigure_wrs_ah(hw_ctx->hviews_c, sender_id);
-                }
-        }
+        // In case somebody tries to rejoin
+        if(h_ctx->last_local_view.epoch_id > 1)
+            if(h_ctx->poll_buff[i].epoch_id == 0 &&
+               hw_ctx->hviews_c->credits_per_channels[sender_id] == 0)
+            {
+                ///Need to reset its credits and reconfigure the qps to start sending views again
+                ///Warning: currently we share qp info via memcache so if node storing memcache (e.g. houston)
+                ///         fails we cannot make him re-join (prev qp info are lost)
+                printf("Resetting credits and reconfiguring ibv_qps for channel: %d\n", sender_id);
+                wings_reset_credits(hw_ctx->hviews_c, sender_id);
+                wings_reconfigure_wrs_ah(hw_ctx->hviews_c, sender_id);
+            }
+    }
 
-    wings_issue_credits(hw_ctx->hviews_crd_c, (uint8_t *) h_ctx->poll_buff, views_polled, sizeof(hades_view_t),
+    wings_issue_credits(hw_ctx->hviews_crd_c, NULL, (uint8_t *) h_ctx->poll_buff, views_polled, sizeof(hades_view_t),
                         hades_crd_skip_or_get_sender_id, wings_NOP_modify_elem_after_send);
 
     return views_polled;
@@ -344,7 +347,7 @@ hades_loop_only_thread(void* hades_wings_ctx)
         }
 
         /// Main loop
-        update_view_and_issue(hw_ctx);
+        update_view_and_issue_hbs(hw_ctx);
 
 
         poll_for_remote_views(hw_ctx);
@@ -355,14 +358,13 @@ hades_loop_only_thread(void* hades_wings_ctx)
 void*
 hades_full_thread(void *node_id)
 {
-    uint8_t machine_id = *((uint8_t*) node_id);
     //////////////////////////////////
     /// failure detector context init
     //////////////////////////////////
 
     /// Wings (rdma communication) init
-    ud_channel_t ud_channels[2];
     ud_channel_t* ud_c_ptrs[2];
+    ud_channel_t ud_channels[2];
 
     for(int i = 0; i < 2; ++i)
         ud_c_ptrs[i] = &ud_channels[i];
@@ -377,8 +379,10 @@ hades_full_thread(void *node_id)
     uint32_t send_view_every_us = 100;
     uint32_t update_local_view_ms = 10;
 
+    uint8_t _node_id = *((uint8_t*) node_id);
+
     hades_wings_ctx_t w_ctx;
-    hades_wings_ctx_init(&w_ctx, (uint8_t) machine_id, machine_num,
+    hades_wings_ctx_init(&w_ctx, _node_id, machine_num,
                          max_views_to_poll, send_view_every_us, update_local_view_ms,
                          hviews_c, hviews_crd_c, worker_lid);
 
@@ -387,37 +391,4 @@ hades_full_thread(void *node_id)
     hades_loop_only_thread(&w_ctx);
 
     return NULL;
-}
-
-int
-main(int argc, char *argv[])
-{
-    machine_id = -1;
-
-    static struct option opts[] = {
-            { .name = "machine-id",			.has_arg = 1, .val = 'm' },
-            { .name = "dev-name",			.has_arg = 1, .val = 'd'},
-            { 0 }
-    };
-
-    /* Parse and check arguments */
-    while(1) {
-        int c = getopt_long(argc, argv, "m:d:", opts, NULL);
-        if(c == -1) {
-            break;
-        }
-        switch (c) {
-            case 'm':
-                machine_id = atoi(optarg);
-                break;
-            case 'd':
-                memcpy(dev_name, optarg, strlen(optarg));
-                break;
-            default:
-                printf("Invalid argument %d\n", c);
-                assert(false);
-        }
-    }
-
-    hades_full_thread(&machine_id);
 }

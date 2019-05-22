@@ -70,6 +70,7 @@
 #define ST_RMW_ABORT 142
 #define ST_OP_INV_ABORT 138 //send inv instead of ACK
 #define ST_IN_PROGRESS_RMW 149
+#define ST_RMW_COMPLETE_SEND_VALS 154
 
 //ops bucket states
 #define ST_EMPTY 140
@@ -79,6 +80,7 @@
 #define ST_IN_PROGRESS_REPLAY 146
 #define ST_REPLAY_COMPLETE 147
 #define ST_IN_PROGRESS_GET 148 // Used only in Chain Replication
+#define ST_REPLAY_COMPLETE_SEND_VALS 155
 
 // trace opcodes
 #define NOP 150
@@ -311,6 +313,7 @@ void reconfigure_wrs(struct ibv_send_wr *inv_send_wr, struct ibv_sge *inv_send_s
 enum hermes_batch_type_t
 {
 	    local_ops,
+        local_ops_after_membership_change,
 		invs,
 		acks,
 		vals

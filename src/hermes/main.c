@@ -8,8 +8,8 @@
 #include "config.h"
 #include "util.h"
 #include "concur_ctrl.h"
-#include "../../include/utils/bit_vector.h"
 #include "hrd.h"
+#include "../../include/utils/bit_vector.h"
 #include "../../include/wings/wings_api.h"
 
 
@@ -67,10 +67,9 @@ int main(int argc, char *argv[])
 
 	///Assertions for failures
 	assert(!(INCREASE_TAIL_LATENCY && FAKE_FAILURE));
-	assert(FAKE_FAILURE == 0 || NODES_WITH_FAILURE_DETECTOR >= 1);
 	assert(FAKE_FAILURE == 0 || NODE_TO_FAIL < MACHINE_NUM);
 	assert(FAKE_FAILURE == 0 || ROUNDS_BEFORE_FAILURE < PRINT_NUM_STATS_BEFORE_EXITING);
-	assert(FAKE_FAILURE == 0 || WORKER_EMULATING_FAILURE_DETECTOR < WORKERS_PER_MACHINE);
+	assert(FAKE_FAILURE == 0 || WORKER_WITH_FAILURE_DETECTOR < WORKERS_PER_MACHINE);
 
 	assert(MACHINE_NUM < TIE_BREAKER_ID_EMPTY);
 	assert(MACHINE_NUM < LAST_WRITER_ID_EMPTY);

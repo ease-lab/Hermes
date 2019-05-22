@@ -31,7 +31,7 @@ void _wings_ud_channel_init_recv(ud_channel_t *ud_c, struct hrd_ctrl_blk *cb, ui
 
 
 void _wings_ud_channel_crd_init(ud_channel_t *ud_c, char *qp_name, ud_channel_t *linked_channel,
-								uint8_t crds_per_channel, uint16_t num_channels, uint8_t channel_id,
+								uint16_t crds_per_channel, uint16_t num_channels, uint8_t channel_id,
 								uint8_t enable_stats, uint8_t enable_prints);
 
 void _wings_print_on_off_toggle(uint16_t bin_flag, char *str);
@@ -71,7 +71,7 @@ wings_ud_channel_init(ud_channel_t *ud_c, char *qp_name, enum channel_type type,
 		              // Credits
 					  uint8_t disable_crd_ctrl,
 					  uint8_t expl_crd_ctrl, ud_channel_t *linked_channel,
-					  uint8_t crds_per_channel, uint16_t num_channels,
+					  uint16_t crds_per_channel, uint16_t num_channels,
 					  uint8_t channel_id,
 		              // Toggles
 					  uint8_t stats_on, uint8_t prints_on)
@@ -131,9 +131,9 @@ wings_ud_channel_init(ud_channel_t *ud_c, char *qp_name, enum channel_type type,
         ud_c->is_inlining_enabled = 0;
     }
 
-    ud_c->credits_per_channels = malloc(sizeof(uint8_t) * (num_channels));
+    ud_c->credits_per_channels = malloc(sizeof(uint16_t) * (num_channels));
 	for(int i = 0; i < num_channels; ++i)
-		ud_c->credits_per_channels[i] = (uint8_t) (type == REQ && !disable_crd_ctrl ? crds_per_channel : 0);
+		ud_c->credits_per_channels[i] = (uint16_t) (type == REQ && !disable_crd_ctrl ? crds_per_channel : 0);
 
 
 	ud_c->max_pcie_bcast_batch = (uint16_t) WINGS_MIN(WINGS_MIN_PCIE_BCAST_BATCH + 1, crds_per_channel);
@@ -216,10 +216,10 @@ wings_ud_channel_init(ud_channel_t *ud_c, char *qp_name, enum channel_type type,
     assert(ud_c->is_header_only == 0 || ud_c->is_header_only);
 }
 
-
 void
-wings_setup_channel_qps_and_recvs(ud_channel_t **ud_c_array, uint16_t ud_c_num,
-								  dbit_vector_t *shared_rdy_var, uint16_t worker_lid)
+wings_setup_channel_qps_and_recvs_w_shm_key(ud_channel_t **ud_c_array, uint16_t ud_c_num,
+                                            dbit_vector_t *shared_rdy_var, uint16_t worker_lid,
+                                            uint16_t base_shm_key)
 {
 
 	uint32_t dgram_buff_size = 0;
@@ -237,7 +237,7 @@ wings_setup_channel_qps_and_recvs(ud_channel_t **ud_c_array, uint16_t ud_c_num,
 	struct hrd_ctrl_blk *cb = hrd_ctrl_blk_init(worker_lid, 0, -1, 0,	       // local_hid, port_index, numa_node_id, #conn qps
 												0, NULL, 0, -1,	               // #conn uc, prealloc conn buf, buf size, key
 												ud_c_num, dgram_buff_size,	   // num_dgram_qps, dgram_buf_size
-												BASE_SHM_KEY + worker_lid,     // key
+												base_shm_key + worker_lid,     // key
 												recv_q_depths, send_q_depths); // Depth of the dgram RECV, SEND Q
 
 	for(uint8_t i = 0; i < ud_c_num; ++i)
@@ -261,6 +261,14 @@ wings_setup_channel_qps_and_recvs(ud_channel_t **ud_c_array, uint16_t ud_c_num,
             _wings_assertions(ud_c_array[i]);
 
 	sleep(1); /// Give some leeway to post receives, before start bcasting!
+}
+
+void
+wings_setup_channel_qps_and_recvs(ud_channel_t **ud_c_array, uint16_t ud_c_num,
+								  dbit_vector_t *shared_rdy_var, uint16_t worker_lid)
+{
+    wings_setup_channel_qps_and_recvs_w_shm_key(ud_c_array, ud_c_num,
+                                                shared_rdy_var, worker_lid, BASE_SHM_KEY);
 }
 
 void
@@ -319,7 +327,7 @@ _wings_print_on_off_toggle(uint16_t bin_flag, char *str)
 
 void
 _wings_ud_channel_crd_init(ud_channel_t *ud_c, char *qp_name, ud_channel_t *linked_channel,
-						   uint8_t crds_per_channel, uint16_t num_channels, uint8_t channel_id,
+						   uint16_t crds_per_channel, uint16_t num_channels, uint8_t channel_id,
 						   uint8_t enable_stats, uint8_t enable_prints)
 {
 	assert(channel_id < num_channels);
@@ -356,7 +364,7 @@ _wings_ud_channel_crd_init(ud_channel_t *ud_c, char *qp_name, ud_channel_t *link
 	uint16_t remote_channels = (uint16_t) (num_channels - 1);
 	ud_c->is_inlining_enabled = 1;
 
-    ud_c->credits_per_channels = malloc(sizeof(uint8_t) * (num_channels));
+    ud_c->credits_per_channels = malloc(sizeof(uint16_t) * (num_channels));
 	for(int i = 0; i < num_channels; ++i)
 		ud_c->credits_per_channels[i] = 0;
 
