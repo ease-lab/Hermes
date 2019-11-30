@@ -570,6 +570,7 @@ hermes_exec_inv(spacetime_inv_t *inv_ptr, struct mica_op *kv_ptr, spacetime_op_t
 		        hermes_local_state_to_op(inv_ptr, curr_meta);
                 inv_ptr->op_meta.sender = sender_id;
                 inv_ptr->op_meta.opcode = ST_OP_INV_ABORT;
+                red_printf("Sending OP_INV_ABORT\n");
 		    }
             cctrl_unlock_dec_version(&curr_meta->cctrl);
 		}
@@ -782,7 +783,20 @@ hermes_assertions_begin_dispatcher(enum hermes_batch_type_t type, void* ptr)
 				hermes_assertions_begin_inv(ptr);
 				break;
 			case acks:
-				hermes_assertions_begin_ack(ptr);
+                if(ENABLE_RMWs == 0)
+                    hermes_assertions_begin_ack(ptr);
+                else {
+                    spacetime_ack_t *ack_ptr = ptr;
+                    if (ack_ptr->opcode == ST_OP_ACK)
+                        hermes_assertions_begin_ack(ptr);
+                    else if (ack_ptr->opcode == ST_OP_INV_ABORT) {
+                        printf("RECVED: inv abort\n");
+                        hermes_assertions_begin_inv(ptr);
+                    } else{
+                        printf("RECVED: %s\n", code_to_str(ack_ptr->opcode));
+                        assert(0);
+                    }
+                }
 				break;
 			case vals:
 				hermes_assertions_begin_val(ptr);
@@ -870,7 +884,8 @@ hermes_exec_dispatcher(enum hermes_batch_type_t type, void* op_ptr, struct mica_
                 if (ack_ptr->opcode == ST_OP_ACK)
                     hermes_exec_ack(op_ptr, kv_ptr, curr_membership, read_write_op);
                 else if (ack_ptr->opcode == ST_OP_INV_ABORT) {
-//                    printf("RECVED: inv abort\n");
+                    ///TODO RMW debugging
+                    printf("RECVED: inv abort\n");
                     hermes_exec_inv(op_ptr, kv_ptr, read_write_op);
                     ack_ptr->opcode = ST_ACK_SUCCESS;
                 } else

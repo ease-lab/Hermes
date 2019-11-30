@@ -393,9 +393,11 @@ run_worker(void *arg)
 	}
     ///</HADES>
 
+//    printf("Seting QPS \n");
 	wings_setup_channel_qps_and_recvs(ud_channel_ptrs, total_ud_qps, g_share_qs_barrier, worker_lid);
 
 	channel_assertions(inv_ud_c, ack_ud_c, val_ud_c, crd_ud_c);
+//	printf("QPS ARE FINE \n");
 
 
 
@@ -446,38 +448,30 @@ run_worker(void *arg)
     struct timespec stopwatch_for_req_latency;
 
     // Membership init
-    spacetime_group_membership group_membership;
     bit_vector_t* membership_ptr = ENABLE_HADES_FAILURE_DETECTION ?
                                     (bit_vector_t*) &group_membership.g_membership: NULL;
-    if(ENABLE_HADES_FAILURE_DETECTION)
+    if(ENABLE_HADES_FAILURE_DETECTION) {
         spin_until_all_nodes_are_in_membership(&group_membership, &hw_ctx, worker_lid);
-    else
-        group_membership = group_membership;
+        printf("~~~~~~~~~ Starting while ! ~~~~~~~~~\n");
+    }
 
 
-    printf("~~~~~~~~~ Starting while ! ~~~~~~~~~\n");
 	/* -----------------------------------------------------
        ------------------------Main Loop--------------------
 	   ----------------------------------------------------- */
 
-    struct timespec stopwatch_for_failures;
-    get_rdtsc_timespec(&stopwatch_for_failures);
-    uint8_t flag_time_has_passed = 0;
+    struct timespec stopwatch_for_fd_warmup;
+    get_rdtsc_timespec(&stopwatch_for_fd_warmup);
+    uint8_t fd_warmup_time_has_passed = 0;
 
 	while (true) {
 
-	    if(unlikely(w_stats[worker_lid].total_loops % M_16 == 0)){
-	        //Check something periodically
+        //Check something periodically (e.g., stats)
+        if(unlikely(w_stats[worker_lid].total_loops % M_16 == 0)){
 //			print_total_send_recv_msgs_n_credits(&inv_ud_c, &ack_ud_c, &val_ud_c, &crd_ud_c);
-//	        uint8_t remote_node = (uint8_t) (machine_id == 0 ? 1 : 0);
-//	        printf("Inv credits: %d, ack credits: %d\n",
-//	        		inv_ud_c.credits_per_channels[remote_node],
-//	        		ack_ud_c.credits_per_channels[remote_node]);
-//	        for(int i = 0; i < MAX_BATCH_OPS_SIZE; ++i)
-//				printf("ops[%d]: state-> %s\n", i, code_to_str(ops[i].op_meta.state));
         }
 
-        if(flag_time_has_passed == 1){
+        if(!ENABLE_HADES_FAILURE_DETECTION || fd_warmup_time_has_passed == 1){
 
             node_suspected = refill_ops(&trace_iter, worker_lid, trace, ops,
                                         num_of_iters_serving_op, &stopwatch_for_req_latency,
@@ -550,8 +544,8 @@ run_worker(void *arg)
                     }
                 }
             }
-        }else if(time_elapsed_in_sec(stopwatch_for_failures) > 2){
-            flag_time_has_passed = 1;
+        }else if(ENABLE_HADES_FAILURE_DETECTION && time_elapsed_in_sec(stopwatch_for_fd_warmup) > 2){
+            fd_warmup_time_has_passed = 1;
             printf("~~~~~~~~~ Starting execution! ~~~~~~~~~\n");
         }
 
