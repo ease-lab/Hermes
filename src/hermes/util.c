@@ -322,8 +322,8 @@ char* code_to_str(uint8_t code)
 }
 
 
-// Manufactures a trace with a uniform distrbution without a backing file
-void manufacture_trace(struct spacetime_trace_command **cmds, int worker_gid)
+// Creates a trace with a uniform distribution without a backing file
+void create_uni_trace(struct spacetime_trace_command **cmds, int worker_gid)
 {
     srand(time(NULL) + worker_gid * 7);
     *cmds = malloc((NUM_OF_REP_REQS + 1) * sizeof(struct spacetime_trace_command));
@@ -360,7 +360,7 @@ void manufacture_trace(struct spacetime_trace_command **cmds, int worker_gid)
     //         t_stats[l_id].hot_keys_per_trace, t_stats[l_id].cold_keys_per_trace );
 }
 
-// Parse a trace, use this for skewed workloads as uniform trace can be manufactured easilly
+// Parse a trace, use this only for skewed workloads as uniform trace can be created (see create_uni_trace)
 int
 parse_trace(char* path, struct spacetime_trace_command **cmds, int worker_gid)
 {
@@ -502,7 +502,7 @@ void trace_init(struct spacetime_trace_command** trace, uint16_t worker_gid)
         //initialize the command array from the trace file
         parse_trace(path, trace, worker_gid);
     }else
-        manufacture_trace(trace, worker_gid);
+        create_uni_trace(trace, worker_gid);
 }
 
 void setup_credits(uint8_t credits[][MACHINE_NUM],     struct hrd_ctrl_blk *cb,
