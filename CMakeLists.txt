@@ -4,7 +4,12 @@ project(hermes)
 set(Hermes_VERSION_MAJOR 1)
 set(Hermes_VERSION_MINOR 0)
 
-include_directories(include/hermes include/libhrd /usr/include/ include/optik include/mica )
+include_directories(include/hermes
+                    include/libhrd
+                    /usr/include/
+                    include/optik
+                    include/mica )
+
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall")
 
