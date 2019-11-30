@@ -646,24 +646,24 @@ run_worker(void *arg)
 
 
     if(CR_ENABLE_EARLY_INV_CRDS){
-		wings_ud_channel_init(inv_ud_c, inv_qp_name, REQ, INV_MAX_REQ_COALESCE, sizeof(spacetime_inv_t), 0,
+		wings_ud_channel_init(inv_ud_c, inv_qp_name, REQ, MAX_REQ_COALESCE, sizeof(spacetime_inv_t), 0,
 							  inv_inlining, is_hdr_only, is_bcast, disable_crd_ctrl, 1,
-							  inv_crd_ud_c, INV_CREDITS, MACHINE_NUM, (uint8_t) machine_id, stats_on, prints_on);
+							  inv_crd_ud_c, CREDITS_PER_REMOTE_WORKER, MACHINE_NUM, (uint8_t) machine_id, stats_on, prints_on);
 
-		wings_ud_channel_init(ack_ud_c, ack_qp_name, RESP, ACK_MAX_REQ_COALESCE, sizeof(spacetime_ack_t), 0,
+		wings_ud_channel_init(ack_ud_c, ack_qp_name, RESP, MAX_REQ_COALESCE, sizeof(spacetime_ack_t), 0,
 							  ack_inlining, is_hdr_only, is_bcast, 1, expl_crd_ctrl,
 							  NULL, CR_ACK_CREDITS, MACHINE_NUM, (uint8_t) machine_id, stats_on, prints_on);
 	} else {
-		wings_ud_channel_init(inv_ud_c, inv_qp_name, REQ, INV_MAX_REQ_COALESCE, sizeof(spacetime_inv_t), 0,
+		wings_ud_channel_init(inv_ud_c, inv_qp_name, REQ, MAX_REQ_COALESCE, sizeof(spacetime_inv_t), 0,
 							  inv_inlining, is_hdr_only, is_bcast, disable_crd_ctrl, expl_crd_ctrl,
-							  ack_ud_c, INV_CREDITS, MACHINE_NUM, (uint8_t) machine_id, stats_on, prints_on);
+							  ack_ud_c, CREDITS_PER_REMOTE_WORKER, MACHINE_NUM, (uint8_t) machine_id, stats_on, prints_on);
 
-		wings_ud_channel_init(ack_ud_c, ack_qp_name, RESP, ACK_MAX_REQ_COALESCE, sizeof(spacetime_ack_t), 0,
+		wings_ud_channel_init(ack_ud_c, ack_qp_name, RESP, MAX_REQ_COALESCE, sizeof(spacetime_ack_t), 0,
 							  ack_inlining, is_hdr_only, is_bcast, disable_crd_ctrl, expl_crd_ctrl,
-							  inv_ud_c, ACK_CREDITS, MACHINE_NUM, (uint8_t) machine_id, stats_on, prints_on);
+							  inv_ud_c, CREDITS_PER_REMOTE_WORKER, MACHINE_NUM, (uint8_t) machine_id, stats_on, prints_on);
 	}
 
-	wings_ud_channel_init(rem_writes_ud_c, rem_writes_qp_name, REQ, CR_REMOTE_WRITES_MAX_REQ_COALESCE,
+	wings_ud_channel_init(rem_writes_ud_c, rem_writes_qp_name, REQ, MAX_REQ_COALESCE,
 						  sizeof(spacetime_op_t), 0, rem_writes_inlining,
 						  is_hdr_only, is_bcast, disable_crd_ctrl, 1, rem_writes_crd_ud_c,
 						  CR_REMOTE_WRITES_CREDITS, MACHINE_NUM, (uint8_t) machine_id, stats_on, prints_on);
@@ -671,12 +671,12 @@ run_worker(void *arg)
 	///////////////
 	///<4th stage>
 	if(CR_ENABLE_REMOTE_READS){
-		wings_ud_channel_init(rem_reads_ud_c, rem_reads_qp_name, REQ, CR_REMOTE_WRITES_MAX_REQ_COALESCE,
+		wings_ud_channel_init(rem_reads_ud_c, rem_reads_qp_name, REQ, MAX_REQ_COALESCE,
 							  sizeof(spacetime_op_t), 0, rem_reads_inlining,
 							  is_hdr_only, is_bcast, disable_crd_ctrl, expl_crd_ctrl, rem_read_resp_ud_c,
 							  CR_REMOTE_READS_CREDITS, MACHINE_NUM, (uint8_t) machine_id, stats_on, prints_on);
 
-		wings_ud_channel_init(rem_read_resp_ud_c, rem_read_resps_qp_name, RESP, CR_REMOTE_READS_MAX_REQ_COALESCE,
+		wings_ud_channel_init(rem_read_resp_ud_c, rem_read_resps_qp_name, RESP, MAX_REQ_COALESCE,
 							  sizeof(spacetime_op_t), 0, rem_reads_inlining,
 							  is_hdr_only, is_bcast, disable_crd_ctrl, expl_crd_ctrl, rem_reads_ud_c,
 							  CR_REMOTE_READS_CREDITS, MACHINE_NUM, (uint8_t) machine_id, stats_on, prints_on);

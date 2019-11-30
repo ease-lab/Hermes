@@ -26,80 +26,104 @@
 //#define SPACETIME_NUM_BKTS (64 * 1024 * 1024)
 //#define SPACETIME_LOG_CAP  (4 * ((unsigned long long) M_1024)) //(1024 * 1024 * 1024)
 
-///WARNING the monotonically increasing assigned numbers to States are used for comparisons (do not reorder / change numbers)
-//States
-#define VALID_STATE 1
-#define INVALID_STATE 2
-#define INVALID_WRITE_STATE 3
-#define WRITE_STATE 4
-#define REPLAY_STATE 5
-
-//Input Opcodes
-#define ST_OP_GET 111
-#define ST_OP_PUT 112
-#define ST_OP_RMW 113
-#define ST_OP_INV 114
-#define ST_OP_ACK 115
-#define ST_OP_VAL 116
-#define ST_OP_CRD 117
-#define ST_OP_MEMBERSHIP_CHANGE 118
-#define ST_OP_MEMBERSHIP_COMPLETE 119
-
-
-//Response Opcodes
-#define ST_GET_COMPLETE 121
-#define ST_PUT_SUCCESS 122 //broadcast invs
-#define ST_REPLAY_SUCCESS 123 //broadcast invs
-#define ST_INV_SUCCESS 124 //send ack
-#define ST_ACK_SUCCESS 125
-#define ST_LAST_ACK_SUCCESS 126        //complete local write
-#define ST_LAST_ACK_NO_BCAST_SUCCESS 127        //complete local write
-#define ST_PUT_COMPLETE 128 //broadcast invs
-#define ST_VAL_SUCCESS 129
-
-#define ST_MISS 130
-#define ST_GET_STALL 131
-#define ST_PUT_STALL 132
-#define ST_PUT_COMPLETE_SEND_VALS 133
-#define ST_SEND_CRD 134
-
-//RMW opcodes
-#define ST_RMW_SUCCESS  135
-#define ST_RMW_STALL    136
-#define ST_RMW_COMPLETE 137
-#define ST_RMW_ABORT 142
-#define ST_OP_INV_ABORT 138 //send inv instead of ACK
-#define ST_IN_PROGRESS_RMW 149
-#define ST_RMW_COMPLETE_SEND_VALS 154
-
-//ops bucket states
-#define ST_EMPTY 140
-#define ST_NEW 141
-#define ST_COMPLETE 144
-#define ST_IN_PROGRESS_PUT 145
-#define ST_IN_PROGRESS_REPLAY 146
-#define ST_REPLAY_COMPLETE 147
-#define ST_IN_PROGRESS_GET 148 // Used only in Chain Replication
-#define ST_REPLAY_COMPLETE_SEND_VALS 155
-
-// trace opcodes
-#define NOP 150
-
-//others
-#define ST_OP_HEARTBEAT 151
-#define ST_OP_SUSPICION 152
-#define ST_INV_OUT_OF_GROUP 153
-
 #define ST_VALUE_SIZE (KVS_VALUE_SIZE - sizeof(spacetime_object_meta))
 
-//receive_buff_types
-#define ST_INV_BUFF 161
-#define ST_ACK_BUFF 162
-#define ST_VAL_BUFF 163
-#define ST_CRD_BUFF 164
 
+// Special EMPTY opcodes
+#define NOP 150 // trace
 #define LAST_WRITER_ID_EMPTY 127 //255
 #define ST_OP_BUFFER_INDEX_EMPTY 255
+
+/////////////////////////////////////////////
+//// ENUMS
+/////////////////////////////////////////////
+///WARNING the monotonically increasing assigned numbers to States are used for comparisons (do not reorder / change numbers)
+//States
+typedef enum {
+    VALID_STATE = 1,
+    INVALID_STATE,
+    INVALID_WRITE_STATE,
+    WRITE_STATE,
+    REPLAY_STATE,
+}__attribute__((packed)) hermes_states_t;
+
+//Input Opcodes
+typedef enum {
+    ST_OP_GET = 111,
+    ST_OP_PUT,
+    ST_OP_RMW,
+    ST_OP_INV,
+    ST_OP_ACK,
+    ST_OP_VAL,
+    ST_OP_CRD,
+    ST_OP_MEMBERSHIP_CHANGE,
+    ST_OP_MEMBERSHIP_COMPLETE //119
+
+}__attribute__((packed)) input_opcodes_t;
+
+//Response Opcodes
+typedef enum {
+    ST_GET_COMPLETE = 121,
+    ST_PUT_SUCCESS, //broadcast invs
+    ST_REPLAY_SUCCESS, //broadcast invs
+    ST_INV_SUCCESS, //send ack
+    ST_ACK_SUCCESS,
+    ST_LAST_ACK_SUCCESS, //complete local write
+    ST_LAST_ACK_NO_BCAST_SUCCESS, //complete local write
+    ST_PUT_COMPLETE, //broadcast invs
+    ST_VAL_SUCCESS, //129
+
+    ST_MISS, //130
+    ST_GET_STALL,
+    ST_PUT_STALL,
+    ST_PUT_COMPLETE_SEND_VALS,
+    ST_SEND_CRD, //134
+
+//RMW opcodes
+    ST_RMW_SUCCESS, //135
+    ST_RMW_STALL,
+    ST_RMW_COMPLETE,
+    ST_RMW_ABORT,
+    ST_OP_INV_ABORT, //139 //send inv instead of ACK
+
+}__attribute__((packed)) response_opcodes_t;
+
+
+
+
+//ops bucket states
+typedef enum {
+    ST_EMPTY = 140,
+    ST_NEW,
+    ST_COMPLETE,
+    ST_IN_PROGRESS_PUT,
+    ST_IN_PROGRESS_REPLAY,
+    ST_REPLAY_COMPLETE,
+    ST_IN_PROGRESS_GET, // Used only in Chain Replication
+    ST_REPLAY_COMPLETE_SEND_VALS,
+    ST_IN_PROGRESS_RMW,
+    ST_RMW_COMPLETE_SEND_VALS //149
+}__attribute__((packed)) op_bucket_states_t;
+
+// failure detection (deprecated)
+typedef enum {
+    ST_OP_HEARTBEAT = 151, //WARNING: 150 opcode is used (see NOP define)!!
+    ST_OP_SUSPICION,
+    ST_INV_OUT_OF_GROUP
+}__attribute__((packed)) fs_ops_t;
+
+//receive_buff_types
+typedef enum {
+    ST_INV_BUFF = 161,
+    ST_ACK_BUFF,
+    ST_VAL_BUFF,
+    ST_CRD_BUFF
+}__attribute__((packed)) rcv_buff_types_t;
+
+
+/////////////////////////////////////////////
+//// Hermes(msg and KV -- spacetime) structs
+/////////////////////////////////////////////
 
 
 // Fixed-size 8 (or 16) byte keys
@@ -113,7 +137,7 @@ spacetime_key_t;
 
 typedef volatile struct
 {
-    uint8_t state;
+    hermes_states_t state;
     bit_vector_t ack_bv;
     uint8_t RMW_flag       : 1;
     uint8_t last_writer_id : 7;
@@ -127,7 +151,7 @@ spacetime_object_meta;
 typedef struct
 {
     spacetime_key_t key;	/* This must be the 1st field and 8B or 16B aligned */
-    uint8_t opcode; //both recv / resp
+    uint8_t opcode; //both recv / resp //TODO create a union
     union {
         uint8_t state;  //HERMES:  used by spacetime_op_t
         uint8_t sender; //HERMES:  used by spacetime_inv/ack/val_t
@@ -160,39 +184,6 @@ typedef struct
 }
 spacetime_op_t, spacetime_inv_t;
 
-/// MSG types
-typedef struct
-{
-    uint8_t opcode; //we do not really need this
-    uint8_t sender;
-    uint8_t val_credits;
-} spacetime_crd_t; //always send as inlined_payload
-
-
-
-// Packets for coalescing
-typedef struct
-{
-    uint8_t req_num;
-    spacetime_inv_t reqs[INV_MAX_REQ_COALESCE];
-}
-spacetime_inv_packet_t;
-
-typedef struct
-{
-    uint8_t req_num;
-    spacetime_ack_t reqs[ACK_MAX_REQ_COALESCE];
-}
-spacetime_ack_packet_t;
-
-typedef struct
-{
-    uint8_t req_num;
-    spacetime_val_t reqs[VAL_MAX_REQ_COALESCE];
-}
-spacetime_val_packet_t;
-
-
 
 typedef struct
 {
@@ -203,42 +194,11 @@ typedef struct
 }
 spacetime_group_membership;
 
-struct spacetime_meta_stats
-{
-    /* Stats */
-    long long num_get_success;
-    long long num_put_success;
-    long long num_upd_success;
-    long long num_inv_success;
-    long long num_ack_success;
-    long long num_get_stall;
-    long long num_put_stall;
-    long long num_upd_fail;
-    long long num_inv_fail;
-    long long num_ack_fail;
-    long long num_get_miss;
-    long long num_put_miss;
-    long long num_unserved_get_miss;
-    long long num_unserved_put_miss;
-};
-
-struct extended_spacetime_meta_stats
-{
-    long long num_hit;
-    long long num_miss;
-    long long num_stall;
-    long long num_coherence_fail;
-    long long num_coherence_success;
-    struct spacetime_meta_stats metadata;
-};
 
 struct spacetime_kv
 {
-    int num_threads;
+    // TODO may add kvs stats
     struct mica_kv hash_table;
-    long long total_ops_issued; ///this is only for get and puts
-    struct spacetime_meta_stats* meta;
-    struct extended_spacetime_meta_stats aggregated_meta;
 };
 
 struct spacetime_trace_command
@@ -248,7 +208,7 @@ struct spacetime_trace_command
     uint8_t key_id; // stores key ids 0-254 otherwise it is set to 255 to indicate other key ids
 };
 
-void spacetime_init(int spacetime_id, int num_threads);
+void spacetime_init(int spacetime_id);
 void spacetime_populate_fixed_len(struct spacetime_kv* kv,  int n,  int val_len);
 
 

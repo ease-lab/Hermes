@@ -16,39 +16,11 @@
 /* ---------------------------------------------------------------------------
 ----------------------------------- MEMBERSHIP -------------------------------
 ---------------------------------------------------------------------------*/
+
 static inline uint8_t
-node_is_in_membership(spacetime_group_membership last_group_membership, int node_id);
-
-static inline void
-follower_removal(int suspected_node_id)
+node_is_in_membership(spacetime_group_membership last_group_membership, int node_id)
 {
-	red_printf("Suspected node %d!\n", suspected_node_id);
-
-	seqlock_lock(&group_membership.lock);
-    if(ENABLE_ASSERTIONS == 1){
-		assert(suspected_node_id != machine_id);
-		assert(suspected_node_id < MACHINE_NUM);
-		assert(node_is_in_membership(*((spacetime_group_membership*) &group_membership), suspected_node_id));
-	}
-    group_membership.num_of_alive_remotes--;
-
-	bv_bit_reset((bit_vector_t*) &group_membership.g_membership, (uint8_t) suspected_node_id);
-	bv_copy((bit_vector_t*) &group_membership.w_ack_init, group_membership.g_membership);
-	bv_reverse((bit_vector_t*) &group_membership.w_ack_init);
-	bv_bit_set((bit_vector_t*) &group_membership.w_ack_init, (uint8_t) machine_id);
-
-	green_printf("Group Membership: ");
-	bv_print(group_membership.g_membership);
-	printf("\n");
-
-	seqlock_unlock(&group_membership.lock);
-
-	red_printf("Group membership changed --> Removed follower %d!\n", suspected_node_id);
-
-	if(group_membership.num_of_alive_remotes < (MACHINE_NUM / 2)){
-		red_printf("Majority is down!\n");
-		exit(-1);
-	}
+    return (uint8_t) (bv_bit_get(last_group_membership.g_membership, (uint8_t) node_id) == 1 ? 1 : 0);
 }
 
 static inline void
@@ -97,11 +69,6 @@ group_membership_has_changed(spacetime_group_membership* last_group_membership, 
 	return 0;
 }
 
-static inline uint8_t
-node_is_in_membership(spacetime_group_membership last_group_membership, int node_id)
-{
-	return (uint8_t) (bv_bit_get(last_group_membership.g_membership, (uint8_t) node_id) == 1 ? 1 : 0);
-}
 
 /* ---------------------------------------------------------------------------
 ----------------------------------- LATENCY -------------------------------
@@ -154,9 +121,6 @@ stop_latency_measurment(uint8_t req_opcode, struct timespec *start)
 }
 
 
-/* ---------------------------------------------------------------------------
-------------------------------------OTHERS------------------------------------
----------------------------------------------------------------------------*/
 static inline void
 stop_latency_of_completed_writes(spacetime_op_t *ops, uint16_t worker_lid,
 								 struct timespec *stopwatch)
@@ -177,6 +141,10 @@ stop_latency_of_completed_reads(spacetime_op_t *ops, uint16_t worker_lid,
 				stop_latency_measurment(ops[0].op_meta.opcode, stopwatch);
 }
 
+
+/* ---------------------------------------------------------------------------
+------------------------------------OTHERS------------------------------------
+---------------------------------------------------------------------------*/
 static inline int
 refill_ops(uint32_t *trace_iter, uint16_t worker_lid,
            struct spacetime_trace_command *trace, spacetime_op_t *ops,

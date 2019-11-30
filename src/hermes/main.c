@@ -18,6 +18,7 @@ struct latency_counters latency_count;
 volatile struct worker_stats w_stats[WORKERS_PER_MACHINE];
 
 dbit_vector_t *g_share_qs_barrier;
+spacetime_group_membership group_membership;
 
 // Global config vars
 uint8_t is_CR;
@@ -27,7 +28,6 @@ int rmw_ratio;
 int credits_num;
 int max_coalesce;
 int max_batch_size; //for batches to KVS
-
 
 
 // This is required only when Hades failure detection is disabled
@@ -150,16 +150,6 @@ int main(int argc, char *argv[])
 
 	printf("update rate: %d (RMW rate %d) | workers %d | batch size %d| CREDITS %d | coalesce %d |\n",
 			update_ratio, rmw_ratio, num_workers, max_batch_size, credits_num, max_coalesce);
-//	if(credits_num == CREDITS_PER_REMOTE_WORKER){
-//		printf("INV_SS_GRANULARITY %d \t\t SEND_INV_Q_DEPTH %d \t\t RECV_INV_Q_DEPTH %d\n",
-//			   INV_SS_GRANULARITY, SEND_INV_Q_DEPTH, RECV_INV_Q_DEPTH);
-//		printf("ACK_SS_GRANULARITY %d \t\t SEND_ACK_Q_DEPTH %d \t\t RECV_ACK_Q_DEPTH %d\n",
-//			   ACK_SS_GRANULARITY, SEND_ACK_Q_DEPTH, RECV_ACK_Q_DEPTH);
-//		printf("VAL_SS_GRANULARITY %d \t\t SEND_VAL_Q_DEPTH %d \t\t RECV_VAL_Q_DEPTH %d\n",
-//			   VAL_SS_GRANULARITY, SEND_VAL_Q_DEPTH, RECV_VAL_Q_DEPTH);
-//		printf("CRD_SS_GRANULARITY %d \t\t SEND_CRD_Q_DEPTH %d \t\t RECV_CRD_Q_DEPTH %d\n",
-//			   CRD_SS_GRANULARITY, SEND_CRD_Q_DEPTH, RECV_CRD_Q_DEPTH);
-//	}
 
 	thread_arr = malloc(num_workers * sizeof(pthread_t));
 	param_arr  = malloc(num_workers * sizeof(struct thread_params));
@@ -170,7 +160,7 @@ int main(int argc, char *argv[])
 
 	group_membership_init();
     init_stats((void*) w_stats);
-	spacetime_init(machine_id, num_workers);
+	spacetime_init(machine_id);
 
 
 	pthread_attr_init(&attr);
@@ -180,12 +170,12 @@ int main(int argc, char *argv[])
 			w_core = init_core + i;
 		else
 			w_core = 2 * i + init_core;
-//        if(w_core > 19 ) w_core+=4;
-		assert(ENABLE_HYPERTHREADING || w_core < TOTAL_NUMBER_OF_SOCKETS * TOTAL_CORES_PER_SOCKET);
+
 		assert(w_core < TOTAL_HW_CORES);
+        assert(ENABLE_HYPERTHREADING || w_core < TOTAL_NUMBER_OF_SOCKETS * TOTAL_CORES_PER_SOCKET);
+
 		param_arr[i].id = i;
 
-//		green_printf("Creating worker thread %d at core %d \n", param_arr[i].id, w_core);
 		CPU_ZERO(&cpus_w);
 		CPU_SET(w_core, &cpus_w);
 		pthread_attr_setaffinity_np(&attr, sizeof(cpu_set_t), &cpus_w);
@@ -195,22 +185,13 @@ int main(int argc, char *argv[])
 	yellow_printf("Sizes: {Op: %d, Object Meta %d, Value %d},\n",
 				  sizeof(spacetime_op_t), sizeof(spacetime_object_meta), ST_VALUE_SIZE);
 
-	yellow_printf("Coherence msg Sizes: {Inv: %d, Ack: %d, Val: %d, Crd: %d}\n",
-				  sizeof(spacetime_inv_t), sizeof(spacetime_ack_t), sizeof(spacetime_val_t),
-				  sizeof(spacetime_crd_t));
+	yellow_printf("Coherence msg Sizes: {Inv: %d, Ack: %d, Val: %d}\n",
+				  sizeof(spacetime_inv_t), sizeof(spacetime_ack_t), sizeof(spacetime_val_t));
 
-//	if(max_coalesce == MAX_REQ_COALESCE)
-//		yellow_printf("Max Coalesce Packet Sizes: {Inv: %d, Ack: %d, Val: %d}\n",
-//                      sizeof(wings_ud_send_pkt_t) + sizeof(spacetime_inv_t),
-//                      sizeof(wings_ud_send_pkt_t) + sizeof(spacetime_ack_t),
-//                      sizeof(wings_ud_send_pkt_t) + sizeof(spacetime_val_t));
-////					  sizeof(spacetime_inv_packet_t), sizeof(spacetime_ack_packet_t),
-////					  sizeof(spacetime_val_packet_t));
-//	else
-		yellow_printf("Max Coalesce Packet Sizes: {Inv: %d, Ack: %d, Val: %d}\n",
-					  sizeof(wings_ud_send_pkt_t) + max_coalesce * sizeof(spacetime_inv_t),
-					  sizeof(wings_ud_send_pkt_t) + max_coalesce * sizeof(spacetime_ack_t),
-					  sizeof(wings_ud_send_pkt_t) + max_coalesce * sizeof(spacetime_val_t));
+    yellow_printf("Max Coalesce Packet Sizes: {Inv: %d, Ack: %d, Val: %d}\n",
+                  sizeof(wings_ud_send_pkt_t) + max_coalesce * sizeof(spacetime_inv_t),
+                  sizeof(wings_ud_send_pkt_t) + max_coalesce * sizeof(spacetime_ack_t),
+                  sizeof(wings_ud_send_pkt_t) + max_coalesce * sizeof(spacetime_val_t));
 
 	for(i = 0; i < num_workers; i++)
 		pthread_join(thread_arr[i], NULL);

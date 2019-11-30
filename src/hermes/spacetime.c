@@ -13,41 +13,8 @@
  */
 
 struct spacetime_kv kv;
-spacetime_group_membership group_membership;
 
-void
-meta_reset(struct spacetime_meta_stats* meta)
-{
-	meta->num_get_success = 0;
-	meta->num_put_success = 0;
-	meta->num_upd_success = 0;
-	meta->num_inv_success = 0;
-	meta->num_ack_success = 0;
-	meta->num_get_stall = 0;
-	meta->num_put_stall = 0;
-	meta->num_upd_fail = 0;
-	meta->num_inv_fail = 0;
-	meta->num_ack_fail = 0;
-	meta->num_get_miss = 0;
-	meta->num_put_miss = 0;
-	meta->num_unserved_get_miss = 0;
-	meta->num_unserved_put_miss = 0;
-}
-
-void
-extended_meta_reset(struct extended_spacetime_meta_stats* meta)
-{
-	meta->num_hit = 0;
-	meta->num_miss = 0;
-	meta->num_stall = 0;
-	meta->num_coherence_fail = 0;
-	meta->num_coherence_success = 0;
-
-	meta_reset(&meta->metadata);
-}
-
-void
-spacetime_object_meta_init(spacetime_object_meta* ol)
+void spacetime_object_meta_init(spacetime_object_meta* ol)
 {
 	cctrl_init(&ol->cctrl);
 	ol->state = VALID_STATE;
@@ -55,23 +22,14 @@ spacetime_object_meta_init(spacetime_object_meta* ol)
 	ol->op_buffer_index = ST_OP_BUFFER_INDEX_EMPTY;
 }
 
-void
-spacetime_init(int instance_id, int num_threads)
+void spacetime_init(int instance_id)
 {
-	kv.num_threads = num_threads;
-	//TODO add a Define for stats
-	kv.total_ops_issued = 0;
-	/// allocate and init metadata for the spacetime & threads
-	extended_meta_reset(&kv.aggregated_meta);
-	kv.meta = malloc(num_threads * sizeof(struct spacetime_meta_stats));
-	for(int i = 0; i < num_threads; i++)
-		meta_reset(&kv.meta[i]);
+	//TODO may add kvs stats
 	mica_init(&kv.hash_table, instance_id, KV_SOCKET, SPACETIME_NUM_BKTS, SPACETIME_LOG_CAP);
 	spacetime_populate_fixed_len(&kv, SPACETIME_NUM_KEYS, KVS_VALUE_SIZE);
 }
 
-void
-spacetime_populate_fixed_len(struct spacetime_kv* _kv, int n, int val_len)
+void spacetime_populate_fixed_len(struct spacetime_kv* _kv, int n, int val_len)
 {
 	assert(n > 0);
 	assert(val_len > 0 && val_len <= KVS_VALUE_SIZE);
@@ -108,9 +66,3 @@ spacetime_populate_fixed_len(struct spacetime_kv* _kv, int n, int val_len)
 				  _kv->hash_table.instance_id, n, val_len,
 				  (double) _kv->hash_table.num_index_evictions / _kv->hash_table.num_insert_op);
 }
-
-
-
-
-//TODO move this to util.c
-

@@ -412,7 +412,6 @@ cr_exec_dispatcher(enum cr_type_t cr_type, void* op_ptr, struct mica_op *kv_ptr,
 
 //////////////////////////////////////////////////
 //////////// Batch function //////////////////////
-#define CR_MAX_BATCH_SIZE MAX(MAX(MAX_BATCH_OPS_SIZE, ACK_RECV_OPS_SIZE), INV_RECV_OPS_SIZE)
 void
 cr_batch_ops_to_KVS(enum cr_type_t cr_type, uint8_t *op_array, int op_num,
 					uint16_t sizeof_op_elem, spacetime_op_t *read_write_op)
