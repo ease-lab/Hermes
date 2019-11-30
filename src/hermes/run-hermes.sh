@@ -113,7 +113,6 @@ shm-rm.sh 1>/dev/null 2>/dev/null
 
 
 blue "Reset server QP registry"
-#memcached -l 0.0.0.0 1>/dev/null 2>/dev/null &
 memcached -l ${HRD_REGISTRY_IP} 1>/dev/null 2>/dev/null &
 sleep 1
 

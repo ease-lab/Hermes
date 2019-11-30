@@ -45,8 +45,6 @@ inv_modify_elem_after_send(uint8_t* req)
             op_req->op_meta.state = ST_OP_MEMBERSHIP_COMPLETE;
             break;
         default:
-            printf("state: %d\n", op_req->op_meta.state);
-            printf("state: %s\n", code_to_str(op_req->op_meta.state));
             assert(0);
     }
 }
@@ -231,47 +229,6 @@ rem_write_crd_modify_elem_after_send(uint8_t *req)
 
 
 void
-channel_assertions(ud_channel_t *inv_ud_c, ud_channel_t *ack_ud_c,
-				   ud_channel_t *val_ud_c, ud_channel_t *crd_ud_c)
-{
-	// Assertions hold only when the default max coalesce and credit num is used
-	if(max_coalesce != MAX_REQ_COALESCE) return;
-    if(credits_num != CREDITS_PER_REMOTE_WORKER) return;
-
-//	assert(inv_ud_c->max_send_wrs == MAX_SEND_INV_WRS);
-//	assert(inv_ud_c->max_recv_wrs == MAX_RECV_INV_WRS);
-//	assert(inv_ud_c->send_q_depth == SEND_INV_Q_DEPTH);
-//	assert(inv_ud_c->recv_q_depth == RECV_INV_Q_DEPTH);
-//	assert(inv_ud_c->send_pkt_buff_len == INV_SEND_OPS_SIZE);
-//	assert(inv_ud_c->max_coalescing == INV_MAX_REQ_COALESCE);
-//	assert(inv_ud_c->ss_granularity == INV_SS_GRANULARITY);
-//	assert(inv_ud_c->max_pcie_bcast_batch == MAX_PCIE_BCAST_BATCH);
-
-//	assert(ack_ud_c->max_send_wrs == MAX_SEND_ACK_WRS);
-//	assert(ack_ud_c->max_recv_wrs == MAX_RECV_ACK_WRS);
-//	assert(ack_ud_c->send_q_depth == SEND_ACK_Q_DEPTH);
-//	assert(ack_ud_c->recv_q_depth == RECV_ACK_Q_DEPTH);
-//	assert(ack_ud_c->send_pkt_buff_len == ACK_SEND_OPS_SIZE);
-//	assert(ack_ud_c->max_coalescing == ACK_MAX_REQ_COALESCE);
-//	assert(ack_ud_c->ss_granularity == ACK_SS_GRANULARITY);
-//
-//	assert(val_ud_c->max_send_wrs == MAX_SEND_VAL_WRS);
-//	assert(val_ud_c->max_recv_wrs == MAX_RECV_VAL_WRS);
-//	assert(val_ud_c->send_q_depth == SEND_VAL_Q_DEPTH);
-//	assert(val_ud_c->recv_q_depth == RECV_VAL_Q_DEPTH);
-//	assert(val_ud_c->send_pkt_buff_len == VAL_SEND_OPS_SIZE);
-//	assert(val_ud_c->max_coalescing == VAL_MAX_REQ_COALESCE);
-//	assert(val_ud_c->ss_granularity == VAL_SS_GRANULARITY);
-//	assert(val_ud_c->max_pcie_bcast_batch == MAX_PCIE_BCAST_BATCH);
-//
-//	assert(crd_ud_c->max_send_wrs == MAX_SEND_CRD_WRS);
-//	assert(crd_ud_c->max_recv_wrs == MAX_RECV_CRD_WRS);
-//	assert(crd_ud_c->send_q_depth == SEND_CRD_Q_DEPTH);
-//	assert(crd_ud_c->recv_q_depth == RECV_CRD_Q_DEPTH);
-//	assert(crd_ud_c->ss_granularity == CRD_SS_GRANULARITY);
-}
-
-void
 print_total_send_recv_msgs(ud_channel_t *inv_ud_c, ud_channel_t *ack_ud_c,
 						   ud_channel_t *val_ud_c, ud_channel_t *crd_ud_c)
 {
@@ -282,6 +239,7 @@ print_total_send_recv_msgs(ud_channel_t *inv_ud_c, ud_channel_t *ack_ud_c,
 				  inv_ud_c->stats.recv_total_msgs, ack_ud_c->stats.recv_total_msgs,
 				  val_ud_c->stats.recv_total_msgs, crd_ud_c->stats.recv_total_msgs);
 }
+
 
 void
 spin_until_all_nodes_are_in_membership(spacetime_group_membership *last_group_membership,
@@ -299,6 +257,7 @@ spin_until_all_nodes_are_in_membership(spacetime_group_membership *last_group_me
         *last_group_membership = group_membership;
     }
 }
+
 
 static inline void
 failure_detection_n_membership(ud_channel_t** ud_channel_ptrs, bit_vector_t* last_membership,
@@ -409,9 +368,6 @@ run_worker(void *arg)
     ///</HADES>
 
 	wings_setup_channel_qps_and_recvs(ud_channel_ptrs, total_ud_qps, g_share_qs_barrier, worker_lid);
-
-	channel_assertions(inv_ud_c, ack_ud_c, val_ud_c, crd_ud_c);
-
 
 
 	uint16_t ops_len = (uint16_t) (credits_num * REMOTE_MACHINES * max_coalesce); //credits * remote_machines * max_req_coalesce
@@ -588,7 +544,6 @@ run_worker(void *arg)
         }
 		w_stats[worker_lid].total_loops++;
 	}
-	return NULL;
 }
 
 

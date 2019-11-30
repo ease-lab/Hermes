@@ -900,7 +900,6 @@ hermes_exec_dispatcher(enum hermes_batch_type_t type, void* op_ptr, struct mica_
 
 //////////// Main KVS function
 
-#define HERMES_MAX_BATCH_SIZE MAX(MAX(MAX(MAX_BATCH_OPS_SIZE, ACK_RECV_OPS_SIZE), INV_RECV_OPS_SIZE), VAL_RECV_OPS_SIZE)
 void
 hermes_batch_ops_to_KVS(enum hermes_batch_type_t type, uint8_t *op_array, int op_num,
 						uint16_t sizeof_op_elem, spacetime_group_membership curr_membership,

@@ -9,7 +9,6 @@
 #include "sizes.h"
 
 #define HERMES_CEILING(x,y) (((x) + (y) - 1) / (y))
-#define HERMES_MIN(x,y) (x < y ? x : y)
 
 #define MACHINE_NUM 3
 #define REMOTE_MACHINES (MACHINE_NUM - 1)
@@ -32,12 +31,6 @@ static_assert(ENABLE_RMWs == 0 || ENABLE_RMWs == 1,"");
 #define MAX_LATENCY 1000 //in us
 #define LATENCY_BUCKETS 1000
 #define LATENCY_PRECISION (MAX_LATENCY / LATENCY_BUCKETS) //latency granularity in us
-
-/// CURRENTLY does not work
-//#define INCREASE_TAIL_LATENCY 1
-//#define INCREASE_TAIL_BY_MS 5
-//#define NUM_OF_CORES_TO_INCREASE_TAIL WORKERS_PER_MACHINE
-//#define INCREASE_TAIL_EVERY_X_ACKS 0
 
 // Fairness
 #define ENABLE_VIRTUAL_NODE_IDS 0 //0
@@ -67,6 +60,54 @@ static_assert(!ENABLE_VIRTUAL_NODE_IDS || MACHINE_NUM * VIRTUAL_NODE_IDS_PER_NOD
 // FAILURES
 #define ENABLE_HADES_FAILURE_DETECTION 0 //0
 static_assert(ENABLE_HADES_FAILURE_DETECTION == 0, "WARNING HADES is currently not working");
+
+
+
+/*-------------------------------------------------
+----------------- REQ INLINING --------------------
+--------------------------------------------------*/
+#define DISABLE_INLINING 0
+
+/*-------------------------------------------------
+----------------- REQ COALESCING -------------------
+--------------------------------------------------*/
+#define MAX_REQ_COALESCE 15
+//#define MAX_REQ_COALESCE MAX_BATCH_OPS_SIZE
+
+/*-------------------------------------------------
+-----------------FLOW CONTROL---------------------
+--------------------------------------------------*/
+#define CREDITS_PER_REMOTE_WORKER (1 * MAX_REQ_COALESCE) // Hermes
+//#define CREDITS_PER_REMOTE_WORKER 250 //(MAX_BATCH_OPS_SIZE) // CR
+
+////////////////////////////////
+/// NOT TUNABLE
+////////////////////////////////
+/*-------------------------------------------------
+----------------- MAX HERMES OPS SIZE -------------
+--------------------------------------------------*/
+#define MAX_RECV_WRS (CREDITS_PER_REMOTE_WORKER * REMOTE_MACHINES)
+#define MAX_MSG_RECV_OPS_SIZE (MAX_RECV_WRS * MAX_REQ_COALESCE)
+#define HERMES_MAX_BATCH_SIZE MAX(MAX_MSG_RECV_OPS_SIZE, MAX_BATCH_OPS_SIZE)
+
+
+
+/*-------------------------------------------------
+---------------- QPs Numbers ----------------------
+--------------------------------------------------*/
+typedef enum {
+    INV_UD_QP_ID = 0,
+    ACK_UD_QP_ID,
+    VAL_UD_QP_ID,
+    CRD_UD_QP_ID,
+    END_HERMES_QPS_ENUM
+} hermes_qps_enum;
+//QPs
+#define TOTAL_WORKER_UD_QPs END_HERMES_QPS_ENUM
+#define TOTAL_WORKER_N_FAILURE_DETECTION_UD_QPs (TOTAL_WORKER_UD_QPs + (ENABLE_HADES_FAILURE_DETECTION ? 2 : 0))
+
+
+
 // ////////////////
 // <CR configuration>
 // ////////////////
@@ -100,88 +141,8 @@ static_assert(ENABLE_HADES_FAILURE_DETECTION == 0, "WARNING HADES is currently n
 // </CR configuration>
 // ////////////////
 
-/*-------------------------------------------------
------------------ REQ COALESCING -------------------
---------------------------------------------------*/
-//#define MAX_REQ_COALESCE MAX_BATCH_OPS_SIZE
-#define MAX_REQ_COALESCE 15
-#define INV_MAX_REQ_COALESCE MAX_REQ_COALESCE
-#define ACK_MAX_REQ_COALESCE MAX_REQ_COALESCE
-#define VAL_MAX_REQ_COALESCE MAX_REQ_COALESCE
-
-/*-------------------------------------------------
------------------FLOW CONTROL---------------------
---------------------------------------------------*/
-#define CREDITS_PER_REMOTE_WORKER (1 * MAX_REQ_COALESCE) // Hermes
-//#define CREDITS_PER_REMOTE_WORKER 250 //(MAX_BATCH_OPS_SIZE) // CR
-#define INV_CREDITS CREDITS_PER_REMOTE_WORKER
-#define ACK_CREDITS CREDITS_PER_REMOTE_WORKER
-#define VAL_CREDITS CREDITS_PER_REMOTE_WORKER
-#define CRD_CREDITS CREDITS_PER_REMOTE_WORKER
-
-/*-------------------------------------------------
------------------PCIe BATCHING---------------------
---------------------------------------------------*/
-#define MIN_PCIE_BCAST_BATCH 1 //MAX_BATCH_OPS_SIZE
-#define MAX_PCIE_BCAST_BATCH HERMES_MIN(MIN_PCIE_BCAST_BATCH + 1, INV_CREDITS) //Warning! use min to avoid reseting the first req prior batching to the NIC
-//WARNING: todo check why we need to have MIN_PCIE_BCAST_BATCH + 1 instead of just MIN_PCIE_BCAST_BATCH
-//#define MAX_MSGS_IN_PCIE_BCAST_BATCH (MAX_PCIE_BCAST_BATCH * REMOTE_MACHINES) //must be smaller than the q_depth
-
-/**/
-#define MAX_SEND_ACK_WRS (INV_CREDITS * REMOTE_MACHINES)
-#define MAX_SEND_CRD_WRS (VAL_CREDITS * REMOTE_MACHINES)
-
-#define MAX_RECV_INV_WRS (INV_CREDITS * REMOTE_MACHINES)
-#define MAX_RECV_ACK_WRS (ACK_CREDITS * REMOTE_MACHINES)
-#define MAX_RECV_VAL_WRS (VAL_CREDITS * REMOTE_MACHINES)
-#define MAX_RECV_CRD_WRS (CRD_CREDITS * REMOTE_MACHINES)
-
-/*-------------------------------------------------
------------------SELECTIVE SIGNALING---------------
--------------------------------------------------*/
-#define INV_SS_GRANULARITY MAX_PCIE_BCAST_BATCH
-#define ACK_SS_GRANULARITY MAX_SEND_ACK_WRS
-#define VAL_SS_GRANULARITY MAX_PCIE_BCAST_BATCH
-#define CRD_SS_GRANULARITY MAX_SEND_CRD_WRS
 
 
-/*-------------------------------------------------
------------------QPs & QUEUE DEPTHS----------------
---------------------------------------------------*/
-//QPs
-#define INV_UD_QP_ID 0
-#define ACK_UD_QP_ID 1
-#define VAL_UD_QP_ID 2
-#define CRD_UD_QP_ID 3
-#define TOTAL_WORKER_UD_QPs 4
-#define TOTAL_WORKER_N_FAILURE_DETECTION_UD_QPs (TOTAL_WORKER_UD_QPs + (ENABLE_HADES_FAILURE_DETECTION ? 2 : 0))
-
-//RECV Depths
-#define RECV_INV_Q_DEPTH MAX_RECV_INV_WRS
-#define RECV_ACK_Q_DEPTH MAX_RECV_ACK_WRS
-#define RECV_VAL_Q_DEPTH MAX_RECV_VAL_WRS
-#define RECV_CRD_Q_DEPTH MAX_RECV_CRD_WRS
-
-//SEND Depths
-#define SEND_INV_Q_DEPTH ((INV_SS_GRANULARITY * REMOTE_MACHINES) * 2)
-#define SEND_ACK_Q_DEPTH (ACK_SS_GRANULARITY * 2)
-#define SEND_VAL_Q_DEPTH ((VAL_SS_GRANULARITY * REMOTE_MACHINES) * 2)
-#define SEND_CRD_Q_DEPTH (CRD_SS_GRANULARITY * 2)
-
-/*-------------------------------------------------
------------------ REQ INLINING --------------------
---------------------------------------------------*/
-#define DISABLE_INLINING 0
-
-/*-------------------------------------------------
------------------ SEND/RECV OPS SIZE --------------
---------------------------------------------------*/
-//TODO
-///WARNING: changes DISABLE_INLINING with DISABLE_{INV,ACK,VAL}_INLINING
-
-#define INV_RECV_OPS_SIZE (MAX_RECV_INV_WRS * INV_MAX_REQ_COALESCE)
-#define ACK_RECV_OPS_SIZE (MAX_RECV_ACK_WRS * ACK_MAX_REQ_COALESCE)
-#define VAL_RECV_OPS_SIZE (MAX_RECV_VAL_WRS * VAL_MAX_REQ_COALESCE)
 
 /*-------------------------------------------------
 -----------------PRINTS (DBG)---------------------

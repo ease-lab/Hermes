@@ -140,6 +140,7 @@ int main(int argc, char *argv[])
 	// WARNING: Some structs are statically allocated using WORKERS_PER_MACHINE / MAX_BATCH_OPS_SIZE
 	assert(num_workers <= WORKERS_PER_MACHINE);
 	assert(max_batch_size <= MAX_BATCH_OPS_SIZE);
+    assert(!MEASURE_LATENCY || THREAD_MEASURING_LATENCY < num_workers);
 
 	if(num_workers > 1)
 		dbv_init(&g_share_qs_barrier, (uint8_t) num_workers);
@@ -149,16 +150,16 @@ int main(int argc, char *argv[])
 
 	printf("update rate: %d (RMW rate %d) | workers %d | batch size %d| CREDITS %d | coalesce %d |\n",
 			update_ratio, rmw_ratio, num_workers, max_batch_size, credits_num, max_coalesce);
-	if(credits_num == CREDITS_PER_REMOTE_WORKER){
-		printf("INV_SS_GRANULARITY %d \t\t SEND_INV_Q_DEPTH %d \t\t RECV_INV_Q_DEPTH %d\n",
-			   INV_SS_GRANULARITY, SEND_INV_Q_DEPTH, RECV_INV_Q_DEPTH);
-		printf("ACK_SS_GRANULARITY %d \t\t SEND_ACK_Q_DEPTH %d \t\t RECV_ACK_Q_DEPTH %d\n",
-			   ACK_SS_GRANULARITY, SEND_ACK_Q_DEPTH, RECV_ACK_Q_DEPTH);
-		printf("VAL_SS_GRANULARITY %d \t\t SEND_VAL_Q_DEPTH %d \t\t RECV_VAL_Q_DEPTH %d\n",
-			   VAL_SS_GRANULARITY, SEND_VAL_Q_DEPTH, RECV_VAL_Q_DEPTH);
-		printf("CRD_SS_GRANULARITY %d \t\t SEND_CRD_Q_DEPTH %d \t\t RECV_CRD_Q_DEPTH %d\n",
-			   CRD_SS_GRANULARITY, SEND_CRD_Q_DEPTH, RECV_CRD_Q_DEPTH);
-	}
+//	if(credits_num == CREDITS_PER_REMOTE_WORKER){
+//		printf("INV_SS_GRANULARITY %d \t\t SEND_INV_Q_DEPTH %d \t\t RECV_INV_Q_DEPTH %d\n",
+//			   INV_SS_GRANULARITY, SEND_INV_Q_DEPTH, RECV_INV_Q_DEPTH);
+//		printf("ACK_SS_GRANULARITY %d \t\t SEND_ACK_Q_DEPTH %d \t\t RECV_ACK_Q_DEPTH %d\n",
+//			   ACK_SS_GRANULARITY, SEND_ACK_Q_DEPTH, RECV_ACK_Q_DEPTH);
+//		printf("VAL_SS_GRANULARITY %d \t\t SEND_VAL_Q_DEPTH %d \t\t RECV_VAL_Q_DEPTH %d\n",
+//			   VAL_SS_GRANULARITY, SEND_VAL_Q_DEPTH, RECV_VAL_Q_DEPTH);
+//		printf("CRD_SS_GRANULARITY %d \t\t SEND_CRD_Q_DEPTH %d \t\t RECV_CRD_Q_DEPTH %d\n",
+//			   CRD_SS_GRANULARITY, SEND_CRD_Q_DEPTH, RECV_CRD_Q_DEPTH);
+//	}
 
 	thread_arr = malloc(num_workers * sizeof(pthread_t));
 	param_arr  = malloc(num_workers * sizeof(struct thread_params));
@@ -228,24 +229,11 @@ int main(int argc, char *argv[])
 static_assert(MICA_MAX_VALUE >= ST_VALUE_SIZE, "");
 static_assert(MACHINE_NUM <= 8, ""); //TODO haven't test bit vectors with more than 8 nodes
 static_assert(MACHINE_NUM <= GROUP_MEMBERSHIP_ARRAY_SIZE * 8, "");//bit vector for acks / group membership
-//static_assert(sizeof(spacetime_crd_t) < sizeof(((struct ibv_send_wr*)0)->imm_data), ""); //for inlined credits
 static_assert(MACHINE_NUM <= 255, "");
 
-//    static_assert(CREDITS_PER_REMOTE_WORKER <= MAX_BATCH_OPS_SIZE, "");
 
-static_assert(MAX_PCIE_BCAST_BATCH <= INV_CREDITS, "");
-static_assert(MAX_PCIE_BCAST_BATCH <= VAL_CREDITS, "");
-static_assert(MAX_PCIE_BCAST_BATCH <= INV_SS_GRANULARITY, "");
-static_assert(MAX_PCIE_BCAST_BATCH <= VAL_SS_GRANULARITY, "");
-
-//	static_assert(SOCKET_TO_START_SPAWNING_THREADS < TOTAL_NUMBER_OF_SOCKETS, "");
 static_assert((ENABLE_HYPERTHREADING == 1 && USE_ALL_SOCKETS == 1) || WORKERS_PER_MACHINE <= TOTAL_CORES_PER_SOCKET, "");
 static_assert(WORKERS_PER_MACHINE <= TOTAL_HW_CORES, "");
-
-// Increase in tail latency
-// WARNING Increase of tail_latency [Currently is not working]
-//static_assert(INCREASE_TAIL_LATENCY == 0 || NUM_OF_CORES_TO_INCREASE_TAIL <= WORKERS_PER_MACHINE, "");
-//static_assert(!(INCREASE_TAIL_LATENCY && FAKE_FAILURE), "");
 
 ///Assertions for failures
 static_assert(FAKE_FAILURE == 0 || NODE_TO_FAIL < MACHINE_NUM, "");
