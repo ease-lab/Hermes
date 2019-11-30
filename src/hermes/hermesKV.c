@@ -246,8 +246,8 @@ hermes_read_actions(spacetime_op_t *op_ptr, struct mica_op *kv_ptr, uint8_t* kv_
 }
 
 
-//////////// Exec op functions
 
+//////////// Exec op functions
 static inline void
 hermes_exec_read(spacetime_op_t *op_ptr, struct mica_op *kv_ptr,
 				 uint8_t idx, spacetime_group_membership curr_membership)
@@ -483,6 +483,8 @@ hermes_exec_check_update_completion(spacetime_op_t *op_ptr, struct mica_op *kv_p
     }
 }
 
+
+
 //////////// Exec protocol action functions
 static inline void
 hermes_exec_inv(spacetime_inv_t *inv_ptr, struct mica_op *kv_ptr, spacetime_op_t *read_write_op)
@@ -645,14 +647,6 @@ hermes_exec_ack(spacetime_ack_t *ack_ptr, struct mica_op *kv_ptr,
 	{
 		///completed read / write --> remove it from the ops buffer
 		if(ENABLE_ASSERTIONS){
-//							if(op_buff_indx == ST_OP_BUFFER_INDEX_EMPTY)
-//								printf("W%d--> ACK[%d]: Key state: %s, Key Hash:%" PRIu64
-//									   " complete buff: %d\n\t op: %s, TS: %d | %d, sender: %d\n",
-//									   thread_id, I, code_to_str(prev_state), ((uint64_t *) &(*op)[I].key)[1],
-//									   op_buff_indx, code_to_str((*op)[I].opcode),
-//									   (*op)[I].ts.version, (*op)[I].ts.tie_breaker_id,
-//									   (*op)[I].sender);
-
 			assert(op_buff_indx != ST_OP_BUFFER_INDEX_EMPTY);
 			assert(read_write_op[op_buff_indx].op_meta.state == ST_IN_PROGRESS_PUT ||
 			       read_write_op[op_buff_indx].op_meta.state == ST_IN_PROGRESS_RMW ||
@@ -750,6 +744,9 @@ hermes_skip_ack(spacetime_ack_t *ack_ptr)
 {
 	return (uint8_t) ((ack_ptr->state == ST_OP_MEMBERSHIP_CHANGE) ? 1 : 0);
 }
+
+
+
 
 //////////// Dispatcher functions
 
@@ -901,6 +898,7 @@ hermes_exec_dispatcher(enum hermes_batch_type_t type, void* op_ptr, struct mica_
 
 
 
+//////////// Main KVS function
 
 #define HERMES_MAX_BATCH_SIZE MAX(MAX(MAX(MAX_BATCH_OPS_SIZE, ACK_RECV_OPS_SIZE), INV_RECV_OPS_SIZE), VAL_RECV_OPS_SIZE)
 void

@@ -11,10 +11,10 @@
 # define CORE_NUM 8
 #endif
 
-#include <concur_ctrl.h>
+#include "../utils/concur_ctrl.h"
 #include "hrd.h"
 #include "mica.h"
-#include "concur_ctrl.h"
+#include "../utils/concur_ctrl.h"
 #include "config.h"
 #include "../utils/bit_vector.h"
 
@@ -160,14 +160,13 @@ typedef struct
 }
 spacetime_op_t, spacetime_inv_t;
 
+/// MSG types
 typedef struct
 {
     uint8_t opcode; //we do not really need this
     uint8_t sender;
     uint8_t val_credits;
-}
-spacetime_crd_t; //always send as inlined_payload
-
+} spacetime_crd_t; //always send as inlined_payload
 
 
 
@@ -192,43 +191,6 @@ typedef struct
     spacetime_val_t reqs[VAL_MAX_REQ_COALESCE];
 }
 spacetime_val_packet_t;
-
-
-
-
-
-// Packets with GRH
-
-typedef struct
-{
-    struct ibv_grh grh;
-    spacetime_inv_packet_t packet;
-}
-ud_req_inv_t;
-
-typedef struct
-{
-    struct ibv_grh grh;
-    spacetime_ack_packet_t packet;
-}
-ud_req_ack_t;
-
-typedef struct
-{
-    struct ibv_grh grh;
-    spacetime_val_packet_t packet;
-}
-ud_req_val_t;
-
-typedef struct
-{
-    struct ibv_grh grh;
-    spacetime_crd_t req;
-}
-ud_req_crd_t;
-
-
-
 
 
 
@@ -289,26 +251,10 @@ struct spacetime_trace_command
 void spacetime_init(int spacetime_id, int num_threads);
 void spacetime_populate_fixed_len(struct spacetime_kv* kv,  int n,  int val_len);
 
-void batch_ops_to_KVS(int op_num, spacetime_op_t **ops, int thread_id, spacetime_group_membership curr_membership);
-void batch_invs_to_KVS(int op_num, spacetime_inv_t **op, spacetime_op_t *read_write_op, int thread_id,
-                       int* node_suspected, uint32_t* refilled_per_ops_debug_cnt);
-void batch_acks_to_KVS(int op_num, spacetime_ack_t **op, spacetime_op_t *read_write_op,
-                       spacetime_group_membership curr_membership, int thread_id);
-void batch_vals_to_KVS(int op_num, spacetime_val_t **op, spacetime_op_t *read_write_op, int thread_id);
 
-
-void group_membership_init(void);
-int find_suspected_node(spacetime_op_t *op, int thread_id,
-                        spacetime_group_membership *curr_membership);
-void complete_writes_and_replays_on_follower_removal(int op_num, spacetime_op_t **op,
-                                                     spacetime_group_membership curr_membership, int thread_id);
-void reset_bcast_send_buffers(spacetime_inv_packet_t *inv_send_packet_ops, int *inv_push_ptr,
-                              spacetime_val_packet_t *val_send_packet_ops, int *val_push_ptr);
-void reconfigure_wrs(struct ibv_send_wr *inv_send_wr, struct ibv_sge *inv_send_sgl,
-                     struct ibv_send_wr *val_send_wr, struct ibv_sge *val_send_sgl,
-                     spacetime_group_membership last_g_membership, uint16_t worker_lid);
-
-
+///////////////////////////////////////
+//////////////////// Hermes
+///////////////////////////////////////
 
 enum hermes_batch_type_t
 {
@@ -324,7 +270,7 @@ void hermes_batch_ops_to_KVS(enum hermes_batch_type_t type, uint8_t *op_array, i
 							 int *node_suspected, spacetime_op_t *read_write_ops, uint8_t thread_id);
 
 ///////////////////////////////////////
-//////////////////// CR
+//////////////////// CR(AQ)
 ///////////////////////////////////////
 enum cr_type_t
 {
@@ -340,6 +286,10 @@ void
 cr_batch_ops_to_KVS(enum cr_type_t cr_type, uint8_t *op_array, int op_num,
 					uint16_t sizeof_op_elem, spacetime_op_t *read_write_op);
 
+
+///////////////////////////////////////
+//////////////////// Helpers
+///////////////////////////////////////
 static inline uint8_t
 is_last_ack(bit_vector_t gathered_acks,
 			spacetime_group_membership curr_g_membership)
@@ -348,22 +298,23 @@ is_last_ack(bit_vector_t gathered_acks,
 	return bv_are_equal(gathered_acks, curr_g_membership.g_membership);
 }
 
-extern struct spacetime_kv kv;
-extern spacetime_group_membership group_membership;
 
 //TODO: adapt and use the following functions to re-enable variable length object support
 static inline uint8_t
 get_val_len(struct mica_op* op_t)
 {
-//	return op_t->val_len - sizeof(spacetime_object_meta);
 	return  (op_t->val_len >> SHIFT_BITS) - sizeof(spacetime_op_meta_t);
 }
 
 static inline uint8_t
 set_val_len(spacetime_op_meta_t* op_t)
 {
-//	return (op_t->val_len + sizeof(spacetime_object_meta));
 	return  (op_t->val_len >> SHIFT_BITS) + sizeof(spacetime_op_meta_t);
 }
+
+
+
+extern struct spacetime_kv kv;
+extern spacetime_group_membership group_membership;
 
 #endif //HERMES_SPACETIME_H

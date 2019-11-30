@@ -40,7 +40,7 @@ set(SOURCE_FILES_cr
         include/hermes/util.h
         include/hermes/config.h
         include/utils/bit_vector.h
-        include/hermes/concur_ctrl.h
+        include/utils/concur_ctrl.h
         src/CR/crKV.c)
 
 
@@ -78,7 +78,7 @@ set(SOURCE_FILES_hermes
 
         include/hermes/util.h
         include/hermes/config.h
-        include/hermes/concur_ctrl.h
+        include/utils/concur_ctrl.h
         include/utils/bit_vector.h
         include/hades/hades.h
         include/wings/wings.h

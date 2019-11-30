@@ -23,7 +23,7 @@
 #define RMW_RATIO 0 //percentage of writes to be RMWs
 #define MAX_BATCH_OPS_SIZE 50 // up to 254
 
-#define ENABLE_RMWs 0
+#define ENABLE_RMWs 0 //0
 static_assert(ENABLE_RMWs == 0 || ENABLE_RMWs == 1,"");
 
 //LATENCY
@@ -33,19 +33,20 @@ static_assert(ENABLE_RMWs == 0 || ENABLE_RMWs == 1,"");
 #define LATENCY_BUCKETS 1000
 #define LATENCY_PRECISION (MAX_LATENCY / LATENCY_BUCKETS) //latency granularity in us
 
-#define INCREASE_TAIL_LATENCY 0
-#define INCREASE_TAIL_BY_MS 5
-#define NUM_OF_CORES_TO_INCREASE_TAIL WORKERS_PER_MACHINE
-#define INCREASE_TAIL_EVERY_X_ACKS 0
+/// CURRENTLY does not work
+//#define INCREASE_TAIL_LATENCY 1
+//#define INCREASE_TAIL_BY_MS 5
+//#define NUM_OF_CORES_TO_INCREASE_TAIL WORKERS_PER_MACHINE
+//#define INCREASE_TAIL_EVERY_X_ACKS 0
 
 // Fairness
-#define ENABLE_VIRTUAL_NODE_IDS 0
+#define ENABLE_VIRTUAL_NODE_IDS 0 //0
 #define VIRTUAL_NODE_IDS_PER_NODE 20
 static_assert(!ENABLE_VIRTUAL_NODE_IDS || VIRTUAL_NODE_IDS_PER_NODE > MACHINE_NUM, "");
 static_assert(!ENABLE_VIRTUAL_NODE_IDS || MACHINE_NUM * VIRTUAL_NODE_IDS_PER_NODE < 255, "");
 
 // SKEW
-#define ENABLE_COALESCE_OF_HOT_REQS 0 //WARNING!!! this must be disabled for cr
+#define ENABLE_COALESCE_OF_HOT_REQS 0 //0 //WARNING!!! this must be disabled for cr
 #define COALESCE_N_HOTTEST_KEYS 100
 #define ENABLE_READ_COMPLETE_AFTER_VAL_RECV_OF_HOT_REQS 0 // 1
 #define ENABLE_WRITE_COALESCE_TO_THE_SAME_KEY_IN_SAME_NODE 0
@@ -57,14 +58,15 @@ static_assert(!ENABLE_VIRTUAL_NODE_IDS || MACHINE_NUM * VIRTUAL_NODE_IDS_PER_NOD
 
 
 //REQUESTS
-#define FEED_FROM_TRACE 0
+#define FEED_FROM_TRACE 0 //0
 #define ZIPF_EXPONENT_OF_TRACE 99 // if FEED_FROM_TRACE == 1 | this is divided by 100 (e.g. use 99 for  a = 0.99)
 #define NUM_OF_REP_REQS K_256     // if FEED_FROM_TRACE == 0
 #define USE_A_SINGLE_KEY 0        // if FEED_FROM_TRACE == 0
 #define ST_KEY_ID_255_OR_HIGHER 255
 
 // FAILURES
-#define ENABLE_HADES_FAILURE_DETECTION 0
+#define ENABLE_HADES_FAILURE_DETECTION 0 //0
+static_assert(ENABLE_HADES_FAILURE_DETECTION == 0, "WARNING HADES is currently not working");
 // ////////////////
 // <CR configuration>
 // ////////////////
@@ -75,13 +77,11 @@ static_assert(!ENABLE_VIRTUAL_NODE_IDS || MACHINE_NUM * VIRTUAL_NODE_IDS_PER_NOD
 #define CR_ENABLE_BLOCKING_INVALID_WRITES_ON_HEAD 0
 
 #define CR_REMOTE_WRITES_MAX_REQ_COALESCE INV_MAX_REQ_COALESCE
-#define CR_DISABLE_REMOTE_WRITES_INLINING DISABLE_INV_INLINING
 #define CR_REMOTE_WRITES_CREDITS (CREDITS_PER_REMOTE_WORKER / MACHINE_NUM)
 
 #define CR_ENABLE_REMOTE_READS 0
 #define CR_REMOTE_READS_CREDITS 20
 #define CR_REMOTE_READS_MAX_REQ_COALESCE INV_MAX_REQ_COALESCE
-#define CR_DISABLE_REMOTE_READS_INLINING DISABLE_INV_INLINING
 
 #define CR_ENABLE_EARLY_INV_CRDS 1
 
@@ -125,25 +125,16 @@ static_assert(!ENABLE_VIRTUAL_NODE_IDS || MACHINE_NUM * VIRTUAL_NODE_IDS_PER_NOD
 #define MIN_PCIE_BCAST_BATCH 1 //MAX_BATCH_OPS_SIZE
 #define MAX_PCIE_BCAST_BATCH HERMES_MIN(MIN_PCIE_BCAST_BATCH + 1, INV_CREDITS) //Warning! use min to avoid reseting the first req prior batching to the NIC
 //WARNING: todo check why we need to have MIN_PCIE_BCAST_BATCH + 1 instead of just MIN_PCIE_BCAST_BATCH
-#define MAX_MSGS_IN_PCIE_BCAST_BATCH (MAX_PCIE_BCAST_BATCH * REMOTE_MACHINES) //must be smaller than the q_depth
+//#define MAX_MSGS_IN_PCIE_BCAST_BATCH (MAX_PCIE_BCAST_BATCH * REMOTE_MACHINES) //must be smaller than the q_depth
 
 /**/
-#define MAX_SEND_INV_WRS MAX_MSGS_IN_PCIE_BCAST_BATCH
 #define MAX_SEND_ACK_WRS (INV_CREDITS * REMOTE_MACHINES)
-#define MAX_SEND_VAL_WRS MAX_MSGS_IN_PCIE_BCAST_BATCH
 #define MAX_SEND_CRD_WRS (VAL_CREDITS * REMOTE_MACHINES)
 
 #define MAX_RECV_INV_WRS (INV_CREDITS * REMOTE_MACHINES)
 #define MAX_RECV_ACK_WRS (ACK_CREDITS * REMOTE_MACHINES)
 #define MAX_RECV_VAL_WRS (VAL_CREDITS * REMOTE_MACHINES)
 #define MAX_RECV_CRD_WRS (CRD_CREDITS * REMOTE_MACHINES)
-/*-------------------------------------------------
------------------REQUEST SIZES---------------------
---------------------------------------------------*/
-#define INV_RECV_REQ_SIZE (sizeof(ud_req_inv_t)) // Buffer slot size required for a INV request
-#define ACK_RECV_REQ_SIZE (sizeof(ud_req_ack_t)) // Buffer slot size required for a ACK request
-#define VAL_RECV_REQ_SIZE (sizeof(ud_req_val_t)) // Buffer slot size required for a VAL request
-#define CRD_RECV_REQ_SIZE (sizeof(ud_req_crd_t)) // Buffer slot size required for a CRD request
 
 /*-------------------------------------------------
 -----------------SELECTIVE SIGNALING---------------
@@ -152,6 +143,8 @@ static_assert(!ENABLE_VIRTUAL_NODE_IDS || MACHINE_NUM * VIRTUAL_NODE_IDS_PER_NOD
 #define ACK_SS_GRANULARITY MAX_SEND_ACK_WRS
 #define VAL_SS_GRANULARITY MAX_PCIE_BCAST_BATCH
 #define CRD_SS_GRANULARITY MAX_SEND_CRD_WRS
+
+
 /*-------------------------------------------------
 -----------------QPs & QUEUE DEPTHS----------------
 --------------------------------------------------*/
@@ -175,30 +168,16 @@ static_assert(!ENABLE_VIRTUAL_NODE_IDS || MACHINE_NUM * VIRTUAL_NODE_IDS_PER_NOD
 #define SEND_VAL_Q_DEPTH ((VAL_SS_GRANULARITY * REMOTE_MACHINES) * 2)
 #define SEND_CRD_Q_DEPTH (CRD_SS_GRANULARITY * 2)
 
-
-#define DGRAM_BUFF_SIZE ((INV_RECV_REQ_SIZE * RECV_INV_Q_DEPTH) + \
-                         (ACK_RECV_REQ_SIZE * RECV_ACK_Q_DEPTH) + \
-                         (VAL_RECV_REQ_SIZE * RECV_VAL_Q_DEPTH) + \
-                         (64))  //CREDITS are header-only (inlined)
-
-
 /*-------------------------------------------------
 ----------------- REQ INLINING --------------------
 --------------------------------------------------*/
 #define DISABLE_INLINING 0
-#define DISABLE_INV_INLINING ((DISABLE_INLINING || sizeof(spacetime_inv_packet_t) >= 188) ? 1 : 0)
-//#define DISABLE_ACK_INLINING ((DISABLE_INLINING || sizeof(spacetime_ack_packet_t) >= 188) ? 1 : 0)
-#define DISABLE_ACK_INLINING ((sizeof(spacetime_ack_packet_t) >= 188) || (ENABLE_RMWs && DISABLE_INV_INLINING) ? 1 : 0)
-#define DISABLE_VAL_INLINING ((DISABLE_INLINING || sizeof(spacetime_val_packet_t) >= 188) ? 1 : 0)
 
 /*-------------------------------------------------
 ----------------- SEND/RECV OPS SIZE --------------
 --------------------------------------------------*/
 //TODO
 ///WARNING: changes DISABLE_INLINING with DISABLE_{INV,ACK,VAL}_INLINING
-#define INV_SEND_OPS_SIZE (DISABLE_INV_INLINING == 1 ? 2 * MAX_SEND_INV_WRS : MAX_SEND_INV_WRS)
-#define ACK_SEND_OPS_SIZE (DISABLE_ACK_INLINING == 1 ? 2 * MAX_SEND_ACK_WRS : MAX_SEND_ACK_WRS)
-#define VAL_SEND_OPS_SIZE (DISABLE_VAL_INLINING == 1 ? 2 * MAX_SEND_VAL_WRS : MAX_SEND_VAL_WRS)
 
 #define INV_RECV_OPS_SIZE (MAX_RECV_INV_WRS * INV_MAX_REQ_COALESCE)
 #define ACK_RECV_OPS_SIZE (MAX_RECV_ACK_WRS * ACK_MAX_REQ_COALESCE)
@@ -209,17 +188,11 @@ static_assert(!ENABLE_VIRTUAL_NODE_IDS || MACHINE_NUM * VIRTUAL_NODE_IDS_PER_NOD
 --------------------------------------------------*/
 ///Warning some prints assume that there are no faults (multiplications with REMOTE_MACHINES)
 #define MAX_THREADS_TO_PRINT 1
-#define ENABLE_SS_PRINTS 0
 #define ENABLE_REQ_PRINTS 0
-#define ENABLE_SEND_PRINTS 0
-#define ENABLE_RECV_PRINTS 0
-#define ENABLE_CREDIT_PRINTS 0
-#define ENABLE_POST_RECV_PRINTS 0
 #define ENABLE_BATCH_OP_PRINTS 0
 #define ENABLE_INV_PRINTS 0
 #define ENABLE_ACK_PRINTS 0
 #define ENABLE_VAL_PRINTS 0
-#define ENABLE_CRD_PRINTS 0
 
 //Stats prints
 #define PRINT_STATS_EVERY_MSECS 4000 //5000 //10000 //10
@@ -228,7 +201,6 @@ static_assert(!ENABLE_VIRTUAL_NODE_IDS || MACHINE_NUM * VIRTUAL_NODE_IDS_PER_NOD
 //Stats
 #define EXIT_ON_STATS_PRINT 1
 #define PRINT_NUM_STATS_BEFORE_EXITING 5 //80
-#define ENABLE_STAT_COUNTING 0
 #define DUMP_XPUT_STATS_TO_FILE 1
 
 //FAKE NODE FAILURE
@@ -238,11 +210,8 @@ static_assert(!ENABLE_VIRTUAL_NODE_IDS || MACHINE_NUM * VIRTUAL_NODE_IDS_PER_NOD
 
 //FAILURE DETECTION
 #define WORKER_WITH_FAILURE_DETECTOR 0
-#define NUM_OF_IDLE_ITERS_FOR_SUSPICION M_2 //M_4 //M_2 //K_256 /// WARNNING if this is very small we could be resetting some buffs after failure before their contents are send --> causing some asserts!
 
 // Rarely change
-#define WORKER_NUM (MACHINE_NUM * WORKERS_PER_MACHINE)
-#define BATCH_POST_RECVS_TO_NIC 1 //depricated
 #define TOTAL_THREADS_PER_CORE 2
 #define TOTAL_CORES_PER_SOCKET 10
 #define TOTAL_NUMBER_OF_SOCKETS 2
@@ -256,16 +225,11 @@ static_assert(!ENABLE_VIRTUAL_NODE_IDS || MACHINE_NUM * VIRTUAL_NODE_IDS_PER_NOD
 # define SPACETIME_DEBUG 0
 #endif
 
+
+
+
 struct thread_params {
     int id;
-};
-
-/* ah pointer and qpn are accessed together in the critical path
-   so we are putting them in the same cache line */
-struct remote_qp {
-    struct ibv_ah *ah;
-    int qpn;
-    // no padding needed- false sharing is not an issue, only fragmentation
 };
 
 struct latency_counters{
@@ -276,12 +240,10 @@ struct latency_counters{
     long long total_measurements;
 };
 
-extern struct latency_counters latency_count;
-extern volatile struct remote_qp remote_worker_qps[WORKER_NUM][TOTAL_WORKER_UD_QPs];
-extern volatile uint8_t node_suspicions[WORKERS_PER_MACHINE][MACHINE_NUM];
-extern volatile char worker_needed_ah_ready;
 
-// global config vars
+extern struct latency_counters latency_count;
+
+// global config (CLI) configurable vars
 extern uint8_t is_CR;
 extern int update_ratio;
 extern int rmw_ratio;
@@ -289,4 +251,5 @@ extern int num_workers;
 extern int credits_num;
 extern int max_coalesce;
 extern int max_batch_size; //for batches to KVS
+
 #endif //SPACETIME_CONFIG_H

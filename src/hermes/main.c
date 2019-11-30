@@ -7,18 +7,15 @@
 #include "spacetime.h"
 #include "config.h"
 #include "util.h"
-#include "concur_ctrl.h"
+#include "../../include/utils/concur_ctrl.h"
 #include "hrd.h"
 #include "../../include/utils/bit_vector.h"
 #include "../../include/wings/wings_api.h"
 
 
 //Global vars
-volatile char worker_needed_ah_ready;
 struct latency_counters latency_count;
 volatile struct worker_stats w_stats[WORKERS_PER_MACHINE];
-volatile uint8_t node_suspicions[WORKERS_PER_MACHINE][MACHINE_NUM];
-volatile struct remote_qp remote_worker_qps[WORKER_NUM][TOTAL_WORKER_UD_QPs];
 
 dbit_vector_t *g_share_qs_barrier;
 
@@ -32,10 +29,29 @@ int max_coalesce;
 int max_batch_size; //for batches to KVS
 
 
+
+// This is required only when Hades failure detection is disabled
+void group_membership_init(void)
+{
+    group_membership.num_of_alive_remotes = REMOTE_MACHINES;
+    seqlock_init(&group_membership.lock);
+    bv_init((bit_vector_t*) &group_membership.g_membership);
+
+    for(uint8_t i = 0; i < MACHINE_NUM; ++i)
+        bv_bit_set((bit_vector_t*) &group_membership.g_membership, i);
+
+    bv_copy((bit_vector_t*) &group_membership.w_ack_init, group_membership.g_membership);
+    bv_reverse((bit_vector_t*) &group_membership.w_ack_init);
+    bv_bit_set((bit_vector_t*) &group_membership.w_ack_init, (uint8_t) machine_id);
+}
+
+
+
 int main(int argc, char *argv[])
 {
 	int i, c;
 	is_roce = -1; machine_id = -1;
+
 	// config vars
 	is_CR = 1;
 	num_workers = -1;
@@ -46,49 +62,12 @@ int main(int argc, char *argv[])
 	max_batch_size = -1;
 	remote_IP = (char *) malloc(16 * sizeof(char));
 
-	assert(MICA_MAX_VALUE >= ST_VALUE_SIZE);
-	assert(MACHINE_NUM <= 8); //TODO haven't test bit vectors with more than 8 nodes
-	assert(MACHINE_NUM <= GROUP_MEMBERSHIP_ARRAY_SIZE * 8);//bit vector for acks / group membership
-	assert(sizeof(spacetime_crd_t) < sizeof(((struct ibv_send_wr*)0)->imm_data)); //for inlined credits
-	assert(MACHINE_NUM <= 255);
-
-//    assert(CREDITS_PER_REMOTE_WORKER <= MAX_BATCH_OPS_SIZE);
-
-	assert(MAX_PCIE_BCAST_BATCH <= INV_CREDITS);
-	assert(MAX_PCIE_BCAST_BATCH <= VAL_CREDITS);
-	assert(MAX_PCIE_BCAST_BATCH <= INV_SS_GRANULARITY);
-	assert(MAX_PCIE_BCAST_BATCH <= VAL_SS_GRANULARITY);
-
-//	assert(SOCKET_TO_START_SPAWNING_THREADS < TOTAL_NUMBER_OF_SOCKETS);
-	assert((ENABLE_HYPERTHREADING == 1 && USE_ALL_SOCKETS == 1) || WORKERS_PER_MACHINE <= TOTAL_CORES_PER_SOCKET);
-	assert(WORKERS_PER_MACHINE <= TOTAL_HW_CORES);
-
-	assert(INCREASE_TAIL_LATENCY == 0 || NUM_OF_CORES_TO_INCREASE_TAIL <= WORKERS_PER_MACHINE);
-
-	///Assertions for failures
-	assert(!(INCREASE_TAIL_LATENCY && FAKE_FAILURE));
-	assert(FAKE_FAILURE == 0 || NODE_TO_FAIL < MACHINE_NUM);
-	assert(FAKE_FAILURE == 0 || ROUNDS_BEFORE_FAILURE < PRINT_NUM_STATS_BEFORE_EXITING);
-	assert(FAKE_FAILURE == 0 || WORKER_WITH_FAILURE_DETECTOR < WORKERS_PER_MACHINE);
-
-	assert(MACHINE_NUM < TIE_BREAKER_ID_EMPTY);
-	assert(MACHINE_NUM < LAST_WRITER_ID_EMPTY);
-	assert(MAX_BATCH_OPS_SIZE < ST_OP_BUFFER_INDEX_EMPTY); /// 1B write_buffer_index and 255 is used as "empty" value
-
-	///Make sure that assigned numbers to States are monotonically increasing with the following order
-	assert(VALID_STATE < INVALID_STATE);
-	assert(INVALID_STATE < INVALID_WRITE_STATE);
-	assert(INVALID_WRITE_STATE < WRITE_STATE);
-	assert(WRITE_STATE < REPLAY_STATE);
-
-	assert(MEASURE_LATENCY == 0 || THREAD_MEASURING_LATENCY < WORKERS_PER_MACHINE);
 //	green_printf("UD size: %d ibv_grh + crd size: %d \n", sizeof(ud_req_crd_t), sizeof(struct ibv_grh) + sizeof(spacetime_crd_t));
-//	assert(sizeof(ud_req_crd_t) == sizeof(struct ibv_grh) + sizeof(spacetime_crd_t)); ///CRD --> 48 Bytes instead of 43
+//	static_assert(sizeof(ud_req_crd_t) == sizeof(struct ibv_grh) + sizeof(spacetime_crd_t), ""); ///CRD --> 48 Bytes instead of 43
 
 
 	struct thread_params *param_arr;
 	pthread_t *thread_arr;
-//	char dev_name[50];
 
 	static struct option opts[] = {
 			{ .name = "machine-id",			.has_arg = 1, .val = 'm' },
@@ -187,10 +166,10 @@ int main(int argc, char *argv[])
 
 	pthread_attr_t attr;
 	cpu_set_t cpus_w;
-	worker_needed_ah_ready = 0;
+
 	group_membership_init();
+    init_stats((void*) w_stats);
 	spacetime_init(machine_id, num_workers);
-	init_stats();
 
 
 	pthread_attr_init(&attr);
@@ -214,14 +193,19 @@ int main(int argc, char *argv[])
 
 	yellow_printf("Sizes: {Op: %d, Object Meta %d, Value %d},\n",
 				  sizeof(spacetime_op_t), sizeof(spacetime_object_meta), ST_VALUE_SIZE);
+
 	yellow_printf("Coherence msg Sizes: {Inv: %d, Ack: %d, Val: %d, Crd: %d}\n",
 				  sizeof(spacetime_inv_t), sizeof(spacetime_ack_t), sizeof(spacetime_val_t),
 				  sizeof(spacetime_crd_t));
-	if(max_coalesce == MAX_REQ_COALESCE)
-		yellow_printf("Max Coalesce Packet Sizes: {Inv: %d, Ack: %d, Val: %d}\n",
-					  sizeof(spacetime_inv_packet_t), sizeof(spacetime_ack_packet_t),
-					  sizeof(spacetime_val_packet_t));
-	else
+
+//	if(max_coalesce == MAX_REQ_COALESCE)
+//		yellow_printf("Max Coalesce Packet Sizes: {Inv: %d, Ack: %d, Val: %d}\n",
+//                      sizeof(wings_ud_send_pkt_t) + sizeof(spacetime_inv_t),
+//                      sizeof(wings_ud_send_pkt_t) + sizeof(spacetime_ack_t),
+//                      sizeof(wings_ud_send_pkt_t) + sizeof(spacetime_val_t));
+////					  sizeof(spacetime_inv_packet_t), sizeof(spacetime_ack_packet_t),
+////					  sizeof(spacetime_val_packet_t));
+//	else
 		yellow_printf("Max Coalesce Packet Sizes: {Inv: %d, Ack: %d, Val: %d}\n",
 					  sizeof(wings_ud_send_pkt_t) + max_coalesce * sizeof(spacetime_inv_t),
 					  sizeof(wings_ud_send_pkt_t) + max_coalesce * sizeof(spacetime_ack_t),
@@ -232,3 +216,51 @@ int main(int argc, char *argv[])
 
 	return 0;
 }
+
+
+
+
+
+//////////////////////////////////////////////////////////////////////////////////
+/// Static asserts to ensure only correct configs
+//////////////////////////////////////////////////////////////////////////////////
+
+static_assert(MICA_MAX_VALUE >= ST_VALUE_SIZE, "");
+static_assert(MACHINE_NUM <= 8, ""); //TODO haven't test bit vectors with more than 8 nodes
+static_assert(MACHINE_NUM <= GROUP_MEMBERSHIP_ARRAY_SIZE * 8, "");//bit vector for acks / group membership
+//static_assert(sizeof(spacetime_crd_t) < sizeof(((struct ibv_send_wr*)0)->imm_data), ""); //for inlined credits
+static_assert(MACHINE_NUM <= 255, "");
+
+//    static_assert(CREDITS_PER_REMOTE_WORKER <= MAX_BATCH_OPS_SIZE, "");
+
+static_assert(MAX_PCIE_BCAST_BATCH <= INV_CREDITS, "");
+static_assert(MAX_PCIE_BCAST_BATCH <= VAL_CREDITS, "");
+static_assert(MAX_PCIE_BCAST_BATCH <= INV_SS_GRANULARITY, "");
+static_assert(MAX_PCIE_BCAST_BATCH <= VAL_SS_GRANULARITY, "");
+
+//	static_assert(SOCKET_TO_START_SPAWNING_THREADS < TOTAL_NUMBER_OF_SOCKETS, "");
+static_assert((ENABLE_HYPERTHREADING == 1 && USE_ALL_SOCKETS == 1) || WORKERS_PER_MACHINE <= TOTAL_CORES_PER_SOCKET, "");
+static_assert(WORKERS_PER_MACHINE <= TOTAL_HW_CORES, "");
+
+// Increase in tail latency
+// WARNING Increase of tail_latency [Currently is not working]
+//static_assert(INCREASE_TAIL_LATENCY == 0 || NUM_OF_CORES_TO_INCREASE_TAIL <= WORKERS_PER_MACHINE, "");
+//static_assert(!(INCREASE_TAIL_LATENCY && FAKE_FAILURE), "");
+
+///Assertions for failures
+static_assert(FAKE_FAILURE == 0 || NODE_TO_FAIL < MACHINE_NUM, "");
+static_assert(FAKE_FAILURE == 0 || ROUNDS_BEFORE_FAILURE < PRINT_NUM_STATS_BEFORE_EXITING, "");
+static_assert(FAKE_FAILURE == 0 || WORKER_WITH_FAILURE_DETECTOR < WORKERS_PER_MACHINE, "");
+
+static_assert(MACHINE_NUM < TIE_BREAKER_ID_EMPTY, "");
+static_assert(MACHINE_NUM < LAST_WRITER_ID_EMPTY, "");
+static_assert(MAX_BATCH_OPS_SIZE < ST_OP_BUFFER_INDEX_EMPTY, ""); /// 1B write_buffer_index and 255 is used as "empty" value
+
+///Make sure that assigned numbers to States are monotonically increasing with the following order
+static_assert(VALID_STATE < INVALID_STATE, "");
+static_assert(INVALID_STATE < INVALID_WRITE_STATE, "");
+static_assert(INVALID_WRITE_STATE < WRITE_STATE, "");
+static_assert(WRITE_STATE < REPLAY_STATE, "");
+
+static_assert(MEASURE_LATENCY == 0 || THREAD_MEASURING_LATENCY < WORKERS_PER_MACHINE, "");
+

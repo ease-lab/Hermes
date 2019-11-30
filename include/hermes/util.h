@@ -72,6 +72,7 @@ struct stats {
 
 	double percentage_of_wasted_loops[WORKERS_PER_MACHINE];
 	double completed_reqs_per_loop[WORKERS_PER_MACHINE];
+
 //	long long issued_packet_acks_per_worker;
     double batch_size_per_worker[WORKERS_PER_MACHINE];
     double empty_reqs_per_worker[WORKERS_PER_MACHINE];
@@ -85,14 +86,16 @@ struct stats {
     double write_ratio_per_worker[WORKERS_PER_MACHINE];
 };
 
-void dump_stats_2_file(struct stats* st);
+// init all stats to 0
+static inline void init_stats(struct worker_stats* w_stats)
+{
+    memset(w_stats, 0, sizeof(struct worker_stats) * WORKERS_PER_MACHINE);
+}
+
 void trace_init(struct spacetime_trace_command ** trace, uint16_t worker_lid);
-void create_AHs(struct hrd_ctrl_blk *cb);
 void *run_worker(void *arg);
-void *print_stats(void* no_arg);
+void *print_stats_thread(void *no_arg);
 void dump_latency_stats(void);
-void share_qp_info_via_memcached(int worker_lid, struct hrd_ctrl_blk *cb);
-void setup_q_depths(int** recv_q_depths, int** send_q_depths);
 
 //Maybe inline these
 uint8_t is_state_code(uint8_t code);
@@ -102,42 +105,13 @@ uint8_t is_bucket_state_code(uint8_t code);
 
 int spawn_stats_thread(void);
 char* code_to_str(uint8_t code);
-void init_stats(void);
+
 
 void setup_kvs_buffs(spacetime_op_t **ops,
 					 spacetime_inv_t **inv_recv_ops,
 					 spacetime_ack_t **ack_recv_ops,
 					 spacetime_val_t **val_recv_ops);
 
-void setup_ops(spacetime_op_t **ops,
-			   spacetime_inv_t **inv_recv_ops, spacetime_ack_t **ack_recv_ops,
-			   spacetime_val_t **val_recv_ops, spacetime_inv_packet_t **inv_send_ops,
-			   spacetime_ack_packet_t **ack_send_ops, spacetime_val_packet_t **val_send_ops);
-
-void setup_credits(uint8_t credits[][MACHINE_NUM],     struct hrd_ctrl_blk *cb,
-				   struct ibv_send_wr* credit_send_wr, struct ibv_sge* credit_send_sgl,
-				   struct ibv_recv_wr* credit_recv_wr, struct ibv_sge* credit_recv_sgl);
-
-void setup_send_WRs(struct ibv_send_wr *inv_send_wr, struct ibv_sge *inv_send_sgl,
-					struct ibv_send_wr *ack_send_wr, struct ibv_sge *ack_send_sgl,
-                    struct ibv_send_wr *val_send_wr, struct ibv_sge *val_send_sgl,
-                    struct ibv_mr *inv_mr, struct ibv_mr *ack_mr,
-                    struct ibv_mr *val_mr, uint16_t local_worker_id);
-
-void setup_recv_WRs(struct ibv_recv_wr *inv_recv_wr, struct ibv_sge *inv_recv_sgl,
-                    struct ibv_recv_wr *ack_recv_wr, struct ibv_sge *ack_recv_sgl,
-                    struct ibv_recv_wr *val_recv_wr, struct ibv_sge *val_recv_sgl,
-					struct hrd_ctrl_blk *cb);
-
-void setup_incoming_buffs_and_post_initial_recvs(ud_req_inv_t *incoming_invs, ud_req_ack_t *incoming_acks,
-												 ud_req_val_t *incoming_vals,
-												 int *inv_push_recv_ptr, int *ack_push_recv_ptr, int *val_push_recv_ptr,
-												 struct ibv_recv_wr *inv_recv_wr, struct ibv_recv_wr *ack_recv_wr,
-												 struct ibv_recv_wr *val_recv_wr,
-												 struct ibv_recv_wr *crd_recv_wr, struct hrd_ctrl_blk *cb,
-												 uint16_t worker_lid);
-
-extern int qps_published;
 extern dbit_vector_t *g_share_qs_barrier;
 extern volatile struct worker_stats w_stats[WORKERS_PER_MACHINE];
 #endif //HERMES_UTIL_H

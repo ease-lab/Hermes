@@ -6,7 +6,7 @@
 #define HERMES_SEQLOCK_H
 
 #include <stdint.h>
-#include "config.h"
+#include <assert.h>
 
 #define ENABLE_LOCK_ASSERTS 1
 

@@ -1,5 +1,5 @@
 #include <spacetime.h>
-#include <concur_ctrl.h>
+#include "../../include/utils/concur_ctrl.h"
 #include <time.h>
 #include "util.h"
 #include "inline-util.h"
@@ -65,6 +65,7 @@ inv_copy_and_modify_elem(uint8_t* msg_to_send, uint8_t* triggering_req)
 //	inv_to_send->op_meta.opcode = (uint8_t) (op->op_meta.state == ST_OP_MEMBERSHIP_CHANGE ?
 //											 ST_OP_MEMBERSHIP_CHANGE : ST_OP_INV);
 }
+
 
 
 int
@@ -163,12 +164,14 @@ val_copy_and_modify_elem(uint8_t* msg_to_send, uint8_t* triggering_req)
 int
 memb_change_skip_or_get_sender_id(uint8_t *req)
 {
-	spacetime_op_t* op_req = (spacetime_op_t *) req;
+    spacetime_op_t* op_req = (spacetime_op_t *) req;
     if(op_req->op_meta.state != ST_PUT_COMPLETE_SEND_VALS &&
        op_req->op_meta.state != ST_RMW_COMPLETE_SEND_VALS &&
        op_req->op_meta.state != ST_REPLAY_COMPLETE_SEND_VALS)
+    {
         return -1;
-	return 1; // it is bcast so just return something greater than zero
+    }
+    return 1; // it is bcast so just return something greater than zero
 }
 
 void
@@ -202,6 +205,7 @@ memb_change_copy_and_modify_elem(uint8_t *msg_to_send, uint8_t *triggering_req)
 }
 
 
+
 int
 rem_write_crd_skip_or_get_sender_id(uint8_t *req)
 {
@@ -225,6 +229,7 @@ rem_write_crd_modify_elem_after_send(uint8_t *req)
 }
 
 
+
 void
 channel_assertions(ud_channel_t *inv_ud_c, ud_channel_t *ack_ud_c,
 				   ud_channel_t *val_ud_c, ud_channel_t *crd_ud_c)
@@ -233,37 +238,37 @@ channel_assertions(ud_channel_t *inv_ud_c, ud_channel_t *ack_ud_c,
 	if(max_coalesce != MAX_REQ_COALESCE) return;
     if(credits_num != CREDITS_PER_REMOTE_WORKER) return;
 
-	assert(inv_ud_c->max_send_wrs == MAX_SEND_INV_WRS);
-	assert(inv_ud_c->max_recv_wrs == MAX_RECV_INV_WRS);
-	assert(inv_ud_c->send_q_depth == SEND_INV_Q_DEPTH);
-	assert(inv_ud_c->recv_q_depth == RECV_INV_Q_DEPTH);
-	assert(inv_ud_c->send_pkt_buff_len == INV_SEND_OPS_SIZE);
-	assert(inv_ud_c->max_coalescing == INV_MAX_REQ_COALESCE);
-	assert(inv_ud_c->ss_granularity == INV_SS_GRANULARITY);
-	assert(inv_ud_c->max_pcie_bcast_batch == MAX_PCIE_BCAST_BATCH);
+//	assert(inv_ud_c->max_send_wrs == MAX_SEND_INV_WRS);
+//	assert(inv_ud_c->max_recv_wrs == MAX_RECV_INV_WRS);
+//	assert(inv_ud_c->send_q_depth == SEND_INV_Q_DEPTH);
+//	assert(inv_ud_c->recv_q_depth == RECV_INV_Q_DEPTH);
+//	assert(inv_ud_c->send_pkt_buff_len == INV_SEND_OPS_SIZE);
+//	assert(inv_ud_c->max_coalescing == INV_MAX_REQ_COALESCE);
+//	assert(inv_ud_c->ss_granularity == INV_SS_GRANULARITY);
+//	assert(inv_ud_c->max_pcie_bcast_batch == MAX_PCIE_BCAST_BATCH);
 
-	assert(ack_ud_c->max_send_wrs == MAX_SEND_ACK_WRS);
-	assert(ack_ud_c->max_recv_wrs == MAX_RECV_ACK_WRS);
-	assert(ack_ud_c->send_q_depth == SEND_ACK_Q_DEPTH);
-	assert(ack_ud_c->recv_q_depth == RECV_ACK_Q_DEPTH);
-	assert(ack_ud_c->send_pkt_buff_len == ACK_SEND_OPS_SIZE);
-	assert(ack_ud_c->max_coalescing == ACK_MAX_REQ_COALESCE);
-	assert(ack_ud_c->ss_granularity == ACK_SS_GRANULARITY);
-
-	assert(val_ud_c->max_send_wrs == MAX_SEND_VAL_WRS);
-	assert(val_ud_c->max_recv_wrs == MAX_RECV_VAL_WRS);
-	assert(val_ud_c->send_q_depth == SEND_VAL_Q_DEPTH);
-	assert(val_ud_c->recv_q_depth == RECV_VAL_Q_DEPTH);
-	assert(val_ud_c->send_pkt_buff_len == VAL_SEND_OPS_SIZE);
-	assert(val_ud_c->max_coalescing == VAL_MAX_REQ_COALESCE);
-	assert(val_ud_c->ss_granularity == VAL_SS_GRANULARITY);
-	assert(val_ud_c->max_pcie_bcast_batch == MAX_PCIE_BCAST_BATCH);
-
-	assert(crd_ud_c->max_send_wrs == MAX_SEND_CRD_WRS);
-	assert(crd_ud_c->max_recv_wrs == MAX_RECV_CRD_WRS);
-	assert(crd_ud_c->send_q_depth == SEND_CRD_Q_DEPTH);
-	assert(crd_ud_c->recv_q_depth == RECV_CRD_Q_DEPTH);
-	assert(crd_ud_c->ss_granularity == CRD_SS_GRANULARITY);
+//	assert(ack_ud_c->max_send_wrs == MAX_SEND_ACK_WRS);
+//	assert(ack_ud_c->max_recv_wrs == MAX_RECV_ACK_WRS);
+//	assert(ack_ud_c->send_q_depth == SEND_ACK_Q_DEPTH);
+//	assert(ack_ud_c->recv_q_depth == RECV_ACK_Q_DEPTH);
+//	assert(ack_ud_c->send_pkt_buff_len == ACK_SEND_OPS_SIZE);
+//	assert(ack_ud_c->max_coalescing == ACK_MAX_REQ_COALESCE);
+//	assert(ack_ud_c->ss_granularity == ACK_SS_GRANULARITY);
+//
+//	assert(val_ud_c->max_send_wrs == MAX_SEND_VAL_WRS);
+//	assert(val_ud_c->max_recv_wrs == MAX_RECV_VAL_WRS);
+//	assert(val_ud_c->send_q_depth == SEND_VAL_Q_DEPTH);
+//	assert(val_ud_c->recv_q_depth == RECV_VAL_Q_DEPTH);
+//	assert(val_ud_c->send_pkt_buff_len == VAL_SEND_OPS_SIZE);
+//	assert(val_ud_c->max_coalescing == VAL_MAX_REQ_COALESCE);
+//	assert(val_ud_c->ss_granularity == VAL_SS_GRANULARITY);
+//	assert(val_ud_c->max_pcie_bcast_batch == MAX_PCIE_BCAST_BATCH);
+//
+//	assert(crd_ud_c->max_send_wrs == MAX_SEND_CRD_WRS);
+//	assert(crd_ud_c->max_recv_wrs == MAX_RECV_CRD_WRS);
+//	assert(crd_ud_c->send_q_depth == SEND_CRD_Q_DEPTH);
+//	assert(crd_ud_c->recv_q_depth == RECV_CRD_Q_DEPTH);
+//	assert(crd_ud_c->ss_granularity == CRD_SS_GRANULARITY);
 }
 
 void
@@ -326,6 +331,8 @@ failure_detection_n_membership(ud_channel_t** ud_channel_ptrs, bit_vector_t* las
     }
 }
 
+
+
 void*
 run_worker(void *arg)
 {
@@ -365,14 +372,22 @@ run_worker(void *arg)
     //WARNING: We use the ack channel to send/recv both acks and rmw-invs if RMWs are enabled
     uint16_t ack_size = ENABLE_RMWs ? sizeof(spacetime_inv_t) : sizeof(spacetime_ack_t);
 
-	wings_ud_channel_init(inv_ud_c, inv_qp_name, REQ, (uint8_t) max_coalesce, sizeof(spacetime_inv_t), 0,
-						  DISABLE_INV_INLINING == 0 ? 1 : 0, is_hdr_only, is_bcast, disable_crd_ctrl, expl_crd_ctrl,
+    uint8_t inv_inlining = (DISABLE_INLINING == 0 &&
+                            max_coalesce * sizeof(spacetime_inv_t) < WINGS_MAX_SUPPORTED_INLINING) ? 1 : 0;
+    uint8_t ack_inlining = (DISABLE_INLINING == 0 &&
+                            max_coalesce * ack_size < WINGS_MAX_SUPPORTED_INLINING) ? 1 : 0;
+    uint8_t val_inlining = (DISABLE_INLINING == 0 &&
+                            max_coalesce * sizeof(spacetime_val_t) < WINGS_MAX_SUPPORTED_INLINING) ? 1 : 0;
+
+
+    wings_ud_channel_init(inv_ud_c, inv_qp_name, REQ, (uint8_t) max_coalesce, sizeof(spacetime_inv_t), 0,
+						  inv_inlining, is_hdr_only, is_bcast, disable_crd_ctrl, expl_crd_ctrl,
 						  ack_ud_c, (uint8_t) credits_num, MACHINE_NUM, (uint8_t) machine_id, stats_on, prints_on);
 	wings_ud_channel_init(ack_ud_c, ack_qp_name, RESP, (uint8_t) max_coalesce, ack_size, sizeof(spacetime_ack_t),
-						  DISABLE_ACK_INLINING == 0 ? 1 : 0, is_hdr_only, 0, disable_crd_ctrl, expl_crd_ctrl,
+						  ack_inlining, is_hdr_only, 0, disable_crd_ctrl, expl_crd_ctrl,
 						  inv_ud_c, (uint8_t) credits_num, MACHINE_NUM, (uint8_t) machine_id, stats_on, prints_on);
 	wings_ud_channel_init(val_ud_c, val_qp_name, REQ, (uint8_t) max_coalesce, sizeof(spacetime_val_t), 0,
-						  DISABLE_VAL_INLINING == 0 ? 1 : 0, is_hdr_only, is_bcast, disable_crd_ctrl, 1,
+						  val_inlining, is_hdr_only, is_bcast, disable_crd_ctrl, 1,
 						  crd_ud_c, (uint8_t) credits_num, MACHINE_NUM, (uint8_t) machine_id, stats_on, prints_on);
 
 	///<HADES> Failure Detector Init
@@ -393,11 +408,9 @@ run_worker(void *arg)
 	}
     ///</HADES>
 
-//    printf("Seting QPS \n");
 	wings_setup_channel_qps_and_recvs(ud_channel_ptrs, total_ud_qps, g_share_qs_barrier, worker_lid);
 
 	channel_assertions(inv_ud_c, ack_ud_c, val_ud_c, crd_ud_c);
-//	printf("QPS ARE FINE \n");
 
 
 
@@ -442,8 +455,10 @@ run_worker(void *arg)
 		num_of_iters_serving_op[i] = 0;
 
 	/// Spawn stats thread
-	if (worker_lid == 0)
-		if (spawn_stats_thread() != 0) red_printf("Stats thread was not successfully spawned \n");
+	if (worker_lid == 0){
+        if (spawn_stats_thread() != 0)
+            red_printf("Stats thread was not successfully spawned \n");
+    }
 
     struct timespec stopwatch_for_req_latency;
 
