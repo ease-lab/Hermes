@@ -20,13 +20,13 @@
 #define ENABLE_HYPERTHREADING 1
 #define UPDATE_RATIO 1000
 #define RMW_RATIO 0 //percentage of writes to be RMWs
-#define MAX_BATCH_OPS_SIZE 50 // up to 254
+#define MAX_BATCH_OPS_SIZE 250 //50 // up to 254
 
 #define ENABLE_RMWs 0 //0
 static_assert(ENABLE_RMWs == 0 || ENABLE_RMWs == 1,"");
 
 //LATENCY
-#define MEASURE_LATENCY 1
+#define MEASURE_LATENCY 0
 #define THREAD_MEASURING_LATENCY 4
 #define MAX_LATENCY 1000 //in us
 #define LATENCY_BUCKETS 1000
@@ -45,7 +45,7 @@ static_assert(!ENABLE_VIRTUAL_NODE_IDS || MACHINE_NUM * VIRTUAL_NODE_IDS_PER_NOD
 #define ENABLE_WRITE_COALESCE_TO_THE_SAME_KEY_IN_SAME_NODE 0
 
 //DEBUG
-#define ENABLE_ASSERTIONS 1
+#define ENABLE_ASSERTIONS 0
 #define DISABLE_VALS_FOR_DEBUGGING 0
 #define KEY_NUM 0 //use 0 to disable
 
@@ -212,5 +212,11 @@ extern int num_workers;
 extern int credits_num;
 extern int max_coalesce;
 extern int max_batch_size; //for batches to KVS
+
+
+extern int machine_num; // must be smaller or equal to MACHINE_NUM
+//extern int value_size; // must be smaller or equal to MACHINE_NUM
+extern uint8_t enable_latency; //
+extern uint8_t latency_worker_id; //
 
 #endif //SPACETIME_CONFIG_H

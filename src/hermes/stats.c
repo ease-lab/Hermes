@@ -107,7 +107,7 @@ void * print_stats_thread(void *no_arg)
         if (EXIT_ON_STATS_PRINT == 1 && print_count == PRINT_NUM_STATS_BEFORE_EXITING) {
             if (MEASURE_LATENCY && machine_id == 0) dump_latency_stats();
             printf("---------------------------------------\n");
-            printf("------------RUN TERMINATED-------------\n");
+            printf("------------ RUN FINISHED -------------\n");
             printf("---------------------------------------\n");
             exit(0);
         }
@@ -132,7 +132,7 @@ void * print_stats_thread(void *no_arg)
         total_rmw_aborts =  safe_division(all_worker_aborted_rmws, all_worker_rmws);
         total_rd_throughput = total_throughput - total_wr_throughput - total_rmw_throughput;
         printf("---------------PRINT %d time elapsed %.2f---------------\n", print_count, seconds / MILLION);
-        green_printf("SYSTEM MIOPS: %.2f \n(Rd|Wr|RMW: %.2f|%.2f|%.2f) | RMW aborts: %.2f%%)\n",
+        green_printf("NODE MReqs/s: %.2f \n(Rd|Wr|RMW: %.2f|%.2f|%.2f) | RMW aborts: %.2f%%)\n",
                      total_throughput, total_rd_throughput, total_wr_throughput, total_rmw_throughput,
                      100 * total_rmw_aborts);
         if(PRINT_WORKER_STATS) {
@@ -172,7 +172,7 @@ void * print_stats_thread(void *no_arg)
                               all_stats.completed_reqs_per_loop[i], curr_w_stats[i].completed_ops_per_worker,
                               curr_w_stats[i].reqs_missed_in_kvs);
             }
-            green_printf("SYSTEM MIOPS: %.2f \n", total_throughput);
+            green_printf("NODE MReqs/s: %.2f \n", total_throughput);
             printf("---------------------------------------\n");
         }
 
