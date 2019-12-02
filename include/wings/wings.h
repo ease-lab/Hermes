@@ -112,7 +112,7 @@ _wings_inc_send_push_ptr(ud_channel_t *ud_c)
 
     if(ud_c->is_bcast_channel)
         WINGS_MOD_ADD(ud_c->send_push_ptr, ud_c->send_pkt_buff_len); //TODO change this to deal with failures see comment below
-//      WINGS_MOD_ADD(*inv_push_ptr, INV_SEND_OPS_SIZE / REMOTE_MACHINES *
+//      WINGS_MOD_ADD(*inv_push_ptr, INV_SEND_OPS_SIZE / MAX_REMOTE_MACHINES *
 //                               last_g_membership.num_of_alive_remotes); //got to the next "packet" + dealing with failutes
     else
         WINGS_MOD_ADD(ud_c->send_push_ptr, ud_c->send_pkt_buff_len);

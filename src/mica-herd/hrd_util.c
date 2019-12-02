@@ -3,79 +3,6 @@
 /* Every thread creates a TCP connection to the registry only once. */
 __thread memcached_st *memc = NULL;
 
-//<vasilis>
-// returns the number of remote IP addresses and fills the remote_IPs array with them
-int getRemoteIPs(char*** remote_IPs)
-{
-	(*remote_IPs) = (char **)malloc(2 * sizeof(char *));
-	int i, count = 1;
-	for (i = 0; remote_IP[i]; i++) { count += (remote_IP[i] == ',');}
-	//printf("Found %d IPs\n", count);
-	//printf("Remote IPs: %s\n", remote_IP);
-	(*remote_IPs)[0] = (char *)malloc(16 * sizeof(char));
-	(*remote_IPs)[0] = strtok(remote_IP, ",");
-	printf("Remote IP: %s\n", (*remote_IPs)[0]);
-
-	for (i = 1; i < count; i++) {
-		(*remote_IPs)[i] = (char *)malloc(16 * sizeof(char));
-		(*remote_IPs)[i] = strtok(NULL, ",");
-		//printf("Remote IP: %s\n", (*remote_IPs)[i]);
-	}
-	return count;
-}
-
-void die(const char *reason)
-{
-  printf("%s\n", reason);
-  exit(1);
-}
-
-// </vasilis>
-
-/* Print information about all IB devices in the system */
-void
-hrd_ibv_devinfo(void)
-{
-	int num_devices = 0, dev_i;
-	struct ibv_device **dev_list;
-	struct ibv_context *ctx;
-	struct ibv_device_attr device_attr;
-
-  red_printf("HRD: printing IB dev info\n");
-
-	dev_list = ibv_get_device_list(&num_devices);
-	CPE(!dev_list, "Failed to get IB devices list", 0);
-
-	for (dev_i = 0; dev_i < num_devices; dev_i++) {
-		ctx = ibv_open_device(dev_list[dev_i]);
-		CPE(!ctx, "Couldn't get context", 0);
-
-		memset(&device_attr, 0, sizeof(device_attr));
-		if (ibv_query_device(ctx, &device_attr)) {
-			printf("Could not query device: %d\n", dev_i);
-			assert(false);
-		}
-
-		printf("IB device %d:\n", dev_i);
-		printf("    Name: %s\n", dev_list[dev_i]->name);
-		printf("    Device name: %s\n", dev_list[dev_i]->dev_name);
-		printf("    GUID: %016llx\n",
-			(unsigned long long) ibv_get_device_guid(dev_list[dev_i]));
-		printf("    Node type: %d (-1: UNKNOWN, 1: CA, 4: RNIC)\n",
-			dev_list[dev_i]->node_type);
-		printf("    Transport type: %d (-1: UNKNOWN, 0: IB, 1: IWARP)\n",
-			dev_list[dev_i]->transport_type);
-
-		printf("    fw: %s\n", device_attr.fw_ver);
-		printf("    max_qp: %d\n", device_attr.max_qp);
-		printf("    max_cq: %d\n", device_attr.max_cq);
-		printf("    max_mr: %d\n", device_attr.max_mr);
-		printf("    max_pd: %d\n", device_attr.max_pd);
-		printf("    max_ah: %d\n", device_attr.max_ah);
-		printf("    max_mcast_grp: %d\n", device_attr.max_mcast_grp);
-		printf("    max_mcast_qp_attach: %d\n", device_attr.max_mcast_qp_attach);
-	}
-}
 
 /*
  * Finds the port with rank `port_index` (0-based) in the list of ENABLED ports.
@@ -285,154 +212,6 @@ int hrd_free(int shm_key, void *shm_buf)
 	return 0;
 }
 
-/* Like printf, but red. Limited to 1000 characters. */
-void red_printf(const char *format, ...)
-{
-	#define RED_LIM 1000
-	va_list args;
-	int i;
-
-	char buf1[RED_LIM], buf2[RED_LIM];
-	memset(buf1, 0, RED_LIM);
-	memset(buf2, 0, RED_LIM);
-
-    va_start(args, format);
-
-	/* Marshal the stuff to print in a buffer */
-	vsnprintf(buf1, RED_LIM, format, args);
-
-	/* Probably a bad check for buffer overflow */
-	for(i = RED_LIM - 1; i >= RED_LIM - 50; i --) {
-		assert(buf1[i] == 0);
-	}
-
-	/* Add markers for red color and reset color */
-	// snprintf(buf2, 1000, "\033[31m%s\033[0m", buf1);
-	snprintf(buf2, 1000, "\033[31m%s\033[0m", buf1);
-
-	/* Probably another bad check for buffer overflow */
-	for(i = RED_LIM - 1; i >= RED_LIM - 50; i --) {
-		assert(buf2[i] == 0);
-	}
-
-	printf("%s", buf2);
-
-    va_end(args);
-}
-
-/* Like printf, but yellow. Limited to 1000 characters. */
-void yellow_printf(const char *format, ...)
-{
-	#define RED_LIM 1000
-	va_list args;
-	int i;
-
-	char buf1[RED_LIM], buf2[RED_LIM];
-	memset(buf1, 0, RED_LIM);
-	memset(buf2, 0, RED_LIM);
-
-    va_start(args, format);
-
-	/* Marshal the stuff to print in a buffer */
-	vsnprintf(buf1, RED_LIM, format, args);
-
-	/* Probably a bad check for buffer overflow */
-	for(i = RED_LIM - 1; i >= RED_LIM - 50; i --) {
-		assert(buf1[i] == 0);
-	}
-
-	/* Add markers for yellow color and reset color */
-	// snprintf(buf2, 1000, "\033[31m%s\033[0m", buf1);
-	snprintf(buf2, 1000, "\033[33m%s\033[0m", buf1);
-
-	/* Probably another bad check for buffer overflow */
-	for(i = RED_LIM - 1; i >= RED_LIM - 50; i --) {
-		assert(buf2[i] == 0);
-	}
-
-	printf("%s", buf2);
-
-    va_end(args);
-}
-
-/* Like printf, but green. Limited to 1000 characters. */
-void green_printf(const char *format, ...)
-{
-	#define RED_LIM 1000
-	va_list args;
-	int i;
-
-	char buf1[RED_LIM], buf2[RED_LIM];
-	memset(buf1, 0, RED_LIM);
-	memset(buf2, 0, RED_LIM);
-
-    va_start(args, format);
-
-	/* Marshal the stuff to print in a buffer */
-	vsnprintf(buf1, RED_LIM, format, args);
-
-	/* Probably a bad check for buffer overflow */
-	for(i = RED_LIM - 1; i >= RED_LIM - 50; i --) {
-		assert(buf1[i] == 0);
-	}
-
-	/* Add markers for green color and reset color */
-	snprintf(buf2, 1000, "\033[1m\033[32m%s\033[0m", buf1);
-
-	/* Probably another bad check for buffer overflow */
-	for(i = RED_LIM - 1; i >= RED_LIM - 50; i --) {
-		assert(buf2[i] == 0);
-	}
-
-	printf("%s", buf2);
-
-    va_end(args);
-}
-
-/* Like printf, but magenta. Limited to 1000 characters. */
-void cyan_printf(const char *format, ...)
-{
-	#define RED_LIM 1000
-	va_list args;
-	int i;
-
-	char buf1[RED_LIM], buf2[RED_LIM];
-	memset(buf1, 0, RED_LIM);
-	memset(buf2, 0, RED_LIM);
-
-    va_start(args, format);
-
-	/* Marshal the stuff to print in a buffer */
-	vsnprintf(buf1, RED_LIM, format, args);
-
-	/* Probably a bad check for buffer overflow */
-	for(i = RED_LIM - 1; i >= RED_LIM - 50; i --) {
-		assert(buf1[i] == 0);
-	}
-
-	/* Add markers for magenta color and reset color */
-	snprintf(buf2, 1000, "\033[1m\033[36m%s\033[0m", buf1);
-
-	/* Probably another bad check for buffer overflow */
-	for(i = RED_LIM - 1; i >= RED_LIM - 50; i --) {
-		assert(buf2[i] == 0);
-	}
-
-	printf("%s", buf2);
-
-    va_end(args);
-}
-
-void hrd_nano_sleep(int ns)
-{
-	long long start = hrd_get_cycles();
-	long long end = start;
-	int upp = (int) (2.1 * ns);
-	while(end - start < upp) {
-		end = hrd_get_cycles();
-	}
-}
-
 /* Get the LID of a port on the device specified by @ctx */
 uint16_t hrd_get_local_lid(struct ibv_context *ctx, int dev_port_id)
 {
@@ -458,19 +237,6 @@ char* hrd_getenv(const char *name)
 	}
 
 	return env;
-}
-
-/* Record the current time in @timebuf. @timebuf must have at least 50 bytes. */
-void hrd_get_formatted_time(char *timebuf)
-{
-	assert(timebuf != NULL);
-	time_t timer;
-	struct tm* tm_info;
-
-	time(&timer);
-	tm_info = localtime(&timer);
-
-	strftime(timebuf, 26, "%Y:%m:%d %H:%M:%S", tm_info);
 }
 
 memcached_st* hrd_create_memc()
@@ -554,81 +320,144 @@ int hrd_get_published(const char *key, void **value)
 	assert(false);
 }
 
-/*
- * To advertise a queue pair with name qp_name as ready, we publish this
- * key-value mapping: "HRD_RESERVED_NAME_PREFIX-qp_name" -> "hrd_ready". This
- * requires that a qp_name never starts with HRD_RESERVED_NAME_PREFIX.
- *
- * This avoids overwriting the memcached entry for qp_name which might still
- * be needed by the remote peer.
- */
-void hrd_publish_ready(const char *qp_name)
+
+
+
+/* Like printf, but red. Limited to 1000 characters. */
+void red_printf(const char *format, ...)
 {
-	char value[HRD_QP_NAME_SIZE];
-	assert(qp_name != NULL && strlen(qp_name) < HRD_QP_NAME_SIZE);
+#define RED_LIM 1000
+    va_list args;
+    int i;
 
-	char new_name[2 * HRD_QP_NAME_SIZE];
-	sprintf(new_name, "%s", HRD_RESERVED_NAME_PREFIX);
-	strcat(new_name, qp_name);
+    char buf1[RED_LIM], buf2[RED_LIM];
+    memset(buf1, 0, RED_LIM);
+    memset(buf2, 0, RED_LIM);
 
-	sprintf(value, "%s", "hrd_ready");
-	hrd_publish(new_name, value, strlen(value));
+    va_start(args, format);
+
+    /* Marshal the stuff to print in a buffer */
+    vsnprintf(buf1, RED_LIM, format, args);
+
+    /* Probably a bad check for buffer overflow */
+    for(i = RED_LIM - 1; i >= RED_LIM - 50; i --) {
+        assert(buf1[i] == 0);
+    }
+
+    /* Add markers for red color and reset color */
+    // snprintf(buf2, 1000, "\033[31m%s\033[0m", buf1);
+    snprintf(buf2, 1000, "\033[31m%s\033[0m", buf1);
+
+    /* Probably another bad check for buffer overflow */
+    for(i = RED_LIM - 1; i >= RED_LIM - 50; i --) {
+        assert(buf2[i] == 0);
+    }
+
+    printf("%s", buf2);
+
+    va_end(args);
 }
 
-/*
- * To check if a queue pair with name qp_name is ready, we check if this
- * key-value mapping exists: "HRD_RESERVED_NAME_PREFIX-qp_name" -> "hrd_ready".
- */
-void hrd_wait_till_ready(const char *qp_name)
+/* Like printf, but yellow. Limited to 1000 characters. */
+void yellow_printf(const char *format, ...)
 {
-	char *value;
-	char exp_value[HRD_QP_NAME_SIZE];
-	sprintf(exp_value, "%s", "hrd_ready");
+#define RED_LIM 1000
+    va_list args;
+    int i;
 
-	char new_name[2 * HRD_QP_NAME_SIZE];
-	sprintf(new_name, "%s", HRD_RESERVED_NAME_PREFIX);
-	strcat(new_name, qp_name);
+    char buf1[RED_LIM], buf2[RED_LIM];
+    memset(buf1, 0, RED_LIM);
+    memset(buf2, 0, RED_LIM);
 
-	int tries = 0;
-	while(true) {
-		int ret = hrd_get_published(new_name, (void **) &value);
-		tries++;
-		if(ret > 0) {
-			if(strcmp(value, exp_value) == 0) {
-				return;
-			}
-		}
+    va_start(args, format);
 
-		usleep(200000);
+    /* Marshal the stuff to print in a buffer */
+    vsnprintf(buf1, RED_LIM, format, args);
 
-		if(tries > 100) {
-			fprintf(stderr, "HRD: Waiting for QP %s to be ready\n", qp_name);
-			tries = 0;
-		}
-	}
+    /* Probably a bad check for buffer overflow */
+    for(i = RED_LIM - 1; i >= RED_LIM - 50; i --) {
+        assert(buf1[i] == 0);
+    }
+
+    /* Add markers for yellow color and reset color */
+    // snprintf(buf2, 1000, "\033[31m%s\033[0m", buf1);
+    snprintf(buf2, 1000, "\033[33m%s\033[0m", buf1);
+
+    /* Probably another bad check for buffer overflow */
+    for(i = RED_LIM - 1; i >= RED_LIM - 50; i --) {
+        assert(buf2[i] == 0);
+    }
+
+    printf("%s", buf2);
+
+    va_end(args);
 }
 
-void hrd_post_dgram_recv(struct ibv_qp *qp, void *buf_addr, int len, int lkey)
+/* Like printf, but green. Limited to 1000 characters. */
+void green_printf(const char *format, ...)
 {
-	int ret;
-	struct ibv_recv_wr *bad_wr;
+#define RED_LIM 1000
+    va_list args;
+    int i;
 
-	struct ibv_sge list;
-	memset(&list, 0, sizeof(struct ibv_sge));
-	list.length = len;
-	list.lkey = lkey;
+    char buf1[RED_LIM], buf2[RED_LIM];
+    memset(buf1, 0, RED_LIM);
+    memset(buf2, 0, RED_LIM);
 
-	struct ibv_recv_wr recv_wr;
-	memset(&recv_wr, 0, sizeof(struct ibv_recv_wr));
-	recv_wr.sg_list = &list;
-	recv_wr.num_sge = 1;
-	recv_wr.next = NULL;
+    va_start(args, format);
 
-	recv_wr.sg_list->addr = (uintptr_t) buf_addr;
+    /* Marshal the stuff to print in a buffer */
+    vsnprintf(buf1, RED_LIM, format, args);
 
-	ret = ibv_post_recv(qp, &recv_wr, &bad_wr);
-	if(ret) {
-		fprintf(stderr, "HRD: Error %d posting datagram recv.\n", ret);
-		exit(-1);
-	}
+    /* Probably a bad check for buffer overflow */
+    for(i = RED_LIM - 1; i >= RED_LIM - 50; i --) {
+        assert(buf1[i] == 0);
+    }
+
+    /* Add markers for green color and reset color */
+    snprintf(buf2, 1000, "\033[1m\033[32m%s\033[0m", buf1);
+
+    /* Probably another bad check for buffer overflow */
+    for(i = RED_LIM - 1; i >= RED_LIM - 50; i --) {
+        assert(buf2[i] == 0);
+    }
+
+    printf("%s", buf2);
+
+    va_end(args);
 }
+
+/* Like printf, but magenta. Limited to 1000 characters. */
+void cyan_printf(const char *format, ...)
+{
+#define RED_LIM 1000
+    va_list args;
+    int i;
+
+    char buf1[RED_LIM], buf2[RED_LIM];
+    memset(buf1, 0, RED_LIM);
+    memset(buf2, 0, RED_LIM);
+
+    va_start(args, format);
+
+    /* Marshal the stuff to print in a buffer */
+    vsnprintf(buf1, RED_LIM, format, args);
+
+    /* Probably a bad check for buffer overflow */
+    for(i = RED_LIM - 1; i >= RED_LIM - 50; i --) {
+        assert(buf1[i] == 0);
+    }
+
+    /* Add markers for magenta color and reset color */
+    snprintf(buf2, 1000, "\033[1m\033[36m%s\033[0m", buf1);
+
+    /* Probably another bad check for buffer overflow */
+    for(i = RED_LIM - 1; i >= RED_LIM - 50; i --) {
+        assert(buf2[i] == 0);
+    }
+
+    printf("%s", buf2);
+
+    va_end(args);
+}
+

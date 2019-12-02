@@ -29,11 +29,15 @@ declare -a write_ratios=(200 500 750 1000)
 declare -a num_workers=(39)
 #declare -a batch_sizes=(25 50 75 100 125 150 200 250)
 declare -a batch_sizes=(50 125 250)
-#declare -a credits=(250) # make sure credits % NUM_NODES == 0
-declare -a credits=(125) # make sure credits % NUM_NODES == 0
+declare -a num_machines=(2)
+#declare -a credits=(250) # make sure credits % num_machines == 0
+declare -a credits=(125) # make sure credits % num_machines == 0
 #declare -a credits=(30)
 #declare -a coalesce=(1 5 10 15)
 declare -a coalesce=(10)
+# Set LAT_WORKER to -1 to disable latency measurement or to worker id (i.e., from 0 up to [num-worker - 1])
+LAT_WORKER="-1"
+#LAT_WORKER="0"
 
 USERNAME="s1671850" # "user"
 LOCAL_HOST=`hostname`
@@ -64,25 +68,20 @@ then
       echo "\$PASS is empty! --> sudo pass for remotes is expected to be the first arg"
       exit;
 fi
-#else
-      echo "\$PASS is OK!"
-#	  parallel "echo ${PASS} | ssh -tt {} $'${REMOTE_COMMAND}' | cat" ::: sanantonio
-#	  parallel "echo ${PASS} | ssh -tt {} $'${REMOTE_COMMAND}' > ${OUTP_FOLDER}/{}.out" ::: sanantonio
-cd ${HOME_FOLDER}
-#      echo ${PASS} | sudo -S bash ./run-hermes.sh > ${OUTP_FOLDER}/${LOCAL_HOST}.out &
 
-#	  parallel "echo ${PASS} | ssh -tt {} $'${REMOTE_COMMAND}' > ${OUTP_FOLDER}/{}.out" ::: $(echo ${HOSTS[@]/$LOCAL_HOST}) &
-#      echo ${PASS} | ./run-hermes.sh > ${OUTP_FOLDER}/${LOCAL_HOST}.out
+echo "\$PASS is OK!"
+cd ${HOME_FOLDER}
 
 if [ ${USE_SAME_BATCH_N_CREDITS} -eq 0 ]
 then
+   for M in "${num_machines[@]}"; do
        # Execute locally and remotely
        for WR in "${write_ratios[@]}"; do
         for W in "${num_workers[@]}"; do
           for BA in "${batch_sizes[@]}"; do
             for CRD in "${credits[@]}"; do
               for COAL in "${coalesce[@]}"; do
-                 args=" -w ${WR} -W ${W} -b ${BA} -c ${CRD} -C ${COAL}"
+                 args=" -M ${M} -w ${WR} -W ${W} -b ${BA} -c ${CRD} -C ${COAL} -l ${LAT_WORKER}"
                  echo ${PASS} | ./run-cr.sh ${args} &
                  sleep 2
 	             parallel "echo ${PASS} | ssh -tt {} $'${REMOTE_COMMAND} ${args}'" ::: $(echo ${HOSTS[@]/$LOCAL_HOST}) >/dev/null
@@ -91,14 +90,16 @@ then
 	      done
 	    done
 	   done
+   done
 
 else
        # Execute locally and remotely
+   for M in "${num_machines[@]}"; do
        for WR in "${write_ratios[@]}"; do
         for W in "${num_workers[@]}"; do
           for BA in "${batch_sizes[@]}"; do
               for COAL in "${coalesce[@]}"; do
-                 args=" -w ${WR} -W ${W} -b ${BA} -c ${BA} -C ${COAL}"
+                 args=" -M ${M} -w ${WR} -W ${W} -b ${BA} -c ${BA} -C ${COAL} -l ${LAT_WORKER}"
                  echo ${PASS} | ./run-cr.sh ${args} &
                  sleep 2
 	             parallel "echo ${PASS} | ssh -tt {} $'${REMOTE_COMMAND} ${args}'" ::: $(echo ${HOSTS[@]/$LOCAL_HOST}) >/dev/null
@@ -106,6 +107,7 @@ else
 	        done
 	      done
 	    done
+   done
 fi
 
 # Gather remote files

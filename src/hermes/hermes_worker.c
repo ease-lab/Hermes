@@ -247,7 +247,7 @@ spin_until_all_nodes_are_in_membership(spacetime_group_membership *last_group_me
 {
     bit_vector_t* membership_ptr = (bit_vector_t*) &last_group_membership->g_membership;
     bv_reset_all(membership_ptr);
-    while (bv_no_setted_bits(*membership_ptr) < MACHINE_NUM){
+    while (bv_no_setted_bits(*membership_ptr) < machine_num){
         if(worker_lid == WORKER_WITH_FAILURE_DETECTOR) {
             update_view_and_issue_hbs(hw_ctx);
             if (!bv_are_equal(*membership_ptr, hw_ctx->ctx.curr_g_membership))
@@ -341,13 +341,13 @@ run_worker(void *arg)
 
     wings_ud_channel_init(inv_ud_c, inv_qp_name, REQ, (uint8_t) max_coalesce, sizeof(spacetime_inv_t), 0,
 						  inv_inlining, is_hdr_only, is_bcast, disable_crd_ctrl, expl_crd_ctrl,
-						  ack_ud_c, (uint8_t) credits_num, MACHINE_NUM, (uint8_t) machine_id, stats_on, prints_on);
+						  ack_ud_c, (uint8_t) credits_num, machine_num, (uint8_t) machine_id, stats_on, prints_on);
 	wings_ud_channel_init(ack_ud_c, ack_qp_name, RESP, (uint8_t) max_coalesce, ack_size, sizeof(spacetime_ack_t),
 						  ack_inlining, is_hdr_only, 0, disable_crd_ctrl, expl_crd_ctrl,
-						  inv_ud_c, (uint8_t) credits_num, MACHINE_NUM, (uint8_t) machine_id, stats_on, prints_on);
+						  inv_ud_c, (uint8_t) credits_num, machine_num, (uint8_t) machine_id, stats_on, prints_on);
 	wings_ud_channel_init(val_ud_c, val_qp_name, REQ, (uint8_t) max_coalesce, sizeof(spacetime_val_t), 0,
 						  val_inlining, is_hdr_only, is_bcast, disable_crd_ctrl, 1,
-						  crd_ud_c, (uint8_t) credits_num, MACHINE_NUM, (uint8_t) machine_id, stats_on, prints_on);
+						  crd_ud_c, (uint8_t) credits_num, machine_num, (uint8_t) machine_id, stats_on, prints_on);
 
 	///<HADES> Failure Detector Init
     hades_wings_ctx_t hw_ctx;
@@ -361,7 +361,7 @@ run_worker(void *arg)
         const uint32_t send_view_every_us = 100;
         const uint32_t update_local_view_ms = 10;
 
-        hades_wings_ctx_init(&hw_ctx, machine_id, MACHINE_NUM,
+        hades_wings_ctx_init(&hw_ctx, machine_id, machine_num,
                              max_views_to_poll, send_view_every_us, update_local_view_ms,
                              hviews_c, hviews_crd_c, worker_lid);
 	}
@@ -370,7 +370,7 @@ run_worker(void *arg)
 	wings_setup_channel_qps_and_recvs(ud_channel_ptrs, total_ud_qps, g_share_qs_barrier, worker_lid);
 
 
-	uint16_t ops_len = (uint16_t) (credits_num * REMOTE_MACHINES * max_coalesce); //credits * remote_machines * max_req_coalesce
+	uint16_t ops_len = (uint16_t) (credits_num * remote_machine_num * max_coalesce); //credits * remote_machines * max_req_coalesce
 	assert(ops_len >= inv_ud_c->recv_pkt_buff_len);
 	assert(ops_len >= ack_ud_c->recv_pkt_buff_len);
 	assert(ops_len >= val_ud_c->recv_pkt_buff_len);

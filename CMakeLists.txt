@@ -8,7 +8,7 @@ include_directories(include/hermes
                     include/libhrd
                     /usr/include/
                     include/optik
-                    include/mica )
+        include/mica-herd)
 
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall")
@@ -23,19 +23,19 @@ set(SOURCE_FILES_cr
         src/hermes/stats.c
         src/hermes/spacetime.c
 
-        src/mica/mica.c
-        src/mica/city.c
-        src/libhrd/hrd_conn.c
-        src/libhrd/hrd_util.c
+        src/mica-herd/mica.c
+        src/mica-herd/city.c
+        src/mica-herd/hrd_conn.c
+        src/mica-herd/hrd_util.c
 
 
         ##### header files ####
         include/wings/wings.h
         include/wings/wings_api.h
 
-        include/mica/city.h
-        include/libhrd/hrd.h
-        include/libhrd/sizes.h
+        include/mica-herd/city.h
+        include/mica-herd/hrd.h
+        include/mica-herd/sizes.h
 
         include/hermes/util.h
         include/hermes/config.h
@@ -61,20 +61,20 @@ set(SOURCE_FILES_hermes
         src/hermes/main.c
         src/hermes/util.c
 #        src/hermes/worker.c
-        src/hermes/hermes_wings_worker.c
+        src/hermes/hermes_worker.c
         src/hermes/stats.c
         src/hermes/spacetime.c
-        src/libhrd/hrd_conn.c
-        src/libhrd/hrd_util.c
-        src/mica/mica.c
-        src/mica/city.c
+        src/mica-herd/hrd_conn.c
+        src/mica-herd/hrd_util.c
+        src/mica-herd/mica.c
+        src/mica-herd/city.c
 
         src/wings/wings.c
 
         ##### header files ####
-        include/libhrd/hrd.h
-        include/mica/city.h
-        include/libhrd/sizes.h
+        include/mica-herd/hrd.h
+        include/mica-herd/city.h
+        include/mica-herd/sizes.h
 
         include/hermes/util.h
         include/hermes/config.h

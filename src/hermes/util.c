@@ -15,10 +15,10 @@ int spawn_stats_thread(void)
     cpu_set_t cpus_stats;
     pthread_attr_init(&attr);
     CPU_ZERO(&cpus_stats);
-    if(WORKERS_PER_MACHINE > 17)
+    if(MAX_WORKERS_PER_MACHINE > 17)
         CPU_SET(39, &cpus_stats);
     else
-        CPU_SET(2 * WORKERS_PER_MACHINE + 2, &cpus_stats);
+        CPU_SET(2 * MAX_WORKERS_PER_MACHINE + 2, &cpus_stats);
     pthread_attr_setaffinity_np(&attr, sizeof(cpu_set_t), &cpus_stats);
     return pthread_create(&thread_arr[0], &attr, print_stats_thread, NULL);
 }
@@ -312,8 +312,10 @@ parse_trace(char* path, struct spacetime_trace_command **cmds, int worker_gid)
     int debug_cnt = 0;
     //parse file line by line and insert trace to cmd.
     for (int i = 0; i < cmd_count; i++) {
-        if ((read = getline(&line, &len, fp)) == -1)
-            die("ERROR: Problem while reading the trace\n");
+        if ((read = getline(&line, &len, fp)) == -1){
+            printf("ERROR: Problem while reading the trace!\n");
+            exit(1);
+        }
         int word_count = 0;
         assert(word_count == 0);
         word = strtok_r(line, " ", &saveptr);
@@ -413,8 +415,8 @@ void setup_kvs_buffs(spacetime_op_t **ops,
                      spacetime_ack_t **ack_recv_ops,
                      spacetime_val_t **val_recv_ops)
 {
-    *ops = memalign(4096, MAX_BATCH_OPS_SIZE * (sizeof(spacetime_op_t)));
-    memset(*ops, 0, MAX_BATCH_OPS_SIZE * (sizeof(spacetime_op_t)));
+    *ops = memalign(4096, MAX_BATCH_KVS_OPS_SIZE * (sizeof(spacetime_op_t)));
+    memset(*ops, 0, MAX_BATCH_KVS_OPS_SIZE * (sizeof(spacetime_op_t)));
     assert(ops != NULL);
 
     // Dirty way to support ACKs that might be as big as INVs
@@ -423,7 +425,8 @@ void setup_kvs_buffs(spacetime_op_t **ops,
     ///Network ops
 	///TODO should we memalign aswell?
 
-    uint32_t no_ops = (uint32_t) (credits_num * REMOTE_MACHINES * max_coalesce); //credits * remote_machines * max_req_coalesce
+    uint32_t no_ops = (uint32_t) (credits_num * MAX_REMOTE_MACHINES * max_coalesce); //credits * remote_machines * max_req_coalesce
+//    uint32_t no_ops = (uint32_t) (credits_num * remote_machine_num * max_coalesce); //credits * remote_machines * max_req_coalesce
 	*inv_recv_ops = (spacetime_inv_t*) malloc(no_ops * sizeof(spacetime_inv_t));
 	*ack_recv_ops = (spacetime_ack_t*) malloc(no_ops * ack_size);
     *val_recv_ops = (spacetime_val_t*) malloc(no_ops * sizeof(spacetime_val_t)); /* Batch of incoming broadcasts for the Cache*/
@@ -442,7 +445,7 @@ void setup_kvs_buffs(spacetime_op_t **ops,
             (*rmw_ack_r_ops)[i].op_meta.opcode = ST_EMPTY;
     }
 
-	for(int i = 0; i < MAX_BATCH_OPS_SIZE; ++i){
+	for(int i = 0; i < MAX_BATCH_KVS_OPS_SIZE; ++i){
 		(*ops)[i].op_meta.opcode = ST_EMPTY;
 		(*ops)[i].op_meta.state = ST_EMPTY;
 	}

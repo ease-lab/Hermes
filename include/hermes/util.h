@@ -56,40 +56,40 @@ struct worker_stats { // 2 cache lines
 };
 
 struct stats {
-	double xput_per_worker[WORKERS_PER_MACHINE];
-    double rmw_xput_per_worker[WORKERS_PER_MACHINE];
-    double rmw_abort_rate_per_worker[WORKERS_PER_MACHINE];
+	double xput_per_worker[MAX_WORKERS_PER_MACHINE];
+    double rmw_xput_per_worker[MAX_WORKERS_PER_MACHINE];
+    double rmw_abort_rate_per_worker[MAX_WORKERS_PER_MACHINE];
 
-	double issued_invs_avg_coalesing[WORKERS_PER_MACHINE];
-	double issued_acks_avg_coalesing[WORKERS_PER_MACHINE];
-	double issued_vals_avg_coalesing[WORKERS_PER_MACHINE];
-	double issued_crds_avg_coalesing[WORKERS_PER_MACHINE];
+	double issued_invs_avg_coalesing[MAX_WORKERS_PER_MACHINE];
+	double issued_acks_avg_coalesing[MAX_WORKERS_PER_MACHINE];
+	double issued_vals_avg_coalesing[MAX_WORKERS_PER_MACHINE];
+	double issued_crds_avg_coalesing[MAX_WORKERS_PER_MACHINE];
 
-	double received_invs_avg_coalesing[WORKERS_PER_MACHINE];
-	double received_acks_avg_coalesing[WORKERS_PER_MACHINE];
-	double received_vals_avg_coalesing[WORKERS_PER_MACHINE];
-	double received_crds_avg_coalesing[WORKERS_PER_MACHINE];
+	double received_invs_avg_coalesing[MAX_WORKERS_PER_MACHINE];
+	double received_acks_avg_coalesing[MAX_WORKERS_PER_MACHINE];
+	double received_vals_avg_coalesing[MAX_WORKERS_PER_MACHINE];
+	double received_crds_avg_coalesing[MAX_WORKERS_PER_MACHINE];
 
-	double percentage_of_wasted_loops[WORKERS_PER_MACHINE];
-	double completed_reqs_per_loop[WORKERS_PER_MACHINE];
+	double percentage_of_wasted_loops[MAX_WORKERS_PER_MACHINE];
+	double completed_reqs_per_loop[MAX_WORKERS_PER_MACHINE];
 
 //	long long issued_packet_acks_per_worker;
-    double batch_size_per_worker[WORKERS_PER_MACHINE];
-    double empty_reqs_per_worker[WORKERS_PER_MACHINE];
-    double stalled_time_per_worker[WORKERS_PER_MACHINE];
-    double average_coalescing_per_worker[WORKERS_PER_MACHINE];
+    double batch_size_per_worker[MAX_WORKERS_PER_MACHINE];
+    double empty_reqs_per_worker[MAX_WORKERS_PER_MACHINE];
+    double stalled_time_per_worker[MAX_WORKERS_PER_MACHINE];
+    double average_coalescing_per_worker[MAX_WORKERS_PER_MACHINE];
 
-    double acks_per_worker[WORKERS_PER_MACHINE];
-    double invs_per_worker[WORKERS_PER_MACHINE];
-    double updates_per_worker[WORKERS_PER_MACHINE];
+    double acks_per_worker[MAX_WORKERS_PER_MACHINE];
+    double invs_per_worker[MAX_WORKERS_PER_MACHINE];
+    double updates_per_worker[MAX_WORKERS_PER_MACHINE];
 
-    double write_ratio_per_worker[WORKERS_PER_MACHINE];
+    double write_ratio_per_worker[MAX_WORKERS_PER_MACHINE];
 };
 
 // init all stats to 0
 static inline void init_stats(struct worker_stats* w_stats)
 {
-    memset(w_stats, 0, sizeof(struct worker_stats) * WORKERS_PER_MACHINE);
+    memset(w_stats, 0, sizeof(struct worker_stats) * MAX_WORKERS_PER_MACHINE);
 }
 
 void trace_init(struct spacetime_trace_command ** trace, uint16_t worker_lid);
@@ -113,5 +113,5 @@ void setup_kvs_buffs(spacetime_op_t **ops,
 					 spacetime_val_t **val_recv_ops);
 
 extern dbit_vector_t *g_share_qs_barrier;
-extern volatile struct worker_stats w_stats[WORKERS_PER_MACHINE];
+extern volatile struct worker_stats w_stats[MAX_WORKERS_PER_MACHINE];
 #endif //HERMES_UTIL_H

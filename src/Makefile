@@ -1,4 +1,4 @@
-SUBDIRS = libhrd hermes mica CR hades
+SUBDIRS = hermes CR hades
 
 
 CLEANDIRS = $(SUBDIRS:%=clean-%)

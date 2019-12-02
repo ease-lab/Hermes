@@ -36,7 +36,7 @@ group_membership_update(hades_ctx_t hades_ctx)
     group_membership.num_of_alive_remotes = bv_no_setted_bits(group_membership.g_membership);
     seqlock_unlock(&group_membership.lock);
 
-    if(group_membership.num_of_alive_remotes < (MACHINE_NUM / 2)){
+    if(group_membership.num_of_alive_remotes < (machine_num / 2)){
 		red_printf("Majority is down!\n");
 		exit(-1);
 	}
@@ -125,7 +125,7 @@ static inline void
 stop_latency_of_completed_writes(spacetime_op_t *ops, uint16_t worker_lid,
 								 struct timespec *stopwatch)
 {
-	if(MEASURE_LATENCY && machine_id == 0 && worker_lid == THREAD_MEASURING_LATENCY)
+    if(machine_id == 0 && worker_lid == worker_measuring_latency)
 		if(ops[0].op_meta.opcode == ST_OP_PUT &&
 		   (ops[0].op_meta.state == ST_MISS || ops[0].op_meta.state == ST_PUT_COMPLETE))
 				stop_latency_measurment(ops[0].op_meta.opcode, stopwatch);
@@ -135,10 +135,11 @@ static inline void
 stop_latency_of_completed_reads(spacetime_op_t *ops, uint16_t worker_lid,
 								struct timespec *stopwatch)
 {
-	if(MEASURE_LATENCY && machine_id == 0 && worker_lid == THREAD_MEASURING_LATENCY)
-		if(ops[0].op_meta.opcode == ST_OP_GET &&
-		   (ops[0].op_meta.state == ST_MISS || ops[0].op_meta.state == ST_GET_COMPLETE))
-				stop_latency_measurment(ops[0].op_meta.opcode, stopwatch);
+
+    if (machine_id == 0 && worker_lid == worker_measuring_latency)
+        if(ops[0].op_meta.opcode == ST_OP_GET &&
+           (ops[0].op_meta.state == ST_MISS || ops[0].op_meta.state == ST_GET_COMPLETE))
+            stop_latency_measurment(ops[0].op_meta.opcode, stopwatch);
 }
 
 
@@ -152,7 +153,7 @@ refill_ops(uint32_t *trace_iter, uint16_t worker_lid,
            spacetime_op_t **n_hottest_keys_in_ops_get,
            spacetime_op_t **n_hottest_keys_in_ops_put)
 {
-	static uint8_t first_iter_has_passed[WORKERS_PER_MACHINE] = { 0 };
+	static uint8_t first_iter_has_passed[MAX_WORKERS_PER_MACHINE] = { 0 };
 
 	int refilled_ops = 0, node_suspected = -1;
 	for(int i = 0; i < max_batch_size; i++) {
@@ -228,7 +229,7 @@ refill_ops(uint32_t *trace_iter, uint16_t worker_lid,
                        trace[*trace_iter].opcode == ST_OP_RMW ||
                        trace[*trace_iter].opcode == ST_OP_GET);
 
-            if (MEASURE_LATENCY && machine_id == 0 && worker_lid == THREAD_MEASURING_LATENCY && i == 0)
+            if (machine_id == 0 && worker_lid == worker_measuring_latency && i == 0)
                 start_latency_measurement(start);
 
             /// INSERT new req(s) to ops

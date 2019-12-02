@@ -9,7 +9,7 @@
 
 /*
  * Initialize the spacetime using a Mica instances and adding the timestamps
- * and locks to the keys of mica structure
+ * and locks to the keys of mica-herd-herd structure
  */
 
 struct spacetime_kv kv;

@@ -18,10 +18,10 @@ hermes_assertions_begin_inv(spacetime_inv_t *inv_ptr)
 	assert(inv_ptr->op_meta.opcode == ST_OP_INV ||
 		   inv_ptr->op_meta.opcode == ST_OP_MEMBERSHIP_CHANGE);
 	assert(inv_ptr->op_meta.val_len == (ST_VALUE_SIZE >> SHIFT_BITS));
-	assert(REMOTE_MACHINES != 1 ||
-		   inv_ptr->op_meta.sender == REMOTE_MACHINES - machine_id);
-	assert(REMOTE_MACHINES != 1 ||
-		   inv_ptr->op_meta.ts.tie_breaker_id == REMOTE_MACHINES - machine_id);
+	assert(remote_machine_num != 1 ||
+		   inv_ptr->op_meta.sender == remote_machine_num - machine_id);
+	assert(remote_machine_num != 1 ||
+		   inv_ptr->op_meta.ts.tie_breaker_id == remote_machine_num - machine_id);
 //			red_printf("INVs: Ops[%d]vvv hash(1st 8B):%" PRIu64 " version: %d, tie: %d\n", I,
 //					   ((uint64_t *) &(*op)[I].key)[0], (*op)[I].version, (*op)[I].tie_breaker_id);
 }
@@ -30,15 +30,15 @@ static inline void
 hermes_assertions_begin_ack(spacetime_ack_t *ack_ptr)
 {
 	assert(ack_ptr->ts.version % 2 == 0);
-	assert(REMOTE_MACHINES != 1 || ack_ptr->sender == REMOTE_MACHINES - machine_id);
+	assert(remote_machine_num != 1 || ack_ptr->sender == remote_machine_num - machine_id);
 	assert(ack_ptr->opcode == ST_OP_ACK || ack_ptr->opcode == ST_OP_INV_ABORT ||
                    ack_ptr->opcode == ST_OP_MEMBERSHIP_CHANGE);
 
 	///WARNING the following assertion is incorrect for write replays
-//	assert(group_membership.num_of_alive_remotes != REMOTE_MACHINES ||
+//	assert(group_membership.num_of_alive_remotes != MAX_REMOTE_MACHINES ||
 //	       ack_ptr->opcode == ST_OP_INV_ABORT ||
 //		   ack_ptr->ts.tie_breaker_id == machine_id ||
-//		   (ENABLE_VIRTUAL_NODE_IDS && ack_ptr->ts.tie_breaker_id  % MACHINE_NUM == machine_id));
+//		   (ENABLE_VIRTUAL_NODE_IDS && ack_ptr->ts.tie_breaker_id  % MAX_MACHINE_NUM == machine_id));
 
 //			yellow_printf("ACKS: Ops[%d]vvv hash(1st 8B):%" PRIu64 " version: %d, tie: %d\n", I,
 //					   ((uint64_t *) &(*op)[I].key)[0], (*op)[I].version, (*op)[I].tie_breaker_id);
@@ -49,8 +49,8 @@ hermes_assertions_begin_val(spacetime_val_t *val_ptr)
 {
 	assert(val_ptr->ts.version % 2 == 0);
 	assert(val_ptr->opcode == ST_OP_VAL);
-	assert(REMOTE_MACHINES != 1 || val_ptr->sender == REMOTE_MACHINES - machine_id);
-	assert(REMOTE_MACHINES != 1 || val_ptr->ts.tie_breaker_id == REMOTE_MACHINES - machine_id);
+	assert(remote_machine_num != 1 || val_ptr->sender == remote_machine_num - machine_id);
+	assert(remote_machine_num != 1 || val_ptr->ts.tie_breaker_id == remote_machine_num - machine_id);
 //			green_printf("VALS: Ops[%d]vvv hash(1st 8B):%" PRIu64 " version: %d, tie: %d\n", I,
 //					   ((uint64_t *) &(*op)[I].key)[0], (*op)[I].version, (*op)[I].tie_breaker_id);
 }
@@ -122,7 +122,7 @@ hermes_update_actions_n_unlock(spacetime_op_t *op_ptr, struct mica_op *kv_ptr,
     bv_copy((bit_vector_t*)  &curr_meta->ack_bv,  curr_membership.w_ack_init);
 
     uint8_t v_node_id = (uint8_t) (!ENABLE_VIRTUAL_NODE_IDS ? machine_id :
-                           machine_id + MACHINE_NUM *
+                           machine_id + machine_num *
                            (hrd_fastrand(&g_seed) % VIRTUAL_NODE_IDS_PER_NODE));
     curr_meta->last_local_write_ts.tie_breaker_id = v_node_id;
 
@@ -182,7 +182,7 @@ hermes_check_membership_n_write_replay_actions(spacetime_op_t *op_ptr, uint8_t i
                                                spacetime_group_membership curr_membership)
 {
     uint8_t node_id = (uint8_t) (!ENABLE_VIRTUAL_NODE_IDS ? keys_meta->last_writer_id :
-                                  keys_meta->last_writer_id % MACHINE_NUM);
+                                  keys_meta->last_writer_id % machine_num);
 
     if(node_is_in_membership(curr_membership, node_id))
         op_ptr->op_meta.state = ST_GET_STALL;

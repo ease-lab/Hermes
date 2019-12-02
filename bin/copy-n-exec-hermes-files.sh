@@ -13,9 +13,8 @@ HOSTS=( ##### network  cluster #####
         )
 
 FILES=(
-#        "hermes"
         "run-hermes.sh"
-        "hermes-wings"
+        "hermes"
       )
 
 
@@ -35,6 +34,10 @@ declare -a credits=(15)
 #declare -a credits=(30)
 #declare -a coalesce=(1 5 10 15)
 declare -a coalesce=(15)
+declare -a num_machines=(2)
+# Set LAT_WORKER to -1 to disable latency measurement or to worker id (i.e., from 0 up to [num-worker - 1])
+LAT_WORKER="-1"
+#LAT_WORKER="0"
 
 USERNAME="s1671850" # "user"
 LOCAL_HOST=`hostname`
@@ -65,22 +68,17 @@ then
       echo "\$PASS is empty! --> sudo pass for remotes is expected to be the first arg"
 else
       echo "\$PASS is OK!"
-#	  parallel "echo ${PASS} | ssh -tt {} $'${REMOTE_COMMAND}' | cat" ::: sanantonio
-#	  parallel "echo ${PASS} | ssh -tt {} $'${REMOTE_COMMAND}' > ${OUTP_FOLDER}/{}.out" ::: sanantonio
       cd ${HOME_FOLDER}
-#      echo ${PASS} | sudo -S bash ./run-hermes.sh > ${OUTP_FOLDER}/${LOCAL_HOST}.out &
-
-#	  parallel "echo ${PASS} | ssh -tt {} $'${REMOTE_COMMAND}' > ${OUTP_FOLDER}/{}.out" ::: $(echo ${HOSTS[@]/$LOCAL_HOST}) &
-#      echo ${PASS} | ./run-hermes.sh > ${OUTP_FOLDER}/${LOCAL_HOST}.out
 
       # Execute locally and remotely
+  for M in "${num_machines[@]}"; do
     for RMW in "${rmw_ratios[@]}"; do
       for WR in "${write_ratios[@]}"; do
         for W in "${num_workers[@]}"; do
           for BA in "${batch_sizes[@]}"; do
             for CRD in "${credits[@]}"; do
               for COAL in "${coalesce[@]}"; do
-                 args=" -R ${RMW} -w ${WR} -W ${W} -b ${BA} -c ${CRD} -C ${COAL}"
+                 args=" -M ${M} -R ${RMW} -w ${WR} -W ${W} -b ${BA} -c ${CRD} -C ${COAL} -l ${LAT_WORKER}"
                  echo ${PASS} | ./run-hermes.sh ${args} &
                  sleep 2
 	             parallel "echo ${PASS} | ssh -tt {} $'${REMOTE_COMMAND} ${args}'" ::: $(echo ${HOSTS[@]/$LOCAL_HOST}) >/dev/null
@@ -90,13 +88,14 @@ else
 	    done
 	  done
 	done
+  done
 
       # Gather remote files
 	  parallel "scp {}:${RESULT_FOLDER}* ${RESULT_OUT_FOLDER} " ::: $(echo ${HOSTS[@]/$LOCAL_HOST})
 	  echo "xPut result files copied from: {${HOSTS[@]/$LOCAL_HOST}}"
 
 	  # group all files
-      ls ${RESULT_OUT_FOLDER} | awk -F '-' '!x[$1]++{print $1}' | while read -r line; do
+      ls ${RESULT_OUT_FOLDER} | awk -F '-' '!x[$2]++{print $1}' | while read -r line; do
           #// Create an intermediate file print the 3rd line for all files with the same prefix to the same file
           awk 'FNR==3 {print $0}' ${RESULT_OUT_FOLDER}/$line* > ${RESULT_OUT_FOLDER_MERGE}/$line-inter.txt
           #   Sum up the xPut of the (3rd iteration) from every node to create the final file

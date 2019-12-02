@@ -4,7 +4,7 @@
 
 #ifndef WINGS_API_H
 #define WINGS_API_H
-#include "../libhrd/hrd.h"
+#include "hrd.h"
 #include "../utils/bit_vector.h"
 
 /// WARNING!!

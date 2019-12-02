@@ -56,11 +56,13 @@ WRITE_RATIO="-1"
 MAX_COALESCE="-1"
 MAX_BATCH_SIZE="-1"
 RMW_RATIO="-1"
+NUM_MACHINES="-1"
+LAT_WORKER="-1"
 
 # Each letter is an option argument, if it's followed by a collum
 # it requires an argument. The first colum indicates the '\?'
 # help/error command when no arguments are given
-while getopts ":W:w:R:C:c:b:h" opt; do
+while getopts ":W:w:l:R:C:c:b:M:h" opt; do
   case $opt in
      W)
        NUM_WORKERS=$OPTARG
@@ -79,6 +81,12 @@ while getopts ":W:w:R:C:c:b:h" opt; do
        ;;
      b)
        MAX_BATCH_SIZE=$OPTARG
+       ;;
+     M)
+       NUM_MACHINES=$OPTARG
+       ;;
+     l)
+       LAT_WORKER=$OPTARG
        ;;
      h)
       echo "Usage: -W <# workers> -w <write ratio>  (x1000 --> 10 for 1%)"
@@ -119,11 +127,13 @@ sleep 1
 
 blue "Running hermes threads"
 sudo LD_LIBRARY_PATH=/usr/local/lib/ -E \
-    ./hermes-wings                      \
+    ./hermes                            \
 	--machine-id $machine_id            \
 	--is-roce 0                         \
 	--dev-name "mlx5_0"                 \
+	--num-machines ${NUM_MACHINES}      \
 	--num-workers  ${NUM_WORKERS}       \
+	--lat-worker   ${LAT_WORKER}        \
 	--rmw-ratio    ${RMW_RATIO}         \
 	--write-ratio  ${WRITE_RATIO}       \
 	--credits      ${CREDITS}           \

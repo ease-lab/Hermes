@@ -15,14 +15,7 @@
  * opcode is more than MICA_OP_PUT. And then we can convert a HERD opcode to
  * a MICA opcode by subtracting HERD_MICA_OFFSET from it.
  */
-#define MICA_OP_GET 111
 #define MICA_OP_PUT 112
-#define MICA_OP_MULTI_GET 117
-#define MICA_MAX_BATCH_SIZE 512
-
-#define MICA_RESP_GET_SUCCESS 113
-#define MICA_RESP_PUT_SUCCESS 114
-#define MICA_RESP_GET_FAIL 115
 
 /* Ensure that a mica_op is cacheline aligned */
 #define MICA_OP_METADATA (sizeof(struct mica_key) + sizeof(uint8_t) + sizeof(uint8_t))
@@ -51,14 +44,9 @@ struct mica_resp {
 	uint8_t *val_ptr;
 };
 
-struct remote_meta {
-	unsigned int __unused :32;
-	unsigned int clt_gid  :32;
-};
 /* Fixed-size 16 byte keys */
 struct mica_key {
-	//unsigned long long __unused	:64;
-	struct remote_meta rem_meta ;
+	unsigned long long __unused	:64;
 	unsigned int bkt			:32;
 	unsigned int server			:16;
 	unsigned int tag			:16;
@@ -69,13 +57,6 @@ struct mica_op {
 	uint8_t opcode;
 	uint8_t val_len;
 	uint8_t value[MICA_MAX_VALUE];
-};
-
-struct wrkr_coalesce_mica_op {
-	struct mica_key key;
-	uint8_t opcode;
-	uint8_t val_len;
-	uint8_t value[WRKR_COALESCING_BUF_SLOT_SIZE];
 };
 
 struct mica_slot {
@@ -116,18 +97,6 @@ struct mica_kv {
 	long long num_index_evictions; /* Number of entries evicted from index */
 };
 
-
-struct ud_req {
-	struct ibv_grh grh;
-	struct mica_op m_op;
-};
-
-struct wrkr_ud_req {
-	struct ibv_grh grh;
-	struct mica_op m_op;
-	uint8_t extra_bytes[EXTRA_WORKER_REQ_BYTES];
-};
-
 void mica_init(struct mica_kv *kv,
 	int instance_id, int node_id, int num_bkts, uint64_t log_cap);
 
@@ -135,16 +104,10 @@ void mica_init(struct mica_kv *kv,
 void mica_insert_one(struct mica_kv *kv,
 	struct mica_op *op, struct mica_resp *res);
 
-/* Batched operation. PUTs can resolve to UPDATE or INSERT */
-void mica_batch_op(struct mica_kv *kv,
-	int n, struct mica_op **op, struct mica_resp *resp);
-
 /* Helpers */
 uint128* mica_gen_keys(int n);
-void mica_populate_fixed_len(struct mica_kv *kv, int n, int val_len);
 
-/* Debug functions */
-void mica_print_bucket(struct mica_kv *kv, int bkt_idx);
+///* Debug functions */
 void mica_print_op(struct mica_op *op);
 
 #endif

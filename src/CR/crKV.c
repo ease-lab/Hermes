@@ -23,7 +23,7 @@ head_id()
 static inline uint8_t
 tail_id()
 {
-	return MACHINE_NUM - 1;
+	return machine_num - 1;
 }
 
 

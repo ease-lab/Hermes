@@ -1,5 +1,14 @@
 #include "util.h"
 
+static inline void xput_file_name(char *filename)
+{
+    char* path = "../../results/xput/per-node";
+
+    sprintf(filename, "%s/%s_xPut_m_%d_wr_%.1f_rmw_%.1f_wk_%d_b_%d_c_%d%s-%d.txt", path,
+            is_CR == 1? "CR" : "Hermes",
+            machine_num, update_ratio/10.0, rmw_ratio/10.0, num_workers, max_batch_size,
+            credits_num, FEED_FROM_TRACE == 1 ? "_a_0.99": "_uni", machine_id);
+}
 
 //assuming microsecond latency
 void dump_xput_stats(double xput_in_miops)
@@ -10,14 +19,9 @@ void dump_xput_stats(double xput_in_miops)
 
     FILE *xput_stats_fd;
     char filename[128];
-    char* path = "../../results/xput/per-node";
+    xput_file_name(filename);
+
     const char* open_mode = no_func_calls == 0 ? "w" : "a";
-
-    sprintf(filename, "%s/%s_xPut_m_%d_wr_%.1f_rmw_%.1f_wk_%d_b_%d_c_%d%s-%d.csv", path,
-            is_CR == 1? "CR" : "Hermes",
-            MACHINE_NUM, update_ratio/10.0, rmw_ratio/10.0, num_workers, max_batch_size,
-            credits_num, FEED_FROM_TRACE == 1 ? "_a_0.99": "_uni", machine_id);
-
     xput_stats_fd = fopen(filename, open_mode);
 
     fprintf(xput_stats_fd, "node%d_miops-%d: %.2f\n", machine_id, no_func_calls, xput_in_miops);
@@ -37,7 +41,7 @@ void dump_latency_stats(void)
 
     sprintf(filename, "%s/%s_latency_m_%d_w_%d_b_%d_wr_%d_rmw_%d_c_%d%s.csv", path,
             is_CR == 1? "CR" : "Hermes",
-            MACHINE_NUM, num_workers, max_batch_size, update_ratio,
+            machine_num, num_workers, max_batch_size, update_ratio,
             rmw_ratio, credits_num, FEED_FROM_TRACE == 1 ? "_a_0.99": "");
 
     latency_stats_fd = fopen(filename, "w");
@@ -81,10 +85,10 @@ void * print_stats_thread(void *no_arg)
     double total_wr_throughput = 0;
     double total_rmw_throughput = 0;
 //    int sleep_time = 20;
-    struct worker_stats curr_w_stats[WORKERS_PER_MACHINE], prev_w_stats[WORKERS_PER_MACHINE];
+    struct worker_stats curr_w_stats[MAX_WORKERS_PER_MACHINE], prev_w_stats[MAX_WORKERS_PER_MACHINE];
     struct stats all_stats;
     sleep(4);
-    memcpy(prev_w_stats, (void*) w_stats, WORKERS_PER_MACHINE * (sizeof(struct worker_stats)));
+    memcpy(prev_w_stats, (void*) w_stats, MAX_WORKERS_PER_MACHINE * (sizeof(struct worker_stats)));
     struct timespec start, end;
     clock_gettime(CLOCK_REALTIME, &start);
     while(true) {
@@ -92,7 +96,7 @@ void * print_stats_thread(void *no_arg)
         clock_gettime(CLOCK_REALTIME, &end);
         double seconds = (end.tv_sec - start.tv_sec) + (double) (end.tv_nsec - start.tv_nsec) / 1000000001;
         start = end;
-        memcpy(curr_w_stats, (void*) w_stats, WORKERS_PER_MACHINE * (sizeof(struct worker_stats)));
+        memcpy(curr_w_stats, (void*) w_stats, MAX_WORKERS_PER_MACHINE * (sizeof(struct worker_stats)));
         all_worker_xput = 0;
         all_worker_wrs = 0;
         all_worker_rmws = 0;
@@ -105,7 +109,12 @@ void * print_stats_thread(void *no_arg)
             exit(0);
         }
         if (EXIT_ON_STATS_PRINT == 1 && print_count == PRINT_NUM_STATS_BEFORE_EXITING) {
-            if (MEASURE_LATENCY && machine_id == 0) dump_latency_stats();
+            if (worker_measuring_latency != -1 && machine_id == 0) dump_latency_stats();
+            if(DUMP_XPUT_STATS_TO_FILE){
+                char filename[128];
+                xput_file_name(filename);
+                printf("xPut stats (of this node) saved at %s\n", filename);
+            }
             printf("---------------------------------------\n");
             printf("------------ RUN FINISHED -------------\n");
             printf("---------------------------------------\n");
@@ -125,7 +134,7 @@ void * print_stats_thread(void *no_arg)
         }
 
 
-        memcpy(prev_w_stats, curr_w_stats, WORKERS_PER_MACHINE * (sizeof(struct worker_stats)));
+        memcpy(prev_w_stats, curr_w_stats, MAX_WORKERS_PER_MACHINE * (sizeof(struct worker_stats)));
         total_throughput = all_worker_xput / seconds;
         total_wr_throughput = all_worker_wrs / seconds;
         total_rmw_throughput = all_worker_rmws / seconds;

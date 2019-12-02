@@ -18,14 +18,14 @@ head_id(void)
 static inline uint8_t
 tail_id(void)
 {
-	return MACHINE_NUM - 1;
+	return machine_num - 1;
 }
 
 
 static inline uint8_t
 next_node_in_chain(void)
 {
-	return (uint8_t) ((machine_id + 1) % MACHINE_NUM);
+	return (uint8_t) ((machine_id + 1) % machine_num);
 }
 
 static inline uint8_t
@@ -415,13 +415,13 @@ remote_read_resp_copy_and_modify_elem(uint8_t* msg_to_send, uint8_t* triggering_
 void
 print_ops_and_remote_write_ops(spacetime_op_t* ops, spacetime_op_t* remote_writes)
 {
-//	for(int i = 0; i < MAX_BATCH_OPS_SIZE; ++i)
+//	for(int i = 0; i < MAX_BATCH_KVS_OPS_SIZE; ++i)
     for(int i = 0; i < max_batch_size; ++i)
 		printf("ops[%d]: state-> %s, key-> %lu \n", i,
 			   code_to_str(ops[i].op_meta.state), *((uint64_t*) &ops[i].op_meta.key));
 
 	if(machine_id == head_id())
-//		for(int i = 0; i < MAX_BATCH_OPS_SIZE; ++i)
+//		for(int i = 0; i < MAX_BATCH_KVS_OPS_SIZE; ++i)
         for(int i = 0; i < max_batch_size; ++i)
 			printf("remote_writes[%d]: state-> %s, key-> %lu \n", i,
 				   code_to_str(remote_writes[i].op_meta.state), *((uint64_t*) &remote_writes[i].op_meta.key));
@@ -524,7 +524,7 @@ get_first_free_slot(const uint8_t* free_slot_array, uint16_t start_pos, uint16_t
 static inline uint16_t
 cr_move_stalled_writes_to_top_n_return_free_space(spacetime_op_t *remote_writes)
 {
-	uint8_t free_slot_array[MAX_BATCH_OPS_SIZE] = {0};
+	uint8_t free_slot_array[MAX_BATCH_KVS_OPS_SIZE] = {0};
 	uint16_t free_slots = 0;
 	uint16_t last_free_slot = 0; //used to avoid re-iterating already non-empty slots
 	for(int i = 0; i < max_batch_size; ++i){
@@ -587,18 +587,21 @@ run_worker(void *arg)
 {
     assert(rmw_ratio == 0);
 	assert(is_CR == 1);
-    assert(credits_num % MACHINE_NUM == 0); // CR ONLY
+    assert(credits_num % machine_num == 0); // CR ONLY
 	assert(ENABLE_COALESCE_OF_HOT_REQS == 0);
 
 	///WARNING: only defines (no dynamically passed cli arguments) work for cr worker
 	assert(max_coalesce <= MAX_REQ_COALESCE);
-	assert(num_workers <= WORKERS_PER_MACHINE);
-	assert(max_batch_size <= MAX_BATCH_OPS_SIZE);
-	assert(credits_num <= CREDITS_PER_REMOTE_WORKER);
+	assert(num_workers <= MAX_WORKERS_PER_MACHINE);
+	assert(max_batch_size <= MAX_BATCH_KVS_OPS_SIZE);
+	assert(credits_num <= MAX_CREDITS_PER_REMOTE_WORKER_CR);
+    const uint16_t credit_num = MAX_CREDITS_PER_REMOTE_WORKER_CR;
 
 	struct thread_params params = *(struct thread_params *) arg;
 	uint16_t worker_lid = (uint16_t) params.id;	// Local ID of this worker thread
-	uint16_t worker_gid = (uint16_t) (machine_id * WORKERS_PER_MACHINE + params.id);	// Global ID of this worker thread
+	uint16_t worker_gid = (uint16_t) (machine_id * num_workers + params.id);	// Global ID of this worker thread
+	//TODO check if the previous assignment (below is the correct one)
+//    uint16_t worker_gid = (uint16_t) (machine_id * MAX_WORKERS_PER_MACHINE + params.id);	// Global ID of this worker thread
 
 
 
@@ -644,29 +647,29 @@ run_worker(void *arg)
     uint8_t rem_writes_inlining = inv_inlining;
     uint8_t rem_reads_inlining  = inv_inlining;
 
-
     if(CR_ENABLE_EARLY_INV_CRDS){
 		wings_ud_channel_init(inv_ud_c, inv_qp_name, REQ, MAX_REQ_COALESCE, sizeof(spacetime_inv_t), 0,
 							  inv_inlining, is_hdr_only, is_bcast, disable_crd_ctrl, 1,
-							  inv_crd_ud_c, CREDITS_PER_REMOTE_WORKER, MACHINE_NUM, (uint8_t) machine_id, stats_on, prints_on);
+							  inv_crd_ud_c, credit_num, machine_num, (uint8_t) machine_id, stats_on, prints_on);
 
 		wings_ud_channel_init(ack_ud_c, ack_qp_name, RESP, MAX_REQ_COALESCE, sizeof(spacetime_ack_t), 0,
 							  ack_inlining, is_hdr_only, is_bcast, 1, expl_crd_ctrl,
-							  NULL, CR_ACK_CREDITS, MACHINE_NUM, (uint8_t) machine_id, stats_on, prints_on);
+							  NULL, CR_ACK_CREDITS, machine_num, (uint8_t) machine_id, stats_on, prints_on);
 	} else {
 		wings_ud_channel_init(inv_ud_c, inv_qp_name, REQ, MAX_REQ_COALESCE, sizeof(spacetime_inv_t), 0,
 							  inv_inlining, is_hdr_only, is_bcast, disable_crd_ctrl, expl_crd_ctrl,
-							  ack_ud_c, CREDITS_PER_REMOTE_WORKER, MACHINE_NUM, (uint8_t) machine_id, stats_on, prints_on);
+							  ack_ud_c, credit_num, machine_num, (uint8_t) machine_id, stats_on, prints_on);
 
 		wings_ud_channel_init(ack_ud_c, ack_qp_name, RESP, MAX_REQ_COALESCE, sizeof(spacetime_ack_t), 0,
 							  ack_inlining, is_hdr_only, is_bcast, disable_crd_ctrl, expl_crd_ctrl,
-							  inv_ud_c, CREDITS_PER_REMOTE_WORKER, MACHINE_NUM, (uint8_t) machine_id, stats_on, prints_on);
+							  inv_ud_c, credit_num, machine_num, (uint8_t) machine_id, stats_on, prints_on);
 	}
 
+    const uint16_t cr_remote_write_credits = credit_num / machine_num;
 	wings_ud_channel_init(rem_writes_ud_c, rem_writes_qp_name, REQ, MAX_REQ_COALESCE,
 						  sizeof(spacetime_op_t), 0, rem_writes_inlining,
 						  is_hdr_only, is_bcast, disable_crd_ctrl, 1, rem_writes_crd_ud_c,
-						  CR_REMOTE_WRITES_CREDITS, MACHINE_NUM, (uint8_t) machine_id, stats_on, prints_on);
+						  cr_remote_write_credits, machine_num, (uint8_t) machine_id, stats_on, prints_on);
 
 	///////////////
 	///<4th stage>
@@ -674,12 +677,12 @@ run_worker(void *arg)
 		wings_ud_channel_init(rem_reads_ud_c, rem_reads_qp_name, REQ, MAX_REQ_COALESCE,
 							  sizeof(spacetime_op_t), 0, rem_reads_inlining,
 							  is_hdr_only, is_bcast, disable_crd_ctrl, expl_crd_ctrl, rem_read_resp_ud_c,
-							  CR_REMOTE_READS_CREDITS, MACHINE_NUM, (uint8_t) machine_id, stats_on, prints_on);
+							  CR_REMOTE_READS_CREDITS, machine_num, (uint8_t) machine_id, stats_on, prints_on);
 
 		wings_ud_channel_init(rem_read_resp_ud_c, rem_read_resps_qp_name, RESP, MAX_REQ_COALESCE,
 							  sizeof(spacetime_op_t), 0, rem_reads_inlining,
 							  is_hdr_only, is_bcast, disable_crd_ctrl, expl_crd_ctrl, rem_reads_ud_c,
-							  CR_REMOTE_READS_CREDITS, MACHINE_NUM, (uint8_t) machine_id, stats_on, prints_on);
+							  CR_REMOTE_READS_CREDITS, machine_num, (uint8_t) machine_id, stats_on, prints_on);
 	}
 	///</4th stage>
 	///////////////
@@ -694,7 +697,7 @@ run_worker(void *arg)
 	spacetime_inv_t *inv_recv_ops;
 	spacetime_ack_t *ack_recv_ops;
 	spacetime_val_t *val_recv_ops; // UNUSED!
-    uint32_t coh_ops_len = (uint32_t) (credits_num * REMOTE_MACHINES * max_coalesce); //credits * remote_machines * max_req_coalesce
+    uint32_t coh_ops_len = (uint32_t) (credits_num * machine_num * max_coalesce); //credits * remote_machines * max_req_coalesce
 
 	setup_kvs_buffs(&ops, &inv_recv_ops, &ack_recv_ops, &val_recv_ops);
 
@@ -736,7 +739,7 @@ run_worker(void *arg)
 	uint32_t trace_iter = 0;
 	uint16_t rolling_idx = 0, remote_reads_rolling_idx = 0;
 	uint16_t invs_polled = 0, acks_polled = 0, remote_writes_polled = 0;
-    uint32_t num_of_iters_serving_op[MAX_BATCH_OPS_SIZE] = {0};
+    uint32_t num_of_iters_serving_op[MAX_BATCH_KVS_OPS_SIZE] = {0};
 
 	uint16_t free_rem_write_slots = max_batch_size;
 	/// Spawn stats thread
@@ -786,7 +789,7 @@ run_worker(void *arg)
 		if (update_ratio > 0) {
 
 			if(machine_id == head_id()) {
-                const uint16_t max_outstanding_writes = (MACHINE_NUM - 1) * CR_ACK_CREDITS;
+                const uint16_t max_outstanding_writes = (machine_num - 1) * CR_ACK_CREDITS;
 
                 if(!CR_ENABLE_EARLY_INV_CRDS ||
                    inv_ud_c->stats.send_total_msgs - ack_ud_c->stats.recv_total_msgs <= max_outstanding_writes)
