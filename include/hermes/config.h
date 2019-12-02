@@ -23,12 +23,12 @@
 
 // Default workload writes / updates accesses (the rest are reads)
 #define DEFAULT_UPDATE_RATIO  1000  // both writes and RMWs (RMW_RATIO inderectly provides WRITE_RATIO)
-#define DEFAULT_RMW_RATIO        0  // percentage of UPDATE_RATIO to be RMWs
 #define ENABLE_RMWs              0  // if RMWs is not enabled then all UPDATE_RATIO == WRITE_RATIO
+#define DEFAULT_RMW_RATIO        0  // percentage of UPDATE_RATIO to be RMWs
 
 
 // Max operations per-thread to batches to the KVS (either received packets or read/write/RMW requests)
-#define MAX_BATCH_KVS_OPS_SIZE 250 //50 // up to 254
+#define MAX_BATCH_KVS_OPS_SIZE 250 // up to 254
 
 
 /*-------------------------------------------------
@@ -36,10 +36,9 @@
 --------------------------------------------------*/
 // Request coalescing (max --readily available-- messages to batch in a single RDMA packet)
 #define MAX_REQ_COALESCE        15
-//#define MAX_REQ_COALESCE MAX_BATCH_KVS_OPS_SIZE
 
 // Flow control
-#define MAX_CREDITS_PER_REMOTE_WORKER (1 * MAX_REQ_COALESCE) // Hermes
+#define MAX_CREDITS_PER_REMOTE_WORKER (MAX_REQ_COALESCE)
 
 // Request inlining
 #define DISABLE_INLINING         0
@@ -72,7 +71,7 @@
 
 
 // REQUESTS
-#define FEED_FROM_TRACE 0 //0
+#define FEED_FROM_TRACE 0
 #define ZIPF_EXPONENT_OF_TRACE 99 // if FEED_FROM_TRACE == 1 | this is divided by 100 (e.g. use 99 for  a = 0.99)
 #define NUM_OF_REP_REQS K_256     // if FEED_FROM_TRACE == 0
 #define USE_A_SINGLE_KEY 0        // if FEED_FROM_TRACE == 0
@@ -84,8 +83,8 @@
 /*-------------------------------------------------
 ---------------- Debug and others -----------------
 --------------------------------------------------*/
-//DBG Prints
-///Warning some prints assume that there are no faults (multiplications with REMOTE_MACHINES)
+// DBG Prints
+/// Warning some prints assume that there are no faults (multiplications with REMOTE_MACHINES)
 #define MAX_THREADS_TO_PRINT 1
 #define ENABLE_REQ_PRINTS 0
 #define ENABLE_BATCH_OP_PRINTS 0
@@ -93,21 +92,21 @@
 #define ENABLE_ACK_PRINTS 0
 #define ENABLE_VAL_PRINTS 0
 
-//Stats prints
+// Stats prints
 #define PRINT_STATS_EVERY_MSECS 4000 //5000 //10000 //10
 #define PRINT_WORKER_STATS 0
 
-//Stats
+// Stats
 #define EXIT_ON_STATS_PRINT 1
-#define PRINT_NUM_STATS_BEFORE_EXITING 5 //80
+#define PRINT_NUM_STATS_BEFORE_EXITING 5
 #define DUMP_XPUT_STATS_TO_FILE 1
 
 // FAILURE DETECTION (RM)
-#define ENABLE_HADES_FAILURE_DETECTION 0 //0
+#define ENABLE_HADES_FAILURE_DETECTION 0
 #define WORKER_WITH_FAILURE_DETECTOR 0
 static_assert(ENABLE_HADES_FAILURE_DETECTION == 0, "WARNING HADES is currently not working");
 
-//FAKE NODE FAILURE
+// FAKE NODE FAILURE
 #define FAKE_FAILURE 0
 #define NODE_TO_FAIL 2
 #define ROUNDS_BEFORE_FAILURE 2
@@ -128,8 +127,7 @@ static_assert(MAX_WORKERS_PER_MACHINE < TOTAL_HW_CORES - 1, "Leave at least a hw
 #define ENABLE_HYPERTHREADING 1
 #define SOCKET_TO_START_SPAWNING_THREADS 0
 
-
-///Debug
+// Debug
 //#define SPACETIME DEBUG 2
 #ifndef SPACETIME_DEBUG
 # define SPACETIME_DEBUG 0
@@ -137,7 +135,7 @@ static_assert(MAX_WORKERS_PER_MACHINE < TOTAL_HW_CORES - 1, "Leave at least a hw
 
 
 ////////////////////////////////
-/// NOT TUNABLE
+/// Hermes NOT TUNABLE
 ////////////////////////////////
 /*-------------------------------------------------
 ----------------- MAX HERMES OPS SIZE -------------
@@ -168,7 +166,6 @@ typedef enum {
 --------------------------------------------------*/
 #define CR_ENABLE_REMOTE_READS   0
 #define CR_REMOTE_READS_CREDITS 20
-//#define CR_REMOTE_READS_MAX_REQ_COALESCE MAX_REQ_COALESCE
 
 #define MAX_CREDITS_PER_REMOTE_WORKER_CR 250 //(MAX_BATCH_KVS_OPS_SIZE) // CR
 

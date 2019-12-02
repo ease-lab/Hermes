@@ -232,10 +232,10 @@ void
 print_total_send_recv_msgs(ud_channel_t *inv_ud_c, ud_channel_t *ack_ud_c,
 						   ud_channel_t *val_ud_c, ud_channel_t *crd_ud_c)
 {
-	green_printf ("Total Send: invs %d, acks %d, vals %d, crds %d\n",
+    colored_printf(GREEN, "Total Send: invs %d, acks %d, vals %d, crds %d\n",
 				  inv_ud_c->stats.send_total_msgs, ack_ud_c->stats.send_total_msgs,
 				  val_ud_c->stats.send_total_msgs, crd_ud_c->stats.send_total_msgs);
-	green_printf ("Total Recv: invs %d, acks %d, vals %d, crds %d\n",
+    colored_printf(GREEN, "Total Recv: invs %d, acks %d, vals %d, crds %d\n",
 				  inv_ud_c->stats.recv_total_msgs, ack_ud_c->stats.recv_total_msgs,
 				  val_ud_c->stats.recv_total_msgs, crd_ud_c->stats.recv_total_msgs);
 }
@@ -413,7 +413,7 @@ run_worker(void *arg)
 	/// Spawn stats thread
 	if (worker_lid == 0){
         if (spawn_stats_thread() != 0)
-            red_printf("Stats thread was not successfully spawned \n");
+            colored_printf(RED, "Stats thread was not successfully spawned \n");
     }
 
     struct timespec stopwatch_for_req_latency;

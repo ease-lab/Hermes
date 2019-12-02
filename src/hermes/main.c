@@ -208,14 +208,11 @@ int main(int argc, char *argv[])
 		pthread_attr_setaffinity_np(&attr, sizeof(cpu_set_t), &cpus_w);
 		pthread_create(&thread_arr[i], &attr, run_worker, &param_arr[i]);
 	}
-
-	yellow_printf("Sizes: {Op: %d, Object Meta %d, Value %d},\n",
+    colored_printf(YELLOW, "Sizes: {Op: %d, Object Meta %d, Value %d},\n",
 				  sizeof(spacetime_op_t), sizeof(spacetime_object_meta), ST_VALUE_SIZE);
-
-	yellow_printf("Coherence msg Sizes: {Inv: %d, Ack: %d, Val: %d}\n",
+    colored_printf(YELLOW, "Coherence msg Sizes: {Inv: %d, Ack: %d, Val: %d}\n",
 				  sizeof(spacetime_inv_t), sizeof(spacetime_ack_t), sizeof(spacetime_val_t));
-
-    yellow_printf("Max Coalesce Packet Sizes: {Inv: %d, Ack: %d, Val: %d}\n",
+    colored_printf(YELLOW, "Max Coalesce Packet Sizes: {Inv: %d, Ack: %d, Val: %d}\n",
                   sizeof(wings_ud_send_pkt_t) + max_coalesce * sizeof(spacetime_inv_t),
                   sizeof(wings_ud_send_pkt_t) + max_coalesce * sizeof(spacetime_ack_t),
                   sizeof(wings_ud_send_pkt_t) + max_coalesce * sizeof(spacetime_val_t));

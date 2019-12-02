@@ -42,8 +42,7 @@ hades_crd_skip_or_get_sender_id(uint8_t *req)
 static inline void
 print_send_hbt(ud_channel_t *hbeat_c, hades_ctx_t *ctx)
 {
-    yellow_printf("Send view[%lu]: {node %d, epoch_id %d} ",
-                  hbeat_c->stats.send_total_msgs,
+    colored_printf(YELLOW, "Send view[%lu]: {node %d, epoch_id %d} ", hbeat_c->stats.send_total_msgs,
                   ctx->intermediate_local_view.node_id, ctx->intermediate_local_view.epoch_id);
     bv_print_enhanced(ctx->curr_g_membership);
     printf("\n");
@@ -53,7 +52,7 @@ static inline void
 print_recved_hbts(ud_channel_t *hbeat_c, hades_view_t* hbt_array, uint16_t no_hbts)
 {
     for(int i = 0; i < no_hbts; ++i){
-        green_printf("Recved view[%lu]: {node %d, epoch_id %d} ",
+        colored_printf(GREEN, "Recved view[%lu]: {node %d, epoch_id %d} ",
                      hbeat_c->stats.recv_total_msgs,
                      hbt_array[i].node_id, hbt_array[i].epoch_id);
         bv_print_enhanced(hbt_array[i].view);
@@ -75,14 +74,14 @@ check_if_majority_is_rechable(hades_ctx_t *h_ctx)
     if(bv_no_setted_bits(h_ctx->last_local_view.view) >= majority_of_nodes(h_ctx) &&
        bv_no_setted_bits(h_ctx->intermediate_local_view.view) < majority_of_nodes(h_ctx))
     {
-        red_printf("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n");
-        red_printf("~ [HADES WARNING]: I cannot reach a majority ! ~\n");
-        red_printf("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n");
-        yellow_printf("Last membership (epoch %d): ", h_ctx->intermediate_local_view.epoch_id);
+        colored_printf(RED, "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n");
+        colored_printf(RED, "~ [HADES WARNING]: I cannot reach a majority ! ~\n");
+        colored_printf(RED, "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n");
+        colored_printf(YELLOW, "Last membership (epoch %d): ", h_ctx->intermediate_local_view.epoch_id);
         bv_print_enhanced(h_ctx->curr_g_membership);
-        yellow_printf("My current view: ");
+        colored_printf(YELLOW, "My current view: ");
         bv_print_enhanced(h_ctx->intermediate_local_view.view);
-        red_printf("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n");
+        colored_printf(RED, "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n");
     }
 }
 
@@ -108,7 +107,7 @@ skip_to_apply_fake_link_failure(uint8_t node_id)
            time_elapsed_in_sec(ts_fake_link_failure) < STOP_FAKE_LINK_FAILURE_AFTER_SEC)
         {
             if(link_has_failed == 0){
-                red_printf("%sLink failure between node %d and %d\n",
+                colored_printf(RED, "%sLink failure between node %d and %d\n",
                            FAKE_ONE_WAY_LINK_FAILURE ? "One-way " : "",
                            FAKE_LINK_FAILURE_NODE_A, FAKE_LINK_FAILURE_NODE_B);
                 link_has_failed = 1;
@@ -233,7 +232,7 @@ update_view_n_membership(hades_ctx_t *h_ctx)
 
 //                printf("Max epoch id: %d, same_w_local_membership: %d\n",
 //                        max_epoch_id, same_w_local_membership);
-                yellow_printf("[HADES] MEMBERSHIP CHANGE --> [epoch %d], ", h_ctx->intermediate_local_view.epoch_id);
+                colored_printf(YELLOW, "[HADES] MEMBERSHIP CHANGE --> [epoch %d], ", h_ctx->intermediate_local_view.epoch_id);
                 bv_print(h_ctx->curr_g_membership);
                 printf("\n");
 //                bv_print_enhanced(h_ctx->curr_g_membership);

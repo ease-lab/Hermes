@@ -1,24 +1,42 @@
 #!/usr/bin/env bash
 
 allIPs=(
-            ####    network cluster    ####
-#          houston      sanantonio      austin
-        129.215.165.8 129.215.165.7 129.215.165.9
+### TO BE FILLED: Please provide all cluster IPs
+    # Node w/ first IP (i.e., "manager") must run script before the rest of the nodes
+    # (instantiates a memcached to setup RDMA connections)
+    #
+####    network cluster    ####
+#          houston
+        129.215.165.8
+#         sanantonio
+        129.215.165.7
+#           austin
+        129.215.165.9
 #        indianapolis
         129.215.165.6
 #          philly
         129.215.165.5
 #          atlanata
         129.215.165.1
-            ####    compute cluster    ####
-#         baltimore     chicago       detroit
-       129.215.165.2 129.215.165.3 129.215.165.4
+####    compute cluster    ####
+#          chicago
+        129.215.165.3
+#          detroit
+        129.215.165.4
+#         baltimore
+        129.215.165.2
         )
+
+### TO BE FILLED: Modify to get the local IP of the node running the script (must be one of the cluster nodes)
 localIP=$(ip addr | grep 'state UP' -A2 | grep 'inet 129.'| awk '{print $2}' | cut -f1  -d'/')
 
+##########################################
+### NO NEED TO CHANGE BELOW THIS POINT ###
+##########################################
 
-echo LOCAL_IP : "$localIP"
 machine_id=-1
+echo LOCAL_IP : "$localIP"
+
 
 for i in "${!allIPs[@]}"; do
 	if [  "${allIPs[i]}" ==  "$localIP" ]; then
@@ -29,24 +47,42 @@ for i in "${!allIPs[@]}"; do
 done
 
 
-#echo AllIps: "${allIPs[@]}"
-#echo RemoteIPs: "${remoteIPs[@]}"
 echo Machine-Id "$machine_id"
 
 
-export HRD_REGISTRY_IP="129.215.165.8" # I.E. HOUSTON
+export HRD_REGISTRY_IP="${allIPs[0]}" # I.E. first IP node (HOUSTON) has a memcache server (used to initialize RDMA QPs)
 export MLX5_SINGLE_THREADED=1
 export MLX5_SCATTER_TO_CQE=1
 
 sudo killall memcached
-sudo killall hermes-wings
+sudo killall hermes
+sudo killall hades
 sudo killall cr
+
 # A function to echo in blue color
 function blue() {
 	es=`tput setaf 4`
 	ee=`tput sgr0`
 	echo "${es}$1${ee}"
 }
+
+# free the  pages workers use
+blue "Removing SHM keys used by Spacetime / MICA KV"
+for i in `seq 0 28`; do
+	key=`expr 3185 + $i`
+	sudo ipcrm -M $key 2>/dev/null
+	key=`expr 4185 + $i`
+	sudo ipcrm -M $key 2>/dev/null
+done
+: ${HRD_REGISTRY_IP:?"Need to set HRD_REGISTRY_IP non-empty"}
+
+
+
+blue "Reset server QP registry"
+#memcached -l 0.0.0.0 1>/dev/null 2>/dev/null &
+memcached -l ${HRD_REGISTRY_IP} 1>/dev/null 2>/dev/null &
+sleep 1
+
 
 #### Get CLI arguments
 # Use -1 for the default (#define in config.h) values if not argument is passed
@@ -88,6 +124,7 @@ while getopts ":W:w:C:c:b:M:l:h" opt; do
      h)
       echo "Usage: -W <# workers> -w <write ratio>  (x1000 --> 10 for 1%)"
       echo "       -c <# credits> -b <max batch size> -C <max coalescing>"
+      echo "       -M <# nodes>   -l <latency worker> "
       exit 1
       ;;
     \?)
@@ -100,26 +137,6 @@ while getopts ":W:w:C:c:b:M:l:h" opt; do
       ;;
   esac
 done
-
-# free the  pages workers use
-blue "Removing SHM keys used by Spacetime / MICA KV"
-for i in `seq 0 28`; do
-	key=`expr 3185 + $i`
-	sudo ipcrm -M $key 2>/dev/null
-	key=`expr 4185 + $i`
-	sudo ipcrm -M $key 2>/dev/null
-done
-: ${HRD_REGISTRY_IP:?"Need to set HRD_REGISTRY_IP non-empty"}
-
-
-blue "Removing hugepages"
-shm-rm.sh 1>/dev/null 2>/dev/null
-
-
-blue "Reset server QP registry"
-#memcached -l 0.0.0.0 1>/dev/null 2>/dev/null &
-memcached -l ${HRD_REGISTRY_IP} 1>/dev/null 2>/dev/null &
-sleep 1
 
 blue "Running hermes threads"
 

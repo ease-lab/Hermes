@@ -31,7 +31,6 @@
 #include <netdb.h>
 // <vasilis>
 
-#define HRD_Q_DEPTH 128
 
 #define USE_BIG_OBJECTS 0
 #define EXTRA_CACHE_LINES 0
@@ -42,9 +41,6 @@
 
 #define HRD_QP_NAME_SIZE 200	/* Size (in bytes) of a queue pair name */
 #define HRD_RESERVED_NAME_PREFIX "__HRD_RESERVED_NAME_PREFIX"
-
-#define HRD_CONNECT_IB_ATOMICS 0
-
 
 
 #define KVS_VALUE_SIZE (USE_BIG_OBJECTS == 1 ? ((EXTRA_CACHE_LINES * 64) + BASE_VALUE_SIZE) : BASE_VALUE_SIZE) //(169 + 64)// 46 + 64 + 64//32 //(46 + 64)
@@ -57,6 +53,7 @@
  * DMA size in doorbell method of WQE fetch.
  */
 #define HRD_MAX_INLINE  188//(USE_BIG_OBJECTS == 1 ? ((EXTRA_CACHE_LINES * 64) + 60) : 60) //60 is what kalia had here//
+
 // This is required for ROCE not sure yet why
 // <vasilis>
 #define IB_PHYS_PORT 1
@@ -89,10 +86,6 @@ int is_roce;
 int machine_id;
 char *remote_IP, *local_IP;
 
-// returns the number of remote IP addresses and fills the remoteIPs array with them
-int getRemoteIPs(char***);
-void die(const char *);
-
 /* Registry info about a QP */
 struct hrd_qp_attr {
 	char name[HRD_QP_NAME_SIZE];
@@ -113,62 +106,48 @@ struct hrd_qp_attr {
 
 
 
-struct hrd_ctrl_blk {
+struct hrd_ud_ctrl_blk {
 
 	int local_hid;	/* Local ID on the machine this process runs on */
 
 	/* Info about the device/port to use for this control block */
 	struct ibv_context *ctx;
-	int port_index;	/* User-supplied. 0-based across all devices */
 	int device_id;	/* Resovled by libhrd from @port_index */
 	int dev_port_id;	/* 1-based within dev @device_id. Resolved by libhrd */
 	int numa_node_id;	/* NUMA node id */
 
 	struct ibv_pd *pd;	/* A protection domain for this control block */
 
-	/* Connected QPs */
-	int use_uc;
-	int num_conn_qps;
-	struct ibv_qp **conn_qp;
-	struct ibv_cq **conn_cq;
-	volatile uint8_t *conn_buf;	/* A buffer for RDMA over RC/UC QPs */
-	int conn_buf_size;
-	int conn_buf_shm_key;
-	struct ibv_mr *conn_buf_mr;
 
 	/* Datagram QPs */
 	int num_dgram_qps;
 	struct ibv_qp **dgram_qp;
 	struct ibv_cq **dgram_send_cq, **dgram_recv_cq;
 	volatile uint8_t *dgram_buf;	/* A buffer for RECVs on dgram QPs */
-	int dgram_buf_size;
 	int *recv_q_depth;
 	int *send_q_depth;
 	int dgram_buf_shm_key;
 	struct ibv_mr *dgram_buf_mr;
-
-	//struct ibv_wc *wc;	/* Array of work completions */
 };
 
 /* Major initialzation functions */
-struct hrd_ctrl_blk* hrd_ctrl_blk_init(int local_hid,
-									   int port_index, int numa_node_id,
-									   int num_conn_qps, int use_uc,
-									   volatile void *prealloc_conn_buf, int conn_buf_size, int conn_buf_shm_key,
-									   int num_dgram_qps, int dgram_buf_size, int dgram_buf_shm_key,
-									   int *recv_q_depth, int *send_q_depth);
 
-int hrd_ctrl_blk_destroy(struct hrd_ctrl_blk *cb);
+struct hrd_ud_ctrl_blk* hrd_ud_ctrl_blk_init(
+        int local_hid, int port_index,
+        int numa_node_id, /* -1 means don't use hugepages */
+        int num_dgram_qps, int dgram_buf_size,
+        int dgram_buf_shm_key, int *recv_q_depth, int *send_q_depth);
+
+int hrd_ud_ctrl_blk_destroy(struct hrd_ud_ctrl_blk *cb);
 
 
 /* RDMA resolution functions */
-struct ibv_device* hrd_resolve_port_index(struct hrd_ctrl_blk *cb,
+struct ibv_device* hrd_resolve_port_index(struct hrd_ud_ctrl_blk *cb,
 										  int port_index);
 
 uint16_t hrd_get_local_lid(struct ibv_context *ctx, int port_id);
 
-void hrd_create_conn_qps(struct hrd_ctrl_blk *cb);
-void hrd_create_dgram_qps(struct hrd_ctrl_blk *cb);
+void hrd_create_dgram_qps(struct hrd_ud_ctrl_blk *cb);
 
 /* Fill @wc with @num_comps comps from this @cq. Exit on error. */
 static inline uint32_t
@@ -210,10 +189,10 @@ void hrd_publish(const char *key, void *value, int len);
 int hrd_get_published(const char *key, void **value);
 
 ///* Publish the nth connected queue pair from this cb with this name */
-//void hrd_publish_conn_qp(struct hrd_ctrl_blk *cb, int n, const char *qp_name);
+//void hrd_publish_conn_qp(struct hrd_ud_ctrl_blk *cb, int n, const char *qp_name);
 
 /* Publish the nth datagram queue pair from this cb with this name */
-void hrd_publish_dgram_qp(struct hrd_ctrl_blk *cb, int n, const char *qp_name, uint8_t sl);
+void hrd_publish_dgram_qp(struct hrd_ud_ctrl_blk *cb, int n, const char *qp_name, uint8_t sl);
 
 struct hrd_qp_attr* hrd_get_published_qp(const char *qp_name);
 
@@ -227,11 +206,14 @@ static inline uint32_t hrd_fastrand(uint64_t *seed)
 
 void *hrd_malloc_socket(int shm_key, uint64_t size, int socket_id);
 int hrd_free(int shm_key, void *shm_buf);
-void red_printf(const char *format, ...);
-void yellow_printf(const char *format, ...);
-void green_printf(const char *format, ...);
-void cyan_printf(const char *format, ...);
 char *hrd_getenv(const char *name);
+
+
+
+// Like printf, but colorfur. Limited to 1000 characters.
+typedef enum{ YELLOW = 0, RED, GREEN, CYAN } color_print_t;
+void colored_printf(color_print_t color, const char *format, ...);
+
 
 extern char dev_name[50];
 #endif /* HRD_H */

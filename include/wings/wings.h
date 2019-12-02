@@ -222,7 +222,7 @@ _wings_poll_crds_and_post_recvs(ud_channel_t *ud_c)
 		    ud_c->stats.recv_total_pkts += crd_pkts_found;
 
 		if(WINGS_ENABLE_RECV_PRINTS && ud_c->enable_prints)
-			green_printf("^^^ Polled reqs: %s  %d, (total: %d)!\n",
+            colored_printf(GREEN, "^^^ Polled reqs: %s  %d, (total: %d)!\n",
                          ud_c->qp_name, crd_pkts_found, ud_c->stats.recv_total_pkts);
 
 		for (int i = 0; i < crd_pkts_found; i++){
@@ -244,7 +244,7 @@ _wings_poll_crds_and_post_recvs(ud_channel_t *ud_c)
 		}
 
 		if (WINGS_ENABLE_POST_RECV_PRINTS && ud_c->enable_prints)
-			yellow_printf("vvv Post Receives: %s %d\n", ud_c->qp_name, crd_pkts_found);
+            colored_printf(YELLOW, "vvv Post Receives: %s %d\n", ud_c->qp_name, crd_pkts_found);
 
 		_wings_post_hdr_only_recvs(ud_c, (uint16_t) crd_pkts_found);
 
@@ -402,7 +402,7 @@ wings_poll_buff_and_post_recvs(ud_channel_t *ud_c, uint16_t max_msgs_to_poll,
 		}
 
 		if(WINGS_ENABLE_RECV_PRINTS && ud_c->enable_prints)
-			green_printf("^^^ Polled msgs: %d packets %s %d, (total pkts: %d, msgs %d)!\n",
+            colored_printf(GREEN, "^^^ Polled msgs: %d packets %s %d, (total pkts: %d, msgs %d)!\n",
 						 pkts_polled, ud_c->qp_name, msgs_polled,
 						 ud_c->stats.recv_total_pkts, ud_c->stats.recv_total_msgs);
 		if(WINGS_ENABLE_CREDIT_PRINTS && ud_c->enable_prints && !ud_c->disable_crd_ctrl)
@@ -410,7 +410,7 @@ wings_poll_buff_and_post_recvs(ud_channel_t *ud_c, uint16_t max_msgs_to_poll,
 				   ud_c->channel_providing_crds->qp_name,
 				   ud_c->channel_providing_crds->credits_per_channels[sender], sender);
 		if (WINGS_ENABLE_POST_RECV_PRINTS && ud_c->enable_prints)
-			yellow_printf("vvv Post Receives: %s %d\n", ud_c->qp_name, pkts_polled);
+            colored_printf(YELLOW, "vvv Post Receives: %s %d\n", ud_c->qp_name, pkts_polled);
 
 		if(WINGS_ENABLE_ASSERTIONS)
 			assert(ud_c->max_coalescing != 1 || pkts_polled == msgs_polled);
@@ -574,13 +574,13 @@ _wings_forge_crd_wr(ud_channel_t *ud_c, uint16_t dst_qp_id,
 				ud_c->stats.ss_completions++;
 
 			if (WINGS_ENABLE_SS_PRINTS && ud_c->enable_prints)
-				red_printf("^^^ Polled SS completion: %s %d (total %d)\n",
+                colored_printf(RED, "^^^ Polled SS completion: %s %d (total %d)\n",
 						   ud_c->qp_name, 1, ud_c->stats.ss_completions);
 		}
 
 		ud_c->send_wr[crd_pkts_to_send].send_flags |= IBV_SEND_SIGNALED;
 		if (WINGS_ENABLE_SS_PRINTS && ud_c->enable_prints)
-			red_printf("vvv Send SS: %s\n", ud_c->qp_name);
+            colored_printf(RED, "vvv Send SS: %s\n", ud_c->qp_name);
 	}
 	ud_c->total_pkts_send++;
 }
@@ -656,13 +656,13 @@ _wings_forge_wr(ud_channel_t *ud_c, uint8_t dst_qp_id, uint8_t *req_to_copy,
 					ud_c->stats.ss_completions++;
 
 				if (WINGS_ENABLE_SS_PRINTS && ud_c->enable_prints)
-					red_printf("^^^ Polled SS completion: %s %d (total %d)\n",
+                    colored_printf(RED, "^^^ Polled SS completion: %s %d (total %d)\n",
 							   ud_c->qp_name, 1, ud_c->stats.ss_completions);
 			}
 
 			ud_c->send_wr[wr_idx].send_flags |= IBV_SEND_SIGNALED;
 			if (WINGS_ENABLE_SS_PRINTS && ud_c->enable_prints)
-				red_printf("vvv Send SS: %s\n", ud_c->qp_name);
+                colored_printf(RED, "vvv Send SS: %s\n", ud_c->qp_name);
 		}
 		ud_c->total_pkts_send++;
 	}
@@ -719,7 +719,7 @@ _wings_batch_pkts_2_NIC(ud_channel_t *ud_c, uint16_t pkts_in_batch, uint16_t msg
 	}
 
 	if (WINGS_ENABLE_SEND_PRINTS && ud_c->enable_prints) //TODO make this work w/ bcasts
-		cyan_printf(">>> Send: %d packets %s %d (Total packets: %d, msgs: %d)\n",
+		colored_printf(CYAN, ">>> Send: %d packets %s %d (Total packets: %d, msgs: %d)\n",
 					pkts_in_batch, ud_c->qp_name, msgs_in_batch,
 					ud_c->stats.send_total_pkts, ud_c->stats.send_total_msgs);
 

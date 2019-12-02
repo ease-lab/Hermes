@@ -103,9 +103,9 @@ void * print_stats_thread(void *no_arg)
         all_worker_aborted_rmws = 0;
         print_count++;
         if(FAKE_FAILURE == 1 && machine_id == NODE_TO_FAIL && print_count == ROUNDS_BEFORE_FAILURE){
-            red_printf("---------------------------------------\n");
-            red_printf("------------  NODE FAILED  ------------\n");
-            red_printf("---------------------------------------\n");
+            colored_printf(RED, "---------------------------------------\n");
+            colored_printf(RED, "------------  NODE FAILED  ------------\n");
+            colored_printf(RED, "---------------------------------------\n");
             exit(0);
         }
         if (EXIT_ON_STATS_PRINT == 1 && print_count == PRINT_NUM_STATS_BEFORE_EXITING) {
@@ -141,7 +141,7 @@ void * print_stats_thread(void *no_arg)
         total_rmw_aborts =  safe_division(all_worker_aborted_rmws, all_worker_rmws);
         total_rd_throughput = total_throughput - total_wr_throughput - total_rmw_throughput;
         printf("---------------PRINT %d time elapsed %.2f---------------\n", print_count, seconds / MILLION);
-        green_printf("NODE MReqs/s: %.2f \n(Rd|Wr|RMW: %.2f|%.2f|%.2f) | RMW aborts: %.2f%%)\n",
+        colored_printf(GREEN, "NODE MReqs/s: %.2f \n(Rd|Wr|RMW: %.2f|%.2f|%.2f) | RMW aborts: %.2f%%)\n",
                      total_throughput, total_rd_throughput, total_wr_throughput, total_rmw_throughput,
                      100 * total_rmw_aborts);
         if(PRINT_WORKER_STATS) {
@@ -171,17 +171,17 @@ void * print_stats_thread(void *no_arg)
                         w_stats[i].wasted_loops / (double) w_stats[i].total_loops * 100;
                 all_stats.completed_reqs_per_loop[i] =
                         curr_w_stats[i].completed_ops_per_worker / (double) w_stats[i].total_loops;
-                cyan_printf("W%d: ", i);
-                yellow_printf("%.2f MIOPS, Coalescing{Inv: %.2f, Ack: %.2f, Val: %.2f, Crd: %.2f}\n",
+                colored_printf(CYAN, "W%d: ", i);
+                colored_printf(YELLOW, "%.2f MIOPS, Coalescing{Inv: %.2f, Ack: %.2f, Val: %.2f, Crd: %.2f}\n",
                               all_stats.xput_per_worker[i],
                               all_stats.issued_invs_avg_coalesing[i], all_stats.issued_acks_avg_coalesing[i],
                               all_stats.issued_vals_avg_coalesing[i], all_stats.issued_crds_avg_coalesing[i]);
-                yellow_printf("\t wasted_loops: %.2f%, reqs per loop: %.2f, total reqs %d, reqs missed: %d\n",
+                colored_printf(YELLOW, "\t wasted_loops: %.2f%, reqs per loop: %.2f, total reqs %d, reqs missed: %d\n",
                               all_stats.percentage_of_wasted_loops[i],
                               all_stats.completed_reqs_per_loop[i], curr_w_stats[i].completed_ops_per_worker,
                               curr_w_stats[i].reqs_missed_in_kvs);
             }
-            green_printf("NODE MReqs/s: %.2f \n", total_throughput);
+            colored_printf(GREEN, "NODE MReqs/s: %.2f \n", total_throughput);
             printf("---------------------------------------\n");
         }
 

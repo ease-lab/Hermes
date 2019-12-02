@@ -15,7 +15,7 @@ set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall")
 
 set(SOURCE_FILES_cr
         #Source files
-        src/CR/cr_wings_worker.c
+        src/CR/cr_worker.c
 
         src/wings/wings.c
 
@@ -25,8 +25,7 @@ set(SOURCE_FILES_cr
 
         src/mica-herd/mica.c
         src/mica-herd/city.c
-        src/mica-herd/hrd_conn.c
-        src/mica-herd/hrd_util.c
+        src/mica-herd/herd.c
 
 
         ##### header files ####
@@ -53,7 +52,7 @@ set(SOURCE_FILES_hades
         include/wings/wings_api.h
         include/wings/wings.h
         include/hades/hades.h
-        src/hades/hades_main.c)
+        src/hades/test.c)
 
 
 set(SOURCE_FILES_hermes
@@ -64,8 +63,7 @@ set(SOURCE_FILES_hermes
         src/hermes/hermes_worker.c
         src/hermes/stats.c
         src/hermes/spacetime.c
-        src/mica-herd/hrd_conn.c
-        src/mica-herd/hrd_util.c
+        src/mica-herd/herd.c
         src/mica-herd/mica.c
         src/mica-herd/city.c
 

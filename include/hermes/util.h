@@ -12,7 +12,7 @@
 #include "config.h"
 #include "spacetime.h"
 
-struct worker_stats { // 2 cache lines
+struct worker_stats {
     long long completed_ops_per_worker;
     long long completed_wrs_per_worker;
     long long completed_rmws_per_worker;

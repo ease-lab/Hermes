@@ -190,13 +190,6 @@ static inline void
 wings_NOP_modify_elem_after_send(uint8_t* req)
 { /*Do not change anything*/ }
 
-static inline int
-wings_bcast_dst_id(uint8_t* req)
-{ return 0; }
-
-//static inline void
-//wings_just_copy_input_elem(uint8_t* msg_to_send, uint8_t* triggering_req)
-//{ /*Do not change anything*/ }
 
 
 /// Init and Util functions

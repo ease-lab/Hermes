@@ -432,12 +432,12 @@ print_total_stalls_due_to_credits(ud_channel_t *inv_ud_c, ud_channel_t *ack_ud_c
 								  ud_channel_t *rem_writes_ud_c, ud_channel_t *rem_reads_ud_c)
 {
 	// Stalls
-	green_printf ("$$$ CRD STALLs : %s %d, %s %d, %s %d,",
+	colored_printf(GREEN, "$$$ CRD STALLs : %s %d, %s %d, %s %d,",
 				  inv_ud_c->qp_name, inv_ud_c->stats.send_total_msgs,
 				  ack_ud_c->qp_name, ack_ud_c->stats.send_total_msgs,
 				  rem_writes_ud_c->qp_name, rem_writes_ud_c->stats.send_total_msgs);
 	if(CR_ENABLE_REMOTE_READS)
-		green_printf (", %s %d\n",
+        colored_printf(GREEN, ", %s %d\n",
 					  rem_reads_ud_c->qp_name, rem_reads_ud_c->stats.send_total_msgs);
 	else printf("\n");
 }
@@ -449,34 +449,34 @@ print_total_send_recv_msgs_n_credits(ud_channel_t *inv_ud_c, ud_channel_t *inv_c
 									 ud_channel_t *rem_reads_ud_c, ud_channel_t *rem_read_resp_ud_c)
 {
 	// Sends
-	green_printf ("--> Total Send: %s %d",
+    colored_printf(GREEN, "--> Total Send: %s %d",
 				  inv_ud_c->qp_name, inv_ud_c->stats.send_total_msgs);
 	if(CR_ENABLE_EARLY_INV_CRDS)
-		green_printf (", %s %d",
+        colored_printf(GREEN, ", %s %d",
 					  inv_crd_ud_c->qp_name, inv_crd_ud_c->stats.send_total_msgs);
-	green_printf (", %s %d, %s %d, %s %d",
+    colored_printf(GREEN, ", %s %d, %s %d, %s %d",
 				  ack_ud_c->qp_name, ack_ud_c->stats.send_total_msgs,
 				  rem_writes_ud_c->qp_name, rem_writes_ud_c->stats.send_total_msgs,
 				  crd_ud_c->qp_name, crd_ud_c->stats.send_total_msgs);
 	if(CR_ENABLE_REMOTE_READS)
-		green_printf (", %s %d, %s %d\n",
+        colored_printf(GREEN, ", %s %d, %s %d\n",
 					  rem_reads_ud_c->qp_name, rem_reads_ud_c->stats.send_total_msgs,
 					  rem_read_resp_ud_c->qp_name, rem_read_resp_ud_c->stats.send_total_msgs);
 	else printf("\n");
 
 
 	// Receives
-	green_printf ("vvv Total Recv: %s %d",
+    colored_printf(GREEN, "vvv Total Recv: %s %d",
 				  inv_ud_c->qp_name, inv_ud_c->stats.recv_total_msgs);
 	if(CR_ENABLE_EARLY_INV_CRDS)
-		green_printf (", %s %d",
+        colored_printf(GREEN, ", %s %d",
 					  inv_crd_ud_c->qp_name, inv_crd_ud_c->stats.recv_total_msgs);
-	green_printf (", %s %d, %s %d, %s %d",
+    colored_printf(GREEN, ", %s %d, %s %d, %s %d",
 				  ack_ud_c->qp_name, ack_ud_c->stats.recv_total_msgs,
 				  rem_writes_ud_c->qp_name, rem_writes_ud_c->stats.recv_total_msgs,
 				  crd_ud_c->qp_name, crd_ud_c->stats.recv_total_msgs);
 	if(CR_ENABLE_REMOTE_READS)
-		green_printf (", %s %d, %s %d\n",
+        colored_printf(GREEN, ", %s %d, %s %d\n",
 					  rem_reads_ud_c->qp_name, rem_reads_ud_c->stats.recv_total_msgs,
 					  rem_read_resp_ud_c->qp_name, rem_read_resp_ud_c->stats.recv_total_msgs);
 	else printf("\n");
@@ -745,7 +745,7 @@ run_worker(void *arg)
 	/// Spawn stats thread
 	if (worker_lid == 0)
 		if (spawn_stats_thread() != 0)
-			red_printf("Stats thread was not successfully spawned \n");
+            colored_printf(RED, "Stats thread was not successfully spawned \n");
 
 
 	struct timespec stopwatch_for_req_latency;

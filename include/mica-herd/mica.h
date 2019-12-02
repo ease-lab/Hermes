@@ -75,12 +75,9 @@ struct mica_kv {
 
 	/* Metadata */
 	int instance_id;	/* ID of this MICA instance. Used for shm keys */
-	int node_id;
 
     uint64_t num_bkts;	/* Number of buckets requested by user */
     uint64_t bkt_mask;	/* Mask down from a mica_key's @bkt to a bucket */
-//	int num_bkts;	/* Number of buckets requested by user */
-//	int bkt_mask;	/* Mask down from a mica_key's @bkt to a bucket */
 
 	uint64_t log_cap;	/* Capacity of circular log in bytes */
 	uint64_t log_mask;	/* Mask down from a slot's @offset to a log offset */
@@ -89,10 +86,6 @@ struct mica_kv {
 	uint64_t log_head;
 
 	/* Stats */
-	long long num_get_op;	/* Number of GET requests executed */
-	long long num_put_op;	/* Number of PUT requests executed */
-	long long num_get_fail;	/* Number of GET requests failed */
-    long long num_put_fail;	/* Number of GET requests failed */
 	long long num_insert_op;	/* Number of PUT requests executed */
 	long long num_index_evictions; /* Number of entries evicted from index */
 };

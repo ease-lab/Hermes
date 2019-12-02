@@ -23,10 +23,10 @@
 //      Enable implicit (request - response mode) and explicit (batched) credits flow control
 
 void _wings_setup_send_wr_and_sgl(ud_channel_t *ud_c);
-void _wings_setup_recv_wr_and_sgl(ud_channel_t *ud_c, struct hrd_ctrl_blk *cb);
-void _wings_setup_crd_wr_and_sgl(ud_channel_t *ud_c, struct hrd_ctrl_blk *cb);
+void _wings_setup_recv_wr_and_sgl(ud_channel_t *ud_c, struct hrd_ud_ctrl_blk *cb);
+void _wings_setup_crd_wr_and_sgl(ud_channel_t *ud_c, struct hrd_ud_ctrl_blk *cb);
 void _wings_setup_incoming_buff_and_post_initial_recvs(ud_channel_t *ud_c);
-void _wings_ud_channel_init_recv(ud_channel_t *ud_c, struct hrd_ctrl_blk *cb, uint8_t qp_id,
+void _wings_ud_channel_init_recv(ud_channel_t *ud_c, struct hrd_ud_ctrl_blk *cb, uint8_t qp_id,
 								 volatile uint8_t *incoming_reqs_ptr);
 
 
@@ -40,7 +40,7 @@ void _wings_print_on_off_toggle(uint16_t bin_flag, char *str);
 
 void _wings_share_qp_info_via_memcached(ud_channel_t **ud_c_array, uint16_t ud_c_num,
 										dbit_vector_t *shared_rdy_var, int worker_lid,
-										struct hrd_ctrl_blk *cb);
+										struct hrd_ud_ctrl_blk *cb);
 
 
 void
@@ -234,11 +234,10 @@ wings_setup_channel_qps_and_recvs_w_shm_key(ud_channel_t **ud_c_array, uint16_t 
 						   _wings_ud_recv_max_pkt_size(ud_c_array[i]) * ud_c_array[i]->recv_q_depth;
 	}
 
-	struct hrd_ctrl_blk *cb = hrd_ctrl_blk_init(worker_lid, 0, -1, 0,	       // local_hid, port_index, numa_node_id, #conn qps
-												0, NULL, 0, -1,	               // #conn uc, prealloc conn buf, buf size, key
-												ud_c_num, dgram_buff_size,	   // num_dgram_qps, dgram_buf_size
-												base_shm_key + worker_lid,     // key
-												recv_q_depths, send_q_depths); // Depth of the dgram RECV, SEND Q
+	struct hrd_ud_ctrl_blk *cb = hrd_ud_ctrl_blk_init(worker_lid, 0, -1, // local_hid, port_index, numa_node_id,
+                                                   ud_c_num, dgram_buff_size,       // num_dgram_qps, dgram_buf_size
+                                                   base_shm_key + worker_lid,     // key
+                                                   recv_q_depths, send_q_depths); // Depth of the dgram RECV, SEND Q
 
 	for(uint8_t i = 0; i < ud_c_num; ++i)
 		ud_c_array[i]->pd = cb->pd;
@@ -415,7 +414,7 @@ _wings_ud_channel_crd_init(ud_channel_t *ud_c, char *qp_name, ud_channel_t *link
 
 
 void
-_wings_ud_channel_init_recv(ud_channel_t *ud_c, struct hrd_ctrl_blk *cb, uint8_t qp_id,
+_wings_ud_channel_init_recv(ud_channel_t *ud_c, struct hrd_ud_ctrl_blk *cb, uint8_t qp_id,
 							volatile uint8_t *incoming_reqs_ptr)
 {
 
@@ -442,7 +441,7 @@ _wings_ud_channel_init_recv(ud_channel_t *ud_c, struct hrd_ctrl_blk *cb, uint8_t
 }
 
 void
-_wings_setup_crd_wr_and_sgl(ud_channel_t *ud_c, struct hrd_ctrl_blk *cb)
+_wings_setup_crd_wr_and_sgl(ud_channel_t *ud_c, struct hrd_ud_ctrl_blk *cb)
 {
 	assert(ud_c->type == CRD);
 
@@ -572,7 +571,7 @@ _wings_setup_send_wr_and_sgl(ud_channel_t *ud_c)
 }
 
 void
-_wings_setup_recv_wr_and_sgl(ud_channel_t *ud_c, struct hrd_ctrl_blk *cb)
+_wings_setup_recv_wr_and_sgl(ud_channel_t *ud_c, struct hrd_ud_ctrl_blk *cb)
 {
 	assert(ud_c->type != CRD);
 
@@ -611,7 +610,7 @@ _wings_setup_incoming_buff_and_post_initial_recvs(ud_channel_t *ud_c)
     }
 
 	if(WINGS_ENABLE_POST_RECV_PRINTS && ud_c->enable_prints)
-		yellow_printf("vvv Post Initial Receives: %s %d\n", ud_c->qp_name, ud_c->max_recv_wrs);
+        colored_printf(YELLOW, "vvv Post Initial Receives: %s %d\n", ud_c->qp_name, ud_c->max_recv_wrs);
 
 	if(ud_c->is_header_only == 0 && ud_c->type != CRD)
 		_wings_post_recvs(ud_c, ud_c->max_recv_wrs);
@@ -698,7 +697,7 @@ _wings_get_remote_qps(ud_channel_t **ud_c_array, uint16_t ud_c_num)
 void
 _wings_share_qp_info_via_memcached(ud_channel_t **ud_c_array, uint16_t ud_c_num,
 								   dbit_vector_t *shared_rdy_var,
-								   int worker_lid, struct hrd_ctrl_blk *cb)
+								   int worker_lid, struct hrd_ud_ctrl_blk *cb)
 {
     for(int i = 0; i < ud_c_num; i++){
         char qp_global_name[HRD_QP_NAME_SIZE];

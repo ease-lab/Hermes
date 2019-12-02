@@ -61,7 +61,7 @@ void spacetime_populate_fixed_len(struct spacetime_kv* _kv, int n, int val_len)
 	}
 
 	assert(_kv->hash_table.num_insert_op == n);
-	yellow_printf("Spacetime: Populated instance %d with %d keys, length = %d. "
+    colored_printf(YELLOW, "Spacetime: Populated instance %d with %d keys, length = %d. "
 				  "Index eviction fraction = %.4f.\n",
 				  _kv->hash_table.instance_id, n, val_len,
 				  (double) _kv->hash_table.num_index_evictions / _kv->hash_table.num_insert_op);

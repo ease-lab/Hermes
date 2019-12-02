@@ -37,7 +37,7 @@ group_membership_update(hades_ctx_t hades_ctx)
     seqlock_unlock(&group_membership.lock);
 
     if(group_membership.num_of_alive_remotes < (machine_num / 2)){
-		red_printf("Majority is down!\n");
+        colored_printf(RED, "Majority is down!\n");
 		exit(-1);
 	}
 }
@@ -144,7 +144,7 @@ stop_latency_of_completed_reads(spacetime_op_t *ops, uint16_t worker_lid,
 
 
 /* ---------------------------------------------------------------------------
-------------------------------------OTHERS------------------------------------
+---------------------------------- Refill Requests ---------------------------
 ---------------------------------------------------------------------------*/
 static inline int
 refill_ops(uint32_t *trace_iter, uint16_t worker_lid,
@@ -196,7 +196,7 @@ refill_ops(uint32_t *trace_iter, uint16_t worker_lid,
 		{
             if (first_iter_has_passed[worker_lid] != 0) {
                 if (ENABLE_REQ_PRINTS && worker_lid < MAX_THREADS_TO_PRINT)
-                    green_printf(
+                    colored_printf(GREEN,
                             "W%d--> Key Hash:%" PRIu64 "\n\t\tType: %s, version %d, tie-b: %d, value(len-%d): %c\n",
                             worker_lid, ((uint64_t *) &ops[i].op_meta.key)[0],
                             code_to_str(ops[i].op_meta.state), ops[i].op_meta.ts.version,
@@ -280,7 +280,7 @@ refill_ops(uint32_t *trace_iter, uint16_t worker_lid,
 
 
             if (ENABLE_REQ_PRINTS && worker_lid < MAX_THREADS_TO_PRINT)
-                red_printf("W%d--> Op: %s, hash(1st 8B):%" PRIu64 "\n",
+                colored_printf(RED, "W%d--> Op: %s, hash(1st 8B):%" PRIu64 "\n",
                            worker_lid, code_to_str(ops[i].op_meta.opcode), ((uint64_t *) &ops[i].op_meta.key)[0]);
 
         } else

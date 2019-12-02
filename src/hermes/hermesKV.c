@@ -160,7 +160,7 @@ hermes_write_replay_actions(spacetime_op_t *op_ptr, uint8_t idx,
     if(ENABLE_ASSERTIONS)
         assert(idx < ST_OP_BUFFER_INDEX_EMPTY);
 
-    yellow_printf("Write replay for i: %d\n", idx);
+    colored_printf(YELLOW, "Write replay for i: %d\n", idx);
 
     /// update keys metadata and unlock
     keys_meta->state = REPLAY_STATE;
@@ -572,7 +572,7 @@ hermes_exec_inv(spacetime_inv_t *inv_ptr, struct mica_op *kv_ptr, spacetime_op_t
 		        hermes_local_state_to_op(inv_ptr, curr_meta);
                 inv_ptr->op_meta.sender = sender_id;
                 inv_ptr->op_meta.opcode = ST_OP_INV_ABORT;
-                red_printf("Sending OP_INV_ABORT\n");
+                colored_printf(RED, "Sending OP_INV_ABORT\n");
 		    }
             cctrl_unlock_dec_version(&curr_meta->cctrl);
 		}
@@ -812,15 +812,15 @@ hermes_print_dispatcher(enum hermes_batch_type_t type, int op_num, uint8_t threa
 				break;
 			case invs:
 				if(ENABLE_INV_PRINTS && thread_id < MAX_THREADS_TO_PRINT)
-					red_printf("[W] Batch INVs (op num: %d)!\n", thread_id, op_num);
+                    colored_printf(RED, "[W] Batch INVs (op num: %d)!\n", thread_id, op_num);
 				break;
 			case acks:
 				if(ENABLE_ACK_PRINTS && thread_id < MAX_THREADS_TO_PRINT)
-					red_printf("[W%d] Batch ACKs (op num: %d)!\n",thread_id, op_num);
+                    colored_printf(RED, "[W%d] Batch ACKs (op num: %d)!\n",thread_id, op_num);
 				break;
 			case vals:
 				if(ENABLE_VAL_PRINTS && thread_id < MAX_THREADS_TO_PRINT)
-					red_printf("[W%d] Batch VALs (op num: %d)!\n", thread_id, op_num);
+                    colored_printf(RED, "[W%d] Batch VALs (op num: %d)!\n", thread_id, op_num);
 				break;
 			default: assert(0);
 		}
@@ -898,7 +898,9 @@ hermes_exec_dispatcher(enum hermes_batch_type_t type, void* op_ptr, struct mica_
 
 
 
-//////////// Main KVS function
+//////////////////////////////////////////////
+//////////// Main HermesKV function
+//////////////////////////////////////////////
 
 void
 hermes_batch_ops_to_KVS(enum hermes_batch_type_t type, uint8_t *op_array, int op_num,

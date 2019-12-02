@@ -46,7 +46,6 @@ void mica_init(struct mica_kv *kv,
 
 	/* Initialize metadata and stats */
 	kv->instance_id = instance_id;
-	kv->node_id = node_id;
 
 	kv->num_bkts = num_bkts;
 	kv->bkt_mask = num_bkts - 1;	/* num_bkts is power of 2 */
@@ -55,10 +54,6 @@ void mica_init(struct mica_kv *kv,
 	kv->log_mask = log_cap - 1;	/* log_cap is a power of 2 */
 	kv->log_head = 0;
 
-	kv->num_get_op = 0;
-	kv->num_get_fail = 0;
-	kv->num_put_fail = 0;
-	kv->num_put_op = 0;
 	kv->num_insert_op = 0;
 	kv->num_index_evictions = 0;
 
@@ -145,7 +140,7 @@ void mica_insert_one(struct mica_kv *kv,
 	 * the beginning, but go forward in the virtual log. */
 	if(unlikely(kv->log_cap - kv->log_head <= MICA_MAX_VALUE + 32)) {
 		kv->log_head = (kv->log_head + kv->log_cap) & ~kv->log_mask;
-    red_printf("mica-herd-herd: Instance %d wrapping around. Wraps = %llu\n",
+        colored_printf(RED, "mica-herd-herd: Instance %d wrapping around. Wraps = %llu\n",
                kv->instance_id, kv->log_head / kv->log_cap);
 	}
 }
@@ -168,4 +163,3 @@ uint128* mica_gen_keys(int n)
 
 	return key_arr;
 }
-

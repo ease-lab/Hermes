@@ -7,8 +7,8 @@ PROF    := -g -fno-omit-frame-pointer
 
 all: ${APPS} clean-o
 
-hermes: ../wings/wings.o ../hades/hades.o ../mica-herd/hrd_conn.o \
-        ../mica-herd/hrd_util.o ../mica-herd/mica.o ../mica-herd/city.o     \
+hermes: ../wings/wings.o ../hades/hades.o \
+        ../mica-herd/herd.o ../mica-herd/mica.o ../mica-herd/city.o     \
         main.o hermes_worker.o util.o stats.o spacetime.o hermesKV.o
 	${LD} -o $@ $^ ${LDFLAGS}
 

@@ -7,7 +7,7 @@ PROF    := -g -fno-omit-frame-pointer
 all: ${APPS} clean-o
 
  
-hades: hades.o hades_main.o ../wings/wings.o ../mica-herd/hrd_conn.o ../mica-herd/hrd_util.o
+hades: hades.o test.o ../wings/wings.o ../mica-herd/herd.o
 	${LD} -o $@ $^ ${LDFLAGS}
 
 PHONY: clean
