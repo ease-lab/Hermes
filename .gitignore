@@ -55,3 +55,6 @@ traces/trace-parts/*
 /traces/current-splited-traces/*.txt
 /traces/*.txt
 traces/
+./exec/hermesKV
+./exec/rCRAQ
+./exec/hades
