@@ -37,27 +37,24 @@ localIP=$(ip addr | grep 'state UP' -A2 | grep 'inet 129.'| awk '{print $2}' | c
 machine_id=-1
 echo LOCAL_IP : "$localIP"
 
-
 for i in "${!allIPs[@]}"; do
 	if [  "${allIPs[i]}" ==  "$localIP" ]; then
 		machine_id=$i
 	else
-    remoteIPs+=( "${allIPs[i]}" )
+        remoteIPs+=( "${allIPs[i]}" )
 	fi
 done
 
-
 echo Machine-Id "$machine_id"
 
-
-export HRD_REGISTRY_IP="${allIPs[0]}" # I.E. first IP node (HOUSTON) has a memcache server (used to initialize RDMA QPs)
+export HRD_REGISTRY_IP="${allIPs[0]}" # I.E. first IP node (HOUSTON) has a memcached server (used to initialize RDMA QPs)
 export MLX5_SINGLE_THREADED=1
 export MLX5_SCATTER_TO_CQE=1
 
 sudo killall memcached
-sudo killall hermes
 sudo killall hades
-sudo killall cr
+sudo killall rCRAQ
+sudo killall hermesKV
 
 # A function to echo in blue color
 function blue() {
@@ -66,8 +63,9 @@ function blue() {
 	echo "${es}$1${ee}"
 }
 
-# free the  pages workers use
-blue "Removing SHM keys used by Spacetime / MICA KV"
+
+#### free the pages workers use
+blue "Removing SHM keys used by HermesKV"
 for i in `seq 0 28`; do
 	key=`expr 3185 + $i`
 	sudo ipcrm -M $key 2>/dev/null
@@ -77,9 +75,7 @@ done
 : ${HRD_REGISTRY_IP:?"Need to set HRD_REGISTRY_IP non-empty"}
 
 
-
 blue "Reset server QP registry"
-#memcached -l 0.0.0.0 1>/dev/null 2>/dev/null &
 memcached -l ${HRD_REGISTRY_IP} 1>/dev/null 2>/dev/null &
 sleep 1
 
@@ -98,13 +94,16 @@ LAT_WORKER="-1"
 # Each letter is an option argument, if it's followed by a collum
 # it requires an argument. The first colum indicates the '\?'
 # help/error command when no arguments are given
-while getopts ":W:w:C:c:b:M:l:h" opt; do
+while getopts ":W:w:l:R:C:c:b:M:h" opt; do
   case $opt in
      W)
        NUM_WORKERS=$OPTARG
        ;;
      w)
        WRITE_RATIO=$OPTARG
+       ;;
+     R)
+       RMW_RATIO=$OPTARG
        ;;
      C)
        MAX_COALESCE=$OPTARG
@@ -124,7 +123,7 @@ while getopts ":W:w:C:c:b:M:l:h" opt; do
      h)
       echo "Usage: -W <# workers> -w <write ratio>  (x1000 --> 10 for 1%)"
       echo "       -c <# credits> -b <max batch size> -C <max coalescing>"
-      echo "       -M <# nodes>   -l <latency worker> "
+      echo "       -M <# nodes>   -l <latency worker> -R <rmw ratio>"
       exit 1
       ;;
     \?)
@@ -138,10 +137,10 @@ while getopts ":W:w:C:c:b:M:l:h" opt; do
   esac
 done
 
-blue "Running hermes threads"
 
+blue "Running hermes threads"
 sudo LD_LIBRARY_PATH=/usr/local/lib/ -E \
-	./cr                                \
+    ./hermesKV                          \
 	--machine-id $machine_id            \
 	--is-roce 0                         \
 	--dev-name "mlx5_0"                 \
@@ -153,4 +152,5 @@ sudo LD_LIBRARY_PATH=/usr/local/lib/ -E \
 	--credits      ${CREDITS}           \
 	--max-coalesce ${MAX_COALESCE}      \
 	--max-batch-size ${MAX_BATCH_SIZE}  \
+	--hermes                            \
 	2>&1

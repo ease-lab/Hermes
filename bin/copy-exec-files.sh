@@ -3,9 +3,9 @@ HOSTS=( ##### network  cluster #####
          "houston"
          "sanantonio"
          "austin"
-#         "indianapolis"
-#         "atlanta"
-#         "philly"
+         "indianapolis"
+         "atlanta"
+         "philly"
          ##### compute cluster #####
 #         "baltimore"
 #         "chicago"
@@ -13,24 +13,23 @@ HOSTS=( ##### network  cluster #####
         )
 
 FILES=(
-        "cr"
-        "run-cr.sh"
+        "run-hermesKV.sh"
+        "hermesKV"
+        "run-rCRAQ.sh"
+        "rCRAQ"
       )
 
 USERNAME="s1671850" # "user"
 LOCAL_HOST=`hostname`
-MAKE_FOLDER="/home/${USERNAME}/hermes/src"
-HOME_FOLDER="/home/${USERNAME}/hermes/src/CR"
-DEST_FOLDER="/home/${USERNAME}/hermes-exec/src/CR"
+EXEC_FOLDER="/home/${USERNAME}/hermes/exec"
 
-cd $MAKE_FOLDER
-make clean
-make
+cd $EXEC_FOLDER
+make clean; make
 cd -
 
 for FILE in "${FILES[@]}"
 do
-	parallel scp ${HOME_FOLDER}/${FILE} {}:${DEST_FOLDER}/${FILE} ::: $(echo ${HOSTS[@]/$LOCAL_HOST})
+	parallel scp ${EXEC_FOLDER}/${FILE} {}:${EXEC_FOLDER}/${FILE} ::: $(echo ${HOSTS[@]/$LOCAL_HOST})
 	echo "${FILE} copied to {${HOSTS[@]/$LOCAL_HOST}}"
 done
 

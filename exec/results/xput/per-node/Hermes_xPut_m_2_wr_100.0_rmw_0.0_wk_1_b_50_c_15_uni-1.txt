@@ -1,0 +1,4 @@
+node1_miops-0: 1.62
+node1_miops-1: 1.62
+node1_miops-2: 1.62
+node1_miops-3: 1.63

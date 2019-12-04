@@ -2,7 +2,7 @@
 
 static inline void xput_file_name(char *filename)
 {
-    char* path = "../../results/xput/per-node";
+    char* path = "./results/xput/per-node";
 
     sprintf(filename, "%s/%s_xPut_m_%d_wr_%.1f_rmw_%.1f_wk_%d_b_%d_c_%d%s-%d.txt", path,
             is_CR == 1? "CR" : "Hermes",
@@ -37,7 +37,7 @@ void dump_latency_stats(void)
 {
     FILE *latency_stats_fd;
     char filename[128];
-    char* path = "../../results/latency";
+    char* path = "./results/latency";
 
     sprintf(filename, "%s/%s_latency_m_%d_w_%d_b_%d_wr_%d_rmw_%d_c_%d%s.csv", path,
             is_CR == 1? "CR" : "Hermes",
