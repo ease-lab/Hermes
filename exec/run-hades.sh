@@ -7,5 +7,5 @@ blue "Running hades"
 sudo LD_LIBRARY_PATH=/usr/local/lib/ -E \
 	./hades                             \
 	--machine-id ${NODE_ID}             \
-	--dev-name "mlx5_0"                 \
+	--dev-name ${NET_DEVICE_NAME}       \
 	2>&1

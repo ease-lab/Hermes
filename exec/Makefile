@@ -1,6 +1,6 @@
 CPPFLAGS  := -O3 #-Wno-unused-result -Wall -Werror
 LD      := gcc -O3 -flto
-LDFLAGS := ${LDFLAGS} -libverbs -lrt -lpthread -lmemcached -lnuma -lrdmacm
+LDFLAGS := ${LDFLAGS} -libverbs -lrt -lpthread -lmemcached -lnuma # -lrdmacm --> TODO we do not use hw multicast because it helps only on master-based patterns
 CFLAGS   =  -I../include/mica-herd -I../include/hermes -I../include/wings -I../include/hades
 APPS    := hermesKV rCRAQ
 PROF    := -g -fno-omit-frame-pointer

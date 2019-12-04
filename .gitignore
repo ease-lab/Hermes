@@ -40,6 +40,14 @@ src/Armonia/main
 /src/herd-UD/throughput.txt
 /bin/traces
 #/results/*
+/exec/results/*.txt
+/exec/results/xput/*.txt
+/exec/results/xput/*.csv
+/exec/results/xput/per-node/*.csv
+/exec/results/xput/per-node/*.txt
+/exec/results/xput/all-nodes/*.txt
+/exec/results/latency/*.txt
+/exec/results/latency/*.csv
 /results/*.txt
 /results/xput/*.txt
 /results/xput/*.csv

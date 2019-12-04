@@ -45,6 +45,8 @@ ALL_IPS=(
 LOCAL_IP=$(ip addr | grep 'state UP' -A2 | grep 'inet 129.'| awk '{print $2}' | cut -f1  -d'/')
 #LOCAL_IP="129.215.164.2"
 
+### Fill the RDMA device name (the "hca_id" of the device when executing ibv_devinfo)
+NET_DEVICE_NAME="mlx5_0"
 
 ##########################################
 ### NO NEED TO CHANGE BELOW THIS POINT ###

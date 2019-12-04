@@ -63,7 +63,7 @@ sudo LD_LIBRARY_PATH=/usr/local/lib/ -E \
 	./rCRAQ                             \
 	--machine-id ${NODE_ID}             \
 	--is-roce 0                         \
-	--dev-name "mlx5_0"                 \
+	--dev-name ${NET_DEVICE_NAME}       \
 	--num-machines ${NUM_MACHINES}      \
 	--num-workers  ${NUM_WORKERS}       \
 	--lat-worker   ${LAT_WORKER}        \

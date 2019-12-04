@@ -1,23 +1,4 @@
 #!/usr/bin/env bash
-#HOSTS=( ##### network  cluster #####
-#         "houston"
-#         "sanantonio"
-#         "austin"
-#         "indianapolis"
-#         "atlanta"
-#         "philly"
-#         ##### compute cluster #####
-##         "baltimore"
-##         "chicago"
-##         "detroit"
-#        )
-#
-#LOCAL_HOST=`hostname`
-#
-## TODO add LOCAL_IP ??
-#
-#REMOTE_HOSTS=${HOSTS[@]/$LOCAL_HOST}
-
 
 source ./hosts.sh
 

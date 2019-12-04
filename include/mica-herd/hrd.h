@@ -23,7 +23,8 @@
 
 
 //<vasilis> Multicast
-#include <rdma/rdma_cma.h>
+// TODO we do not use hw multicast because it helps only on master-based patterns
+//#include <rdma/rdma_cma.h>
 #include <sys/socket.h>
 #include <arpa/inet.h>
 #include <byteswap.h>
