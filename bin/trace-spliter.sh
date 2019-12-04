@@ -13,7 +13,7 @@ MAX_THREADS_PER_NODE=40
 CHUNKS=$(expr ${MAX_NUM_NODES} \* ${MAX_THREADS_PER_NODE})
 LINES=$(wc -l ${INPUT_DIR}/${INPUT_FILENAME} | cut -d ' ' -f1)
 
-echo "Splitting $LINES lines into $CHUNKS chunks ..."
+echo "Splitting trace with $LINES lines into $CHUNKS (per-thread) chunks ..."
 
 split -l  $(expr ${LINES} / ${CHUNKS}) \
       -a 4 -d \

@@ -1,3 +1,7 @@
+######################################################################################
+# WARNING: DO NOT MAKE through cmake use the Makefile in /exec/ to compile instead!!!!
+######################################################################################
+
 cmake_minimum_required(VERSION 2.8.12)
 project(hermes)
 

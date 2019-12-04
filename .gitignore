@@ -54,3 +54,4 @@ traces/trace-parts/*
 /traces/system-traces/*.txt
 /traces/current-splited-traces/*.txt
 /traces/*.txt
+traces/

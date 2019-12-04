@@ -31,10 +31,9 @@ if [[ $NUM_NODES -ne ${#HOSTS[@]} ]] ; then
 fi
 
 LOCAL_HOST=`hostname`
-USERNAME="s1671850" # "user"
-HOME_FOLDER="/home/${USERNAME}/derecho-unified/Release/applications/tests/performance_tests/"
-COMMAND_NO_ARGS="taskset -c 0,2,4,6,8,10,12,14,16,18 ./bandwidth_test " #pin threads to cores (w/o using hyperthreads) of numa node 1
-#COMMAND_NO_ARGS="./bandwidth_test "
+HOME_FOLDER="/home/${USER}/derecho-unified/Release/applications/tests/performance_tests/"
+#pin derecho threads to cores (w/o using hyperthreads) of numa node 0
+COMMAND_NO_ARGS="taskset -c 0,2,4,6,8,10,12,14,16,18 ./bandwidth_test "
 
 total_iters=0
 cd ${HOME_FOLDER} >/dev/null

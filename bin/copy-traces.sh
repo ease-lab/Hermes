@@ -1,14 +1,16 @@
 #!/usr/bin/env bash
-#HOSTS=( "austin" "houston" "sanantonio" "indianapolis" "philly" )
-HOSTS=( "austin" "houston" "sanantonio")
-#HOSTS=( "austin" "houston" "sanantonio" "indianapolis" "philly" "baltimore" "chicago" "atlanta" "detroit")
-LOCAL_HOST=`hostname`
-EXECUTABLES=( "traces/current-splited-traces" )
-HOME_FOLDER="/home/s1671850/hermes/"
-DEST_FOLDER="/home/s1671850/hermes-exec/"
 
-for EXEC in "${EXECUTABLES[@]}"
+# Copy (per-thread splitted) trace folder
+FOLDERS_TO_CPY=( "traces/current-splitted-traces" )
+HOME_FOLDER="/home/${USER}/hermes"
+
+cd ${HOME_FOLDER} >/dev/null
+# get Hosts
+source ./exec/hosts.sh
+cd - >/dev/null
+
+for FOLDER in "${FOLDERS_TO_CPY[@]}"
 do
-	parallel scp -r ${HOME_FOLDER}/${EXEC} {}:${DEST_FOLDER}/${EXEC} ::: $(echo ${HOSTS[@]/$LOCAL_HOST})
-	echo "${EXEC} copied to {${HOSTS[@]/$LOCAL_HOST}}"
+	parallel scp -r ${HOME_FOLDER}/${FOLDER} {}:${HOME_FOLDER}/${FOLDER} ::: $(echo ${REMOTE_HOSTS[@]})
+	echo "${FOLDER} copied to {${REMOTE_HOSTS[@]}}"
 done

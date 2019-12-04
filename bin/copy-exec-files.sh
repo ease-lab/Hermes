@@ -1,35 +1,27 @@
 #!/usr/bin/env bash
-HOSTS=( ##### network  cluster #####
-         "houston"
-         "sanantonio"
-         "austin"
-         "indianapolis"
-         "atlanta"
-         "philly"
-         ##### compute cluster #####
-#         "baltimore"
-#         "chicago"
-#         "detroit"
-        )
 
-FILES=(
+FILES_TO_CPY=(
+        "hosts.sh"
+        "run.sh"
         "run-hermesKV.sh"
         "hermesKV"
         "run-rCRAQ.sh"
         "rCRAQ"
+#        "hades"
+#        "run-hades.sh"
       )
 
-USERNAME="s1671850" # "user"
-LOCAL_HOST=`hostname`
-EXEC_FOLDER="/home/${USERNAME}/hermes/exec"
+EXEC_FOLDER="/home/${USER}/hermes/exec"
 
 cd $EXEC_FOLDER
+# get Hosts
+source ../exec/hosts.sh
 make clean; make
 cd -
 
-for FILE in "${FILES[@]}"
+for FILE in "${FILES_TO_CPY[@]}"
 do
-	parallel scp ${EXEC_FOLDER}/${FILE} {}:${EXEC_FOLDER}/${FILE} ::: $(echo ${HOSTS[@]/$LOCAL_HOST})
-	echo "${FILE} copied to {${HOSTS[@]/$LOCAL_HOST}}"
+	parallel scp ${EXEC_FOLDER}/${FILE} {}:${EXEC_FOLDER}/${FILE} ::: $(echo ${REMOTE_HOSTS[@]})
+	echo "${FILE} copied to {${REMOTE_HOSTS[@]}}"
 done
 

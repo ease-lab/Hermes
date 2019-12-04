@@ -4,7 +4,7 @@ import sys, os, ntpath, getopt
 
 """
 ========
-Parser 4 aggregated over time results
+Parser for aggregated over time results
 ========
 """
 class LatencyParser:

@@ -1,29 +1,20 @@
 #!/usr/bin/env bash
-HOSTS=( ##### network  cluster #####
-         "houston"
-         "sanantonio"
-         "austin"
-         "indianapolis"
-         "philly"
-         "atlanta"
-         ##### compute cluster #####
-#         "baltimore"
-#         "chicago"
-#         "detroit"
-        )
 
-USERNAME="s1671850" # "user"
-LOCAL_HOST=`hostname`
-EXEC_FOLDER="/home/${USERNAME}/hermes/exec"
-RESULTS_FOLDER="/home/${USERNAME}/hermes/exec/results"
+EXEC_FOLDER="/home/${USER}/hermes/exec"
+RESULTS_FOLDER="/home/${USER}/hermes/exec/results"
 
 RESULT_FOLDER="${RESULTS_FOLDER}/xput/per-node/"
 RESULT_OUT_FOLDER="${RESULTS_FOLDER}/xput/per-node/"
 RESULT_OUT_FOLDER_MERGE="${RESULTS_FOLDER}/xput/all-nodes/"
 
+cd ${EXEC_FOLDER} >/dev/null
+# get Hosts
+source ./hosts.sh
+cd - >/dev/null
+
 # Gather remote files
-parallel "scp {}:${RESULT_FOLDER}* ${RESULT_OUT_FOLDER} " ::: $(echo ${HOSTS[@]/$LOCAL_HOST})
-echo "xPut result files copied from: {${HOSTS[@]/$LOCAL_HOST}}"
+parallel "scp {}:${RESULT_FOLDER}* ${RESULT_OUT_FOLDER} " ::: $(echo ${REMOTE_HOSTS[@]})
+echo "xPut result files copied from: {${REMOTE_HOSTS}}"
 
 # group all files
 ls ${RESULT_OUT_FOLDER} | awk -F '-' '!x[$2]++{print $1}' | while read -r line; do

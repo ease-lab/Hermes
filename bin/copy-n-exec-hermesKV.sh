@@ -1,22 +1,4 @@
 #!/usr/bin/env bash
-HOSTS=( ##### network  cluster #####
-         "houston"
-         "sanantonio"
-         "austin"
-         "indianapolis"
-         "philly"
-         "atlanta"
-         ##### compute cluster #####
-#         "baltimore"
-#         "chicago"
-#         "detroit"
-        )
-
-FILES=(
-        "run-hermesKV.sh"
-        "hermesKV"
-      )
-
 
 ### Runs to make
 #declare -a write_ratios=(0 10 50 200 500 1000)
@@ -36,9 +18,7 @@ declare -a num_machines=(2)
 LAT_WORKER="-1"
 #LAT_WORKER="0"
 
-USERNAME="s1671850" # "user"
-LOCAL_HOST=`hostname`
-EXEC_FOLDER="/home/${USERNAME}/hermes/exec"
+EXEC_FOLDER="/home/${USER}/hermes/exec"
 
 REMOTE_COMMAND="cd ${EXEC_FOLDER}; bash run-hermesKV.sh"
 
@@ -51,6 +31,9 @@ fi
 
 echo "\$PASS is OK!"
 cd ${EXEC_FOLDER}
+
+# get Hosts
+source ./hosts.sh
 
 ../bin/copy-exec-files.sh
 
@@ -65,7 +48,7 @@ for M in "${num_machines[@]}"; do
                  args=" -M ${M} -R ${RMW} -w ${WR} -W ${W} -b ${BA} -c ${CRD} -C ${COAL} -l ${LAT_WORKER}"
                  echo ${PASS} | ./run-hermesKV.sh ${args} &
                  sleep 2 # give some leeway so that manager starts before executing the members
-	             parallel "echo ${PASS} | ssh -tt {} $'${REMOTE_COMMAND} ${args}'" ::: $(echo ${HOSTS[@]/$LOCAL_HOST}) >/dev/null
+	             parallel "echo ${PASS} | ssh -tt {} $'${REMOTE_COMMAND} ${args}'" ::: $(echo ${REMOTE_HOSTS[@]}) >/dev/null
 	          done
 	        done
 	      done
@@ -73,5 +56,7 @@ for M in "${num_machines[@]}"; do
 	  done
 	done
 done
+
+cd - >/dev/null
 
 ../bin/get-system-xput-files.sh

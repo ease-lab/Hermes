@@ -1,21 +1,4 @@
 #!/usr/bin/env bash
-HOSTS=( ##### network  cluster #####
-         "houston"
-         "sanantonio"
-         "austin"
-         "indianapolis"
-         "philly"
-#         "atlanta"
-         ##### compute cluster #####
-#         "baltimore"
-#         "chicago"
-#         "detroit"
-        )
-
-FILES=(
-        "run-rCRAQ.sh"
-        "rCRAQ"
-      )
 
 USE_SAME_BATCH_N_CREDITS=1
 
@@ -39,10 +22,8 @@ declare -a coalesce=(10)
 LAT_WORKER="-1"
 #LAT_WORKER="0"
 
-USERNAME="s1671850" # "user"
-LOCAL_HOST=`hostname`
-
-EXEC_FOLDER="/home/${USERNAME}/hermes/exec"
+#LOCAL_HOST=`hostname`
+EXEC_FOLDER="/home/${USER}/hermes/exec"
 REMOTE_COMMAND="cd ${EXEC_FOLDER}; bash run-rCRAQ.sh"
 
 PASS="${1}"
@@ -54,6 +35,9 @@ fi
 
 echo "\$PASS is OK!"
 cd ${EXEC_FOLDER}
+
+# get Hosts
+source ./hosts.sh
 
 ../bin/copy-exec-files.sh
 
@@ -69,7 +53,7 @@ then
                  args=" -M ${M} -w ${WR} -W ${W} -b ${BA} -c ${CRD} -C ${COAL} -l ${LAT_WORKER}"
                  echo ${PASS} | ./run-cr.sh ${args} &
                  sleep 2
-	             parallel "echo ${PASS} | ssh -tt {} $'${REMOTE_COMMAND} ${args}'" ::: $(echo ${HOSTS[@]/$LOCAL_HOST}) >/dev/null
+	             parallel "echo ${PASS} | ssh -tt {} $'${REMOTE_COMMAND} ${args}'" ::: $(echo ${REMOTE_HOSTS[@]}) >/dev/null
 	          done
 	        done
 	      done
@@ -87,12 +71,14 @@ else
                  args=" -M ${M} -w ${WR} -W ${W} -b ${BA} -c ${BA} -C ${COAL} -l ${LAT_WORKER}"
                  echo ${PASS} | ./run-cr.sh ${args} &
                  sleep 2
-	             parallel "echo ${PASS} | ssh -tt {} $'${REMOTE_COMMAND} ${args}'" ::: $(echo ${HOSTS[@]/$LOCAL_HOST}) >/dev/null
+	             parallel "echo ${PASS} | ssh -tt {} $'${REMOTE_COMMAND} ${args}'" ::: $(echo ${REMOTE_HOSTS[@]}) >/dev/null
 	          done
 	        done
 	      done
 	    done
    done
 fi
+
+cd - >/dev/null
 
 ../bin/get-system-xput-files.sh
