@@ -109,8 +109,7 @@ h_upd_not_aliveNodes ==
     
     
 h_upd_aliveNodes ==
-    /\ UNCHANGED <<msgs, nodeState, nodeTS, nodeLastWriter, 
-                   nodeLastWriteTS, nodeRcvedAcks, epochID, nodeWriteEpochID>>
+    /\ UNCHANGED <<msgs, nodeState, nodeTS, nodeLastWriter, nodeLastWriteTS, nodeRcvedAcks>>
                    
 h_upd_nothing ==                    
     /\ h_upd_not_aliveNodes
