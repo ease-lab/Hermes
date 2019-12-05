@@ -19,28 +19,34 @@ LAT_WORKER="-1"
 while getopts ":W:w:l:R:C:c:b:M:h" opt; do
   case $opt in
      W)
-       NUM_WORKERS=$OPTARG
+       NUM_WORKERS=$OPTARG # Number of threads: this must be smaller than MAX_WORKERS_PER_MACHINE of config.h
        ;;
      w)
-       WRITE_RATIO=$OPTARG
+       WRITE_RATIO=$OPTARG # given number is divided by 10 to give write rate % (i.e., 55 means 5.5 % writes)
        ;;
      R)
-       RMW_RATIO=$OPTARG
+       RMW_RATIO=$OPTARG # percentage of writes to be rmws (i.e., -w 500 -R 500 means 25 % of RMWs and 25% of writes)
+                         # RMW is disabled by default (no usage through the artifact) can be enabled through config.h)
        ;;
      C)
-       MAX_COALESCE=$OPTARG
+       MAX_COALESCE=$OPTARG # maximum number of readily-available messages to be "batched" in a network packet
+                            # must be smaller than MTU and it is capped by MAX_REQ_COALESCE in config.h
        ;;
      c)
-       CREDITS=$OPTARG
+       CREDITS=$OPTARG      # maximum number of credits per node per thread; credits correspond to messages and not packets
+                            # it is capped by MAX_CREDITS_PER_REMOTE_WORKER in config.h
        ;;
      b)
-       MAX_BATCH_SIZE=$OPTARG
+       MAX_BATCH_SIZE=$OPTARG   # amount of requests and protocol messages that can be batched to the KVS
+                                # it is capped by MAX_BATCH_KVS_OPS_SIZE in config.h
        ;;
      M)
-       NUM_MACHINES=$OPTARG
+       NUM_MACHINES=$OPTARG # it is capped by MAX_MACHINE_NUM in config.h and the number of IPS as indicated in hosts.sh
        ;;
      l)
-       LAT_WORKER=$OPTARG
+       LAT_WORKER=$OPTARG # An id of the worker who is measuring the latency
+                          # if -1 Latency is disabled
+                          # otherwise it is capped by running worker threads (NUM_WORKERS-1)
        ;;
      h)
       echo "Usage: -W <# workers> -w <write ratio>  (x1000 --> 10 for 1%)"

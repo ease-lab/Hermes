@@ -21,14 +21,29 @@
 #define TOTAL_CORES_PER_SOCKET  10
 #define TOTAL_NUMBER_OF_SOCKETS  2
 
-// Default workload writes / updates accesses (the rest are reads)
-#define DEFAULT_UPDATE_RATIO  1000  // both writes and RMWs (RMW_RATIO inderectly provides WRITE_RATIO)
-#define ENABLE_RMWs              0  // if RMWs is not enabled then all UPDATE_RATIO == WRITE_RATIO
-#define DEFAULT_RMW_RATIO        0  // percentage of UPDATE_RATIO to be RMWs
+/*-------------------------------------------------
+-------------------------------------------------
+-------------------------------------------------
+-------- No need to change beyond this point ----
+-------------------------------------------------
+-------------------------------------------------
+--------------------------------------------------*/
 
+// Default workload writes / updates accesses (the rest are reads)
+#define DEFAULT_UPDATE_RATIO  1000  // is divided by 10 (i.e., 25 --> 2.5 %)
+// both writes and RMWs (RMW_RATIO inderectly provides WRITE_RATIO)
+
+
+#define ENABLE_RMWs              0  // if RMWs is not enabled then all UPDATE_RATIO == WRITE_RATIO
+#define DEFAULT_RMW_RATIO        0  // is divided by 10 (i.e., 25 --> 2.5 %)
+// percentage of UPDATE_RATIO to be RMWs
 
 // Max operations per-thread to batches to the KVS (either received packets or read/write/RMW requests)
-#define MAX_BATCH_KVS_OPS_SIZE 250 // up to 254
+#define MAX_BATCH_KVS_OPS_SIZE 250
+static_assert(MAX_WORKERS_PER_MACHINE <= 254, "");
+static_assert(MAX_WORKERS_PER_MACHINE <= TOTAL_NUMBER_OF_SOCKETS *
+                                         TOTAL_THREADS_PER_CORE * TOTAL_CORES_PER_SOCKET, "");
+static_assert(DEFAULT_UPDATE_RATIO <= 1000  && DEFAULT_RMW_RATIO >= 0, "");
 
 
 /*-------------------------------------------------
