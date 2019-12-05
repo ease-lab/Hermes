@@ -1,9 +1,0 @@
-====================
-This directory contains a stripped down version of Herd/mica taken from ccKVS repository
-
-Library requirements:
-====================
-	libmemcached
-	libmemcached-tools
-	libnuma-dev	(for mbind)
-	
