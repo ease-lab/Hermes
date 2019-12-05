@@ -1,18 +1,5 @@
 #!/usr/bin/env bash
-#HOSTS=( ##### network  cluster #####
-#         "houston"
-#         "sanantonio"
-#         "austin"
-#         "indianapolis"
-#         "atlanta"
-#         "philly"
-#         ##### compute cluster #####
-##         "baltimore"
-##         "chicago"
-##         "detroit"
-#        )
-#
-#LOCAL_HOST=`hostname`
+
 
 ALL_IPS=(
 ### TO BE FILLED: Please provide all cluster IPs
@@ -32,13 +19,6 @@ ALL_IPS=(
         129.215.165.5
 #          atlanata
         129.215.165.1
-####    compute cluster    ####
-#          chicago
-        129.215.165.3
-#          detroit
-        129.215.165.4
-#         baltimore
-        129.215.165.2
         )
 
 ### TO BE FILLED: Modify to get the local IP of the node running the script (must be one of the cluster nodes)
