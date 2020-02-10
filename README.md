@@ -1,10 +1,8 @@
 # Hermes Reliable Replication Protocol
 ---------------------------------------
-This is the publicly available artifact repository supporting the ASPLOS'20 paper
-[_"Hermes: A Fast, Fault-Tolerant and Linearizable Replication Protocol"_](https://arxiv.org/abs/2001.09804 "Hermes Arxiv version").
-The repository contains both code to experimentally evaluate Hermes(KV) 
-and complete Hermes TLA+ specifications which can be used to verify Hermes 
-correctness via model-checking.
+<img align="left" height="100" src="https://github.com/akatsarakis/Hermes/blob/master/hermes-logo.png">
+
+This is the publicly available artifact repository supporting the ASPLOS'20 paper [_"Hermes: A Fast, Fault-Tolerant and Linearizable Replication Protocol"_](https://arxiv.org/abs/2001.09804 "Hermes Arxiv version"). The repository contains both code to experimentally evaluate Hermes(KV) and complete Hermes TLA+ specifications which can be used to verify Hermes correctness via model-checking.
 
 ---
 
@@ -36,7 +34,7 @@ On manager (just pick on node in the cluster):
 1. From `/hermes/exec/` compile _hermesKV_ through make
 1. scp  _hermesKV_ and the configured hosts.sh in the `/hermes/exec/` directory of all other nodes in the cluster. 
 ---
-##Compilation 
+## Compilation 
 `cd hermes/exec; make`
 
 _Warning_: Do not compile through through cmake; instead use the Makefile in exec/ directory.
