@@ -8,7 +8,7 @@ This is the publicly available artifact repository supporting the ASPLOS'20 pape
 
 ## License 
 This work is freely distributed under the [Apache 2.0 License](https://www.apache.org/licenses/LICENSE-2.0 "Apache 2.0").  
-The authors encourage any captital contributions to be donated to charity instead!
+The authors encourage any capital contributions to be donated to charity instead!
 
 ---
 
