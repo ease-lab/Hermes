@@ -6,6 +6,12 @@ This is the publicly available artifact repository supporting the ASPLOS'20 pape
 
 ---
 
+## License 
+This work is freely distributed under the [Apache 2.0 License](https://www.apache.org/licenses/LICENSE-2.0 "Apache 2.0").  
+The authors encourage any captital contributions to be donated to charity instead!
+
+---
+
 ## Hardware dependencies
 A homogeneous cluster of x86_64 nodes interconnected via RDMA network cards and switched 
 (tested on "Mellanox ConnectX-4" Infiniband infrastructure).
