@@ -10,7 +10,7 @@ This is the publicly available artifact repository supporting the ASPLOS'20 pape
 - _Updates (Writes and RMWs)_: i) Inter-key concurrent ii) Decentralized iii) Fast (1rtt commit -- any replica)
 - _Writes_: iv) Non-conflicting (i.e., never abort)
 
-## Linearizablity and Properties
+## Consistency and Properties
 Linearizable reads, writes and RMWs with the following properties:
 1. _Writes_: from a live replica _always commit_ after Invalidating (and getting acknowledgments from) the rest live replicas. 
 1. _RMWs_: at most one of possible concurrent RMWs to a key can commit, and this only once all acknowledgments from live replicas are gathered.
