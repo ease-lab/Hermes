@@ -5,6 +5,21 @@
 This is the publicly available artifact repository supporting the ASPLOS'20 paper [_"Hermes: A Fast, Fault-Tolerant and Linearizable Replication Protocol"_](https://arxiv.org/abs/2001.09804 "Hermes Arxiv version"). The repository contains both code to experimentally evaluate Hermes(KV) and complete Hermes TLA+ specifications which can be used to verify Hermes correctness via model-checking.
 
 ----
+## High Perfomance Features
+- _Reads_: i) Local ii) Load-balanced (served by any replica)
+- _Updates (Writes and RMWs)_: i) Inter-key concurrent ii) Decentralized iii) Fast (1rtt commit -- any replica)
+- _Writes_: iv) Non-conflicting (i.e., never abort)
+
+## Linearizablity and Properties
+Linearizable reads, writes and RMWs with the following properties:
+1. _Writes_: from a live replica _always commit_ after Invalidating (and getting acknowledgments from) the rest live replicas. 
+1. _RMWs_: at most one of possible concurrent RMWs to a key can commit, and this only once all acknowledgments from live replicas are gathered.
+1. _Reads_: return the local value if the targeted keys are found in the Valid state and the coordinator was considered live at the time of reading. The former can be ensured locally if the coordinator has a lease for (and is part of) the membership.
+
+## Fault Tolerance
+Coupling Invalidations with per-key logical timestamps (i.e., Lamport clocks) and propagating the value to be updated with the invalidation message (_early value propagation_), Hermes allows any replica blocked by an update (write or RMW) to safely replay the update and unblock it self and the rest of followers.
+
+----
 
 ## License
 
