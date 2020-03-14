@@ -1,0 +1,80 @@
+// Small devices (landscape phones, less than 768px)
+@media (max-width: 767px) { 
+    
+    .header .main-nav .navbar-collapse {
+	    border-top: none;
+	    -webkit-box-shadow: none;
+	    -moz-box-shadow: none;
+	    box-shadow: none;
+	    width: 100%;
+	    left: 0;
+	    top: 60px;
+	    position: absolute;
+	    background: #fff;
+
+	    .navbar-nav {
+		   margin-left:10px;
+	    }
+	}
+	
+	.header.navbar-fixed-top {
+		height: 70px;
+	}
+
+    
+    .promo .btns .btn {
+        margin-right: 0;
+        clear: both;
+        display: block;
+        margin-bottom: 30px;
+    }
+    
+    .promo .title {
+        font-size: 66px;
+    }
+    
+    .promo .meta {
+        margin-top: 60px;
+    }
+    
+    .promo .meta li{
+        float: none;
+        display: block;
+        margin-bottom: 5px;
+    }
+    
+    .contact .author-message {
+        text-align: center;
+    }
+    
+    .contact .author-message .profile {
+        position: static;       
+        margin: 0 auto;
+        margin-bottom: 30px;
+        
+    }
+    
+    .contact .author-message .speech-bubble {
+        margin-left: 0;
+        &:after {
+            display: none;
+        }
+    }
+    
+    .contact .social-icons a {
+        width:36px;
+        height: 36px;
+        margin-right: 2px;
+        font-size: 18px;
+        
+        .svg-inline--fa {
+	        margin-top: 7px;
+        }
+        
+    }
+    
+    
+}
+
+
+
