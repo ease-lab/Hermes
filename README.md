@@ -14,7 +14,7 @@ This is the publicly available artifact repository supporting the ASPLOS'20 pape
 Linearizable reads, writes and RMWs with the following properties:
 1. _Writes_: from a live replica _always commit_ after Invalidating (and getting acknowledgments from) the rest live replicas. 
 1. _RMWs_: at most one of possible concurrent RMWs to a key can commit, and this only once all acknowledgments from live replicas are gathered.
-1. _Reads_: return the local value if the targeted keys are found in the Valid state and the coordinator was considered live at the time of reading. The former can be ensured locally if the coordinator has a lease for (and is part of) the membership.
+1. _Reads_: return the local value if the targeted keys are found in the Valid state and the coordinator was considered live at the time of reading. The later can be ensured locally if the coordinator has a lease for (and is part of) the membership.
 
 ## Fault Tolerance
 Coupling Invalidations with per-key logical timestamps (i.e., Lamport clocks) and propagating the value to be updated with the invalidation message (_early value propagation_), Hermes allows any replica blocked by an update (write or RMW) to safely replay the update and unblock it self and the rest of followers.
