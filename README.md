@@ -88,3 +88,4 @@ Supported command-line arguments for the experiments are detailed in the run-her
 
 ## Contact
  Antonios Katsarakis: `antoniskatsarakis@yahoo.com`
+ [`antoniskatsarakis@yahoo.com`](mailto:antoniskatsarakis@yahoo.com?subject=[GitHub]%20Hermes%repo)
