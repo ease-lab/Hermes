@@ -2,7 +2,7 @@
 
 <img align="left" height="90" src="https://github.com/akatsarakis/Hermes/blob/master/hermes-logo.png">
 
-This is the publicly available artifact repository supporting the ASPLOS'20 paper [_"Hermes: A Fast, Fault-Tolerant and Linearizable Replication Protocol"_](https://arxiv.org/abs/2001.09804 "Hermes Arxiv version"). The repository contains both code to experimentally evaluate Hermes(KV) and complete Hermes TLA+ specifications which can be used to verify Hermes correctness via model-checking.
+This is the publicly available artifact repository supporting the ASPLOS'20 paper [_"Hermes: A Fast, Fault-Tolerant and Linearizable Replication Protocol"_](http://hermes-protocol.com "Hermes Arxiv version"). The repository contains both code to experimentally evaluate Hermes(KV) and complete Hermes TLA+ specifications which can be used to verify Hermes correctness via model-checking.
 
 ----
 ## High Perfomance Features
