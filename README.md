@@ -86,5 +86,9 @@ Supported command-line arguments for the experiments are detailed in the run-her
 ## Acknowledgments
  Hermes is based on [HERD/MICA](https://github.com/efficient/HERD "Apache 2.0") design as an underlying KVS, the code of which we have adapted to implement HermesKV.
 
+## Independet Implementations of Hermes
+
+- [Olympus](https://github.com/sadraskol/olympus) - in Rust by [Thomas Bracher](https://twitter.com/sadraskol)
+
 ## Contact
  Antonios Katsarakis: [`antoniskatsarakis@yahoo.com`](mailto:antoniskatsarakis@yahoo.com?subject=[GitHub]%20Hermes%repo)
