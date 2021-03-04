@@ -20,7 +20,7 @@ else
 fi
 
 # Install required Libraries (memcached is used to setup RDMA connection and numa for mbind)
-sudo apt install libmemcached-dev libnuma-dev
+sudo apt install libmemcached-dev libnuma-dev memcached
 
 # start a subnet manager
 sudo /etc/init.d/opensmd start # there must be at least one subnet-manager in an infiniband subnet cluster
