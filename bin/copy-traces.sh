@@ -2,7 +2,7 @@
 
 # Copy (per-thread splitted) trace folder
 FOLDERS_TO_CPY=( "traces/current-splitted-traces" )
-HOME_FOLDER="/home/${USER}/hermes"
+HOME_FOLDER="${HOME}/hermes"
 
 cd ${HOME_FOLDER} >/dev/null
 # get Hosts

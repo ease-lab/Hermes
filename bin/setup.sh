@@ -20,7 +20,7 @@ else
 fi
 
 # Install required Libraries (memcached is used to setup RDMA connection and numa for mbind)
-sudo apt install libmemcached-dev libnuma-dev memcached
+sudo apt --yes install libmemcached-dev libnuma-dev memcached
 
 # start a subnet manager
 sudo /etc/init.d/opensmd start # there must be at least one subnet-manager in an infiniband subnet cluster
@@ -29,6 +29,7 @@ sudo /etc/init.d/openibd start
 
 # Configure (2MB) huge-pages for the KVS
 # Note that such a huge page allocation is not permanent and must be re-applied after a node reboot.
-echo 8192 | sudo tee /sys/devices/system/node/node*/hugepages/hugepages-2048kB/nr_hugepages
+#echo 8192 | sudo tee /sys/devices/system/node/node*/hugepages/hugepages-2048kB/nr_hugepages
+echo 4096 | sudo tee /sys/devices/system/node/node*/hugepages/hugepages-2048kB/nr_hugepages
 echo 10000000001 | sudo tee /proc/sys/kernel/shmmax
 echo 10000000001 | sudo tee /proc/sys/kernel/shmall

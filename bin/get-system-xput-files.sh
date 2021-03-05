@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
-EXEC_FOLDER="/home/${USER}/hermes/exec"
-RESULTS_FOLDER="/home/${USER}/hermes/exec/results"
+EXEC_FOLDER="${HOME}/hermes/exec"
+RESULTS_FOLDER="${HOME}/hermes/exec/results"
 
 RESULT_FOLDER="${RESULTS_FOLDER}/xput/per-node/"
 RESULT_OUT_FOLDER="${RESULTS_FOLDER}/xput/per-node/"

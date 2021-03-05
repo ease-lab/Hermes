@@ -19,7 +19,7 @@ LAT_WORKER="-1"
 #LAT_WORKER="0"
 
 #LOCAL_HOST=`hostname`
-EXEC_FOLDER="/home/${USER}/hermes/exec"
+EXEC_FOLDER="${HOME}/hermes/exec"
 REMOTE_COMMAND="cd ${EXEC_FOLDER}; bash run-rCRAQ.sh"
 
 PASS="${1}"

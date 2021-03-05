@@ -18,7 +18,7 @@ declare -a num_machines=(3)
 LAT_WORKER="-1"
 #LAT_WORKER="0"
 
-EXEC_FOLDER="/home/${USER}/hermes/exec"
+EXEC_FOLDER="${HOME}/hermes/exec"
 
 REMOTE_COMMAND="cd ${EXEC_FOLDER}; bash run-hermesKV.sh"
 

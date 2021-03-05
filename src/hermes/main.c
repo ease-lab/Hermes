@@ -145,7 +145,7 @@ int main(int argc, char *argv[])
 	// If arguments not passed use the default values from header file
 	if(update_ratio == -1) update_ratio = DEFAULT_UPDATE_RATIO;
     if(rmw_ratio == -1) rmw_ratio = ENABLE_RMWs ? DEFAULT_RMW_RATIO : 0;
-	if(num_workers == -1) num_workers = MAX_WORKERS_PER_MACHINE;
+	if(num_workers == -1) num_workers = DEFAULT_WORKERS_PER_MACHINE;
 	if(max_coalesce == -1) max_coalesce = MAX_REQ_COALESCE;
 	if(max_batch_size == -1) max_batch_size = MAX_BATCH_KVS_OPS_SIZE;
     if(credits_num == -1)

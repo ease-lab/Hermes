@@ -15,10 +15,16 @@ int spawn_stats_thread(void)
     cpu_set_t cpus_stats;
     pthread_attr_init(&attr);
     CPU_ZERO(&cpus_stats);
-    if(MAX_WORKERS_PER_MACHINE > 17)
-        CPU_SET(39, &cpus_stats);
-    else
-        CPU_SET(2 * MAX_WORKERS_PER_MACHINE + 2, &cpus_stats);
+
+    if(DEFAULT_THREAD_OF_STAT_THREAD != -1){
+        CPU_SET(DEFAULT_THREAD_OF_STAT_THREAD, &cpus_stats);
+    }else{
+        if(MAX_WORKERS_PER_MACHINE > 17)
+            CPU_SET(39, &cpus_stats);
+        else
+            CPU_SET(2 * MAX_WORKERS_PER_MACHINE + 2, &cpus_stats);
+    }
+
     pthread_attr_setaffinity_np(&attr, sizeof(cpu_set_t), &cpus_stats);
     return pthread_create(&thread_arr[0], &attr, print_stats_thread, NULL);
 }

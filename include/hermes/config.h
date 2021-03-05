@@ -14,7 +14,9 @@
 ------------ SETUP & DEFAULT SETTINGS -------------
 --------------------------------------------------*/
 #define MAX_MACHINE_NUM          5 // maximum nodes
-#define MAX_WORKERS_PER_MACHINE 38 // maximum number of threads per node
+#define MAX_WORKERS_PER_MACHINE  8 // maximum number of threads per node
+#define DEFAULT_WORKERS_PER_MACHINE 2
+#define DEFAULT_THREAD_OF_STAT_THREAD (-1)
 
 // Number of sockets (numa nodes), cores and h/w threads per core on each node
 #define TOTAL_THREADS_PER_CORE   2

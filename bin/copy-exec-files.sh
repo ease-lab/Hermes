@@ -11,7 +11,7 @@ FILES_TO_CPY=(
 #        "run-hades.sh"
       )
 
-EXEC_FOLDER="/home/${USER}/hermes/exec"
+EXEC_FOLDER="${HOME}/hermes/exec"
 
 cd $EXEC_FOLDER
 # get Hosts

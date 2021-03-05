@@ -31,7 +31,7 @@ if [[ $NUM_NODES -ne ${#HOSTS[@]} ]] ; then
 fi
 
 LOCAL_HOST=`hostname`
-HOME_FOLDER="/home/${USER}/derecho-unified/Release/applications/tests/performance_tests/"
+HOME_FOLDER="${HOME}/derecho-unified/Release/applications/tests/performance_tests/"
 #pin derecho threads to cores (w/o using hyperthreads) of numa node 0
 COMMAND_NO_ARGS="taskset -c 0,2,4,6,8,10,12,14,16,18 ./bandwidth_test "
 
