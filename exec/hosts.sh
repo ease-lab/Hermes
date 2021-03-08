@@ -9,6 +9,8 @@ ALL_IPS=(
         10.0.3.1
         10.0.3.2
         10.0.3.3
+        10.0.3.4
+        10.0.3.5
         )
 
 ### TO BE FILLED: Modify to get the local IP of the node running the script (must be one of the cluster nodes)

@@ -12,7 +12,7 @@ declare -a credits=(50)
 #declare -a coalesce=(1 5 10 15)
 declare -a coalesce=(15)
 #declare -a num_machines=(2 3 5 7)
-declare -a num_machines=(3)
+declare -a num_machines=(5)
 
 # Set LAT_WORKER to -1 to disable latency measurement or to worker id (i.e., from 0 up to [num-worker - 1])
 LAT_WORKER="-1"
