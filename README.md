@@ -1,8 +1,19 @@
 # Hermes Reliable Replication Protocol
 
-<img align="left" height="90" src="https://github.com/akatsarakis/Hermes/blob/master/hermes-logo.png">
+<img align="left" height="140" src="https://github.com/akatsarakis/Hermes/blob/master/hermes-logo.png">
 
 This is the publicly available artifact repository supporting the ASPLOS'20 paper [_"Hermes: A Fast, Fault-Tolerant and Linearizable Replication Protocol"_](http://hermes-protocol.com "Hermes Arxiv version"). The repository contains both code to experimentally evaluate Hermes(KV) and complete Hermes TLA+ specifications which can be used to verify Hermes correctness via model-checking.
+
+[![top picks](https://badgen.net/badge/honorable%20mention/top%20picks%20'21/d99e14)](https://www.sigarch.org/call-contributions/ieee-micro-top-picks/)
+[![available](https://badgen.net/badge/acm%20badge/available/117c00)](https://www.acm.org/publications/policies/artifact-review-badging#available)
+[![functional](https://badgen.net/badge/acm%20badge/functional/FB1f44)](https://www.acm.org/publications/policies/artifact-review-badging#functional)
+[![stars](https://badgen.net/github/stars/ease-lab/Hermes)]()
+
+[![license](https://badgen.net/badge/webpage/Hermes/blue)](http://hermes-protocol.com/)
+[![license](https://badgen.net/badge/license/Apache%202.0/blue)](https://github.com/ease-lab/Hermes/blob/master/LICENSE)
+[![last commit](https://badgen.net/github/last-commit/ease-lab/Hermes)]()
+<a href="https://twitter.com/intent/follow?screen_name=ease_lab">
+<img src="https://img.shields.io/twitter/follow/ease_lab?style=social&logo=twitter" alt="follow on Twitter"></a>
 
 ----
 ## High Perfomance Features
@@ -20,12 +31,6 @@ Linearizable reads, writes and RMWs with the following properties:
 Coupling Invalidations with per-key logical timestamps (i.e., Lamport clocks) and propagating the value to be updated with the invalidation message (_early value propagation_), Hermes allows any replica blocked by an update (write or RMW) to safely replay the update and unblock it self and the rest of followers.
 
 ----
-
-## License
-
-This work is freely distributed under the [Apache 2.0 License](https://www.apache.org/licenses/LICENSE-2.0 "Apache 2.0").  
-The authors encourage any capital contributions to be donated to charity instead!
-
 
 ## Hardware dependencies
 
