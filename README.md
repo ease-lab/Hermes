@@ -12,7 +12,7 @@ This is the publicly available artifact repository supporting the ASPLOS'20 pape
 [![license](https://badgen.net/badge/webpage/Hermes/blue)](http://hermes-protocol.com/)
 [![license](https://badgen.net/badge/license/Apache%202.0/blue)](https://github.com/ease-lab/Hermes/blob/master/LICENSE)
 [![last commit](https://badgen.net/github/last-commit/ease-lab/Hermes)]()
-<a href="https://twitter.com/intent/follow?screen_name=ease_lab">
+<a href="https://twitter.com/intent/follow?screen_name=ease_lab" target="_blank">
 <img src="https://img.shields.io/twitter/follow/ease_lab?style=social&logo=twitter" alt="follow on Twitter"></a>
 
 ----
