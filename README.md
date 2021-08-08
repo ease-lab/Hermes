@@ -68,7 +68,7 @@ On manager (just pick on node in the cluster):
 
 `cd hermes/exec; make`
 
-_Warning_: Do not compile through through cmake; instead use the Makefile in exec/ directory.
+_Warning_: Do not compile through cmake; instead use the Makefile in exec/ directory.
 
 
 ## Run
