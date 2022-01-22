@@ -96,4 +96,4 @@ Supported command-line arguments for the experiments are detailed in the run-her
 - [Olympus](https://github.com/sadraskol/olympus) - in Rust by [Thomas Bracher](https://twitter.com/sadraskol)
 
 ## Contact
- Antonios Katsarakis: [`antoniskatsarakis@yahoo.com`](mailto:antoniskatsarakis@yahoo.com?subject=[GitHub]%20Hermes%repo)
+ Antonios Katsarakis: <a href="http://antonis.io/" title="Personal webpage" target="_blank">`antonis.io`</a> |  [`antoniskatsarakis@yahoo.com`](mailto:antoniskatsarakis@yahoo.com?subject=[GitHub]%20Zeus%20Specification "Email")
