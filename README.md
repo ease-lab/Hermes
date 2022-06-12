@@ -15,6 +15,23 @@ This is the publicly available artifact repository supporting the ASPLOS'20 pape
 <a href="https://twitter.com/intent/follow?screen_name=ease_lab" target="_blank">
 <img src="https://img.shields.io/twitter/follow/ease_lab?style=social&logo=twitter" alt="follow on Twitter"></a>
 
+
+## Citation
+```
+@inbook{Katsarakis:20,
+author = {Katsarakis, Antonios and Gavrielatos, Vasilis and Katebzadeh, M.R. Siavash and Joshi, Arpit and Dragojevic, Aleksandar and Grot, Boris and Nagarajan, Vijay},
+title = {Hermes: A Fast, Fault-Tolerant and Linearizable Replication Protocol},
+year = {2020},
+isbn = {9781450371025},
+publisher = {Association for Computing Machinery},
+address = {New York, NY, USA},
+url = {https://doi.org/10.1145/3373376.3378496},
+booktitle = {Proceedings of the Twenty-Fifth International Conference on Architectural Support for Programming Languages and Operating Systems},
+pages = {201–217},
+numpages = {17}
+}
+```
+
 ----
 ## High Perfomance Features
 - _Reads_: i) Local ii) Load-balanced (served by any replica)
