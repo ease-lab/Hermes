@@ -22,10 +22,8 @@ This is the publicly available artifact repository supporting the ASPLOS'20 pape
 author = {Katsarakis, Antonios and Gavrielatos, Vasilis and Katebzadeh, M.R. Siavash and Joshi, Arpit and Dragojevic, Aleksandar and Grot, Boris and Nagarajan, Vijay},
 title = {Hermes: A Fast, Fault-Tolerant and Linearizable Replication Protocol},
 year = {2020},
-isbn = {9781450371025},
 publisher = {Association for Computing Machinery},
 address = {New York, NY, USA},
-url = {https://doi.org/10.1145/3373376.3378496},
 booktitle = {Proceedings of the Twenty-Fifth International Conference on Architectural Support for Programming Languages and Operating Systems},
 pages = {201–217},
 numpages = {17}
