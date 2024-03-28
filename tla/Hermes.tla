@@ -82,7 +82,6 @@ HInit == \* The initial predicate
 send(m) == msgs' = msgs \union {m}
 
 \* Check if all acknowledgments for a write have been received                                                  
-\*receivedAllAcks(n) == nodeRcvedAcks[n] = H_NODES \ {n}
 receivedAllAcks(n) == (aliveNodes \ {n}) \subseteq nodeRcvedAcks[n]
         
 equalTS(v1,tb1,v2,tb2) ==  \* Timestamp equality
@@ -99,10 +98,11 @@ isAlive(n) == n \in aliveNodes
 nodeFailure(n) == \* Emulate a node failure
 \*    Make sure that there are atleast 3 alive nodes before killing a node
     /\ Cardinality(aliveNodes) > 2
-    /\ aliveNodes' = aliveNodes \ {n}
-    /\ epochID'     = epochID + 1
+    /\ nodeRcvedAcks' = [k \in H_NODES |-> {}]
+    /\ aliveNodes'    = aliveNodes \ {n}
+    /\ epochID'       = epochID + 1
     /\ UNCHANGED <<msgs, nodeState, nodeTS, nodeLastWriter, 
-                   nodeLastWriteTS, nodeRcvedAcks, nodeWriteEpochID>>
+                   nodeLastWriteTS, nodeWriteEpochID>>
 
 h_upd_not_aliveNodes ==
     /\  UNCHANGED <<aliveNodes, epochID, nodeWriteEpochID>>
